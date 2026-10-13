@@ -32,7 +32,7 @@ and zlib development headers; macOS requires Xcode command-line tools.
 
 | Platform | Native facilities | Status |
 |---|---|---|
-| Linux | X11 (`libX11.so.6`), ALSA (`libasound.so.2`) | x64 AOT, desktop/input loop and ALSA null-device output verified; Wayland needs XWayland |
+| Linux | X11 (`libX11.so.6`), ALSA (`libasound.so.2`) | x64 AOT and bounded desktop presentation verified in CI; OS-injected demo input and ALSA null output worker-reported (see below); Wayland needs XWayland |
 | Windows | Win32/GDI, waveOut (`winmm`) | x64 AOT, engine tests and bounded desktop presentation verified in CI; interactive input/audio unverified |
 | macOS | AppKit/CoreGraphics/QuartzCore, AudioQueue | ARM64 AOT, engine tests and bounded desktop presentation verified in CI; interactive input/audio unverified |
 
@@ -99,25 +99,33 @@ dotnet run -c Release -- --wad /path/to/freedoom1.wad --validate-maps
 ./artifacts/linux-x64/DoomSharp --self-test
 ```
 
-`--self-test` runs 37 checks using a WAD generated in memory: malformed data, BSP queries,
+`--self-test` runs 37 isolated behavioral checks using a WAD generated in memory: malformed data, BSP queries,
 collision/occlusion, patch transparency, texture composition, DMX resampling,
 textured rendering, classic weapon-patch offsets, a pickup/door/combat/step/exit/restart
-sequence, lifts carrying the player, teleports, sky depth and secret exit routing. The demo
+sequence, lifts carrying the player, teleports, sky depth and secret exit routing.
+These checks call engine methods directly, without the native input/window/audio loop;
+**they are not actual-game end-to-end (E2E) verification**. The demo
 assets are procedurally generated source-owned content; `--demo-wad path.wad`
 can write the fixture for inspection. `--validate-maps` loads and renders each
 map at its player start, reporting unsupported things and missing textures.
 `--headless` opens neither a window nor an audio device. `--frames N` also bounds
 desktop runs. PPM exports contain only the assets from the WAD you supply.
 
-Freedoom 0.13.0's 36 Phase 1 and 32 Phase 2 maps have been loaded and rendered
-at their player starts, with zero missing textures. This is parser/renderer
-compatibility evidence, **not** a campaign-completion claim. The official release
-archive's SHA-256 was checked against its published checksum; those assets are
-not committed or bundled. A separate Linux/Xvfb test injected OS keyboard events
-to collect the shotgun, open the door, kill the enemy and exit the demo, and
-exercised mouse capture plus the ALSA mixer against a null output device.
-Physical audible playback has not been verified.
+The [engine PR #1 report](https://github.com/davidfowl/doomsharp/pull/1) states that
+Freedoom 0.13.0's 36 Phase 1 and 32 Phase 2 maps loaded/rendered at their player
+starts with zero missing textures, and that the archive checksum and asset
+license were checked. These are worker-reported parser/renderer results, not
+CI corpus coverage or campaign completion; those assets are not bundled.
+The same report describes a Linux/Xvfb OS-injected demo playthrough, mouse
+capture and ALSA null-device PCM output. Separate independent synthetic
+OS-input collision/shotgun/kill/exit/restart qualification was worker-reported
+at engine head `72c525746d705c80aaf76e1a014b0e04f97c3d9f`; its evidence remains
+worker-local, not a publicly accessible qualification packet. Neither report
+establishes physical input, audible playback or original-map full gameplay.
 
 CI builds and publishes Native AOT separately on Linux, Windows and macOS and
-runs the behavioral tests, headless demo and a bounded native desktop smoke run
-on each. A smoke window is not evidence of interactive input or audible sound.
+runs the isolated behavioral checks, headless demo and a bounded native desktop
+smoke run on each. The [confirmed main CI run](https://github.com/davidfowl/doomsharp/actions/runs/38367324903)
+uses 35-frame desktop runs with `--no-audio` and no injected gameplay input.
+Native AOT builds/presentation smoke are **not game E2E** or evidence of
+interactive input or audible sound.
