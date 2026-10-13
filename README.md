@@ -46,7 +46,7 @@ not silently treated as success. Run macOS from a graphical login session.
 WASD moves and strafes; arrows turn (up/down also move). Click once to capture
 the mouse, then use mouse movement to turn and the left button or Ctrl to fire.
 E/Space uses a door or switch, Shift runs, 1 selects pistol, 2 selects an acquired
-shotgun, Tab toggles the automap, R restarts, and Esc quits. Losing window focus
+shotgun, 4 selects an acquired chaingun, Tab toggles the automap, R restarts, and Esc quits. Losing window focus
 releases mouse capture and held keys. After an exit, fire/use advances to the next
 map using classic episode/DOOM II normal and secret exit routes. Episode finales
 stop at the completion screen; start another episode with `--map E2M1`, etc.
@@ -62,7 +62,7 @@ of offering a nonexistent continuation.
   floor and ceiling textures, depth-tested transparent sprites and masked walls,
   sidedef offsets/pegging, sector light/distance shading and sky backgrounds.
 - Cylinder/wall and actor collision, sliding and 24-unit steps, sector headroom.
-- Pistol/shotgun hitscan, ammo, health/armor, keys, pickups, barrels, enemy deaths
+- Pistol/shotgun/chaingun hitscan, ammo, health/armor, keys, pickups, barrels, enemy deaths
   and drops; simplified enemy chase, melee, hitscan and projectile attacks.
 - Common manual/tagged doors, key checks, door obstruction reopening, use/walk
   exits, tagged lower/wait/raise lifts, lower-to-lowest and raise-to-next/24 floors,
@@ -71,6 +71,21 @@ of offering a nonexistent continuation.
   skull, front-side use, permanent opening, and repeatable versus one-use actions.
 - WAD DMX sound decoding/resampling and a 16-voice native PCM effects mixer.
 - HUD, weapon overlays, automap, headless framebuffer export and original demo.
+
+The chaingun uses the pistol's bullet pool (capacity200). A placed type2002
+pickup grants20 bullets; a chaingunner's dropped weapon grants10. Newly acquired
+chainguns are selected even at full ammo; owned full-ammo pickups remain until
+ammo is needed. At the game's fixed35Hz, each shot is spaced four ticks apart.
+A tap completes a two-shot pair, or one shot if only one bullet remains. The
+first pair of a burst has no horizontal spread; held refire has triangular
+horizontal spread and the shared5/10/15 damage. Selection waits for a started
+pair to finish. The HUD identifies the weapon; supplied `CHGGA0`/`CHGGB0` body
+and `CHGFA0`/`CHGFB0` flash patches provide visible firing phases using their
+WAD offsets, and the existing `DSPISTOL` effect is used. Missing patches/sounds
+are diagnosed, not replaced with pistol artwork. An unowned selection or empty
+weapon gives explicit feedback; empty fire causes no damage/ammo underflow.
+Automatic empty-weapon/fist fallback, weapon raising/lowering, original autoaim,
+RNG and exact original-game timing/visual comparison remain unfinished.
 
 ## Compatibility limits
 
@@ -223,3 +238,31 @@ observations, not natural real-map/campaign completion or an exact timing oracle
 Normal doors retain their existing90-units/s approximation; these new fast
 actions use280 units/s and the existing neighboring-ceiling-minus4 destination.
 Switch texture changes and other fast-door families remain incomplete.
+
+Chaingun qualification uses [native weapon orchestration](scripts/native-chaingun.py)
+with15 distinct fresh-process scenarios. It prepares original WADs and
+color-coded patches before startup, observes visible numeric HUD and weapon/
+flash pixels, sends native W/1/2/4/Ctrl/E/R events, and checks ordinary process
+output. No engine methods, live state injection, units or cheat paths are used.
+
+```sh
+python3 scripts/native-chaingun.py generate --output-dir artifacts/chaingun-inputs
+python3 scripts/native-chaingun.py qualify artifacts/linux-x64/DoomSharp --source-commit "$SOURCE" --input-dir artifacts/chaingun-inputs --output-dir artifacts/chaingun-evidence
+```
+
+Publish that exact clean source first and generate the unchanged publisher
+assets as above. The runner allocates its own Xvfb; output directories must be
+new. It stops at the first failed scenario without retrying. Native gates cover
+placed/dropped pickups, key selection and pistol/shotgun preservation, shared
+clip/box ammo, cap200 and retained full-ammo duplicate, two-shot tap/release,
+four-tick sustained cadence, first-pair accuracy versus refire spread, combat,
+one/zero-ammo rejection, live/dead restart and living/dead next-map inventory.
+Distinct body/flash colors are fixture oracles, **not** original artwork parity.
+Two audio scenarios check successful effect counts/ALSA-null PCM submission
+and one-time missing-sound diagnostics; missing-body/flash diagnostics are also
+required. No audible playback, physical input, original timing/RNG oracle,
+natural-map campaign or other-platform interactive weapon acceptance is claimed.
+Inputs, frames, events, stdout/stderr, collector outcomes and source/executable/
+fixture/runner hashes are retained locally, not bundled or implied public raw
+downloads. Existing three-OS CI remains native demo/headless/desktop smoke,
+not this weapon corpus.

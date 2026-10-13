@@ -268,8 +268,19 @@ public sealed class Renderer
     void DrawWeapon()
     {
         if (game.Health <= 0) return;
-        string name = game.ShotgunSelected ? (game.FireTime > .65 ? "SHTGB0" : "SHTGA0") :
-            game.FireTime > .15 ? "PISGB0" : "PISGA0";
+        string name = game.SelectedWeapon switch
+        {
+            Weapon.Chaingun => game.ChaingunFrame == 0 ? "CHGGA0" : "CHGGB0",
+            Weapon.Shotgun => game.FireTime > .65 ? "SHTGB0" : "SHTGA0",
+            _ => game.FireTime > .15 ? "PISGB0" : "PISGA0"
+        };
+        DrawWeaponPatch(name);
+        if (game.SelectedWeapon == Weapon.Chaingun && game.ChaingunFlashTicks > 0)
+            DrawWeaponPatch(game.ChaingunFlashFrame == 0 ? "CHGFA0" : "CHGFB0");
+    }
+
+    void DrawWeaponPatch(string name)
+    {
         Picture? p = game.Assets.Patch(name);
         if (p == null)
         {
@@ -326,7 +337,8 @@ public sealed class Renderer
         for (int y = viewHeight; y < Height; y++)
             for (int x = 0; x < Width; x++) Pixels[y * Width + x] = y == viewHeight ? 0x907050 : 0x28252a;
         int scale = Math.Max(1, Width / 320);
-        Text($"HEALTH {game.Health}  ARMOR {game.Armor}  AMMO {(game.ShotgunSelected ? game.Shells : game.Bullets)}",
+        Text($"HEALTH {game.Health}  ARMOR {game.Armor}  AMMO {(game.ShotgunSelected ? game.Shells : game.Bullets)}  " +
+            game.SelectedWeapon.ToString().ToUpperInvariant(),
             8, viewHeight + 5, scale, 0xffdb8a);
         Text($"{game.Map.Name}  KILLS {game.Kills}/{game.TotalEnemies}  KEYS {game.Keys}  SECRETS {game.Secrets}",
             8, viewHeight + 5 + 9 * scale, scale, 0xc0c0c0);
