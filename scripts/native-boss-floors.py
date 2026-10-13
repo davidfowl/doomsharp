@@ -3,9 +3,7 @@ import argparse
 import importlib.util
 import json
 from pathlib import Path
-import re
 import struct
-import sys
 import tempfile
 import time
 from native_input import NativeGame
@@ -86,7 +84,7 @@ def corridor(label, case):
     pickup = 0 if dead else 48
     things = [(0, 0, 1), (pickup, 0, 2003)] + [(pickup, 0, 2046)] * 10
     if dead:
-        things += [(2400, 0, 16 if case == "dead-control" else 3003)]
+        things += [(2096, 0, 16 if case == "dead-control" else 3003)]
     else:
         things += [(1152, 0, 69 if case == "knight-only" else 3003),
                    (1152, 200, 69 if case in ("knight-only", "mixed") else 3003)]
@@ -127,6 +125,19 @@ def generate(output):
     records = {}
     for case in CASES:
         lumps = assets + corridor(map_name(case), case)
+        if case == "wrong-episode":
+            index = next(i for i, (label, _) in enumerate(lumps) if label == "TEXTURE1")
+            blob = lumps[index][1]
+            count = struct.unpack_from("<i", blob)[0]
+            offsets = list(struct.unpack_from("<" + "i" * count, blob, 4)) + [len(blob)]
+            definitions = [blob[offsets[i]:offsets[i + 1]] for i in range(count)]
+            sky = next(item for item in definitions if item[:8] == name("SKY1"))
+            definitions.append(name("SKY2") + sky[8:])
+            table, bodies = bytearray(), bytearray()
+            for item in definitions:
+                table.extend(struct.pack("<i", 4 + 4 * len(definitions) + len(bodies)))
+                bodies.extend(item)
+            lumps[index] = ("TEXTURE1", struct.pack("<i", len(definitions)) + table + bodies)
         if case == "transition":
             lumps += corridor("E1M8", case)
         body, entries = bytearray(), bytearray()
@@ -175,14 +186,20 @@ def run(args):
             nonlocal sequence
             sequence += 1
             frame = game.capture(f"{sequence:03}-{label}")
-            values = fixture.hud(frame)
+            health, digits = fixture.number(frame, 7)
+            armor_column = 7 + digits + 8
+            armor, digits = fixture.number(frame, armor_column)
+            ammo, _ = fixture.number(frame, armor_column + digits + 7)
+            kills, _ = fixture.number(frame, len(map_name(args.case)) + 8, 373, b"\xc0\xc0\xc0", "/")
+            values = {"health": health, "armor": armor, "ammo": ammo, "kills": kills}
             game.metadata["frames"][-1]["hud"] = values
             return frame, values
 
         def check(label, passed, **values):
             game.check(label, passed, **values)
             if not passed:
-                game.quit()
+                if game.process.poll() is None:
+                    game.quit()
                 raise RuntimeError("Native boss acceptance failed: " + label)
 
         def pickup():
@@ -237,6 +254,7 @@ def run(args):
         case = args.case
         time.sleep(.25)
         frame, values = observe("start")
+        starting_scene = frame
         if not case.startswith("dead-"):
             check("fresh-map-default-pistol", values["kills"] == 0 and values["health"] == 100 and
                   values["ammo"] == 50 and rocket.colors(frame)["133"] > 1000, **values)
@@ -337,6 +355,11 @@ def run(args):
                 frame, values = observe("restart-defaults")
                 check("restart-restores-player-bosses-inventory", values["kills"] == 0 and
                       values["ammo"] == 50 and rocket.colors(frame)["133"] > 1000, **values)
+                changed = sum(frame.pixel(x, y) != starting_scene.pixel(x, y)
+                              for y in range(80, 331) for x in range(960) if not 440 <= x < 520)
+                pixels = 251 * 880
+                check("restart-restores-raised-native-scene", changed / pixels <= .001,
+                      changedPixels=changed, comparedPixels=pixels, fraction=changed / pixels)
                 pickup()
                 pair()
                 go_open()
@@ -371,7 +394,7 @@ def run(args):
             check("dead-scene-stationary-native-pose", (x, y) == (0, 0), position=(x, y))
         log = (game.output / "game.log").read_text()
         check("no-missing-required-assets-or-unsupported-identities",
-              "Missing sprite" not in log and "Unsupported thing" not in log)
+              "Missing sprite" not in log and "Missing texture" not in log and "Unsupported thing" not in log)
         if case == "no-tag":
             check("single-explicit-missing-tag-diagnostic",
                   log.count("E1M8 boss action: no sectors tagged666.") == 1)
