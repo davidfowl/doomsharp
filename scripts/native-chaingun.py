@@ -144,6 +144,8 @@ def generate(output):
             things = [(0, 0, 1)] + [(0, 0, 2048)] * 3 + [(48, 0, 2002), (96, 0, 2002)]
         elif case in ("combat", "accuracy-spread", "one-empty"):
             things += [(1024, 50 if case == "accuracy-spread" else 180 if case == "one-empty" else 0, 3004)]
+            if case == "one-empty":
+                things.append((128, 0, 2007))
         elif case == "drop":
             things = [(0, 0, 1), (1024, 0, 65)]
         elif case == "unowned":
@@ -396,6 +398,14 @@ def run(args):
             dry, values = observe("07-dry-held")
             check("held-empty-no-damage-or-success-effect", values["ammo"] == 0 and values["kills"] == 0 and
                   colors(dry)["219"] == colors(dry)["237"] == 0 and message(dry, "OUT OF AMMO"), **values)
+            game.hold("w", .85)
+            time.sleep(.18)
+            _, values = observe("08-empty-pool-clip")
+            check("ordinary-clip-restores-empty-pool", values["ammo"] == 10, **values)
+            tap()
+            reloaded, values = observe("09-reloaded-pair")
+            check("reloaded-chaingun-resumes-paired-fire", values["ammo"] == 8 and values["kills"] == 0 and
+                  colors(reloaded)["151"] > 1000, **values)
         elif case == "unowned":
             game.hold("4", .06)
             denied, values = observe("02-unowned-selection")
@@ -440,6 +450,12 @@ def run(args):
                 "weapon": inventory[1], "bullets": int(inventory[2]),
                 "shells": int(inventory[3]), "chaingun": inventory[4] == "True"}
             check("inventory-ammo-bounds", 0 <= int(inventory[2]) <= 200 and 0 <= int(inventory[3]) <= 50)
+            check("public-ownership-matches-lifecycle", (inventory[4] == "True") ==
+                  (case not in ("unowned", "restart", "death", "dead-next")), **game.metadata["inventory"])
+            last_visible = game.metadata["frames"][-1]["hud"]
+            check("public-ammo-matches-visible-hud", last_visible["ammo"] ==
+                  int(inventory[3] if inventory[1] == "Shotgun" else inventory[2]),
+                  visible=last_visible, inventory=game.metadata["inventory"])
         if case in ("carry", "dead-next"):
             check("actual-next-map-spawn", "map=E1M2." in text and game.metadata["finalPosition"] == [-64, 0])
         if case == "missing":

@@ -171,7 +171,13 @@ restart/dead-player changes restore the pistol/default inventory.
 
 [Native weapon orchestration](scripts/native-chaingun.py) requires15 distinct
 fresh full-game processes with original pre-start fixture WADs, native OS input,
-visible HUD/weapon/flash frames and ordinary inventory output. README documents
+visible HUD/weapon/flash frames and ordinary inventory output. The candidate's
+15 cases passed, including seven bullets observed over0.810s of held fire,
+70->68 on a tap, retained cap200 pickup then199->200 consumption, a dropped
+weapon's34->44 bullets, no-ammo/no-flash/no-kill rejection, and fresh/retained
+inventory on the documented lifecycle paths. Final reviewed-source qualification
+also requires public ownership/ammo to match the visible lifecycle observations
+and ordinary clip reload after depletion. README documents
 the exact commands and positive/negative gates, including cap/duplicates,
 pistol/shotgun preservation, first-pair versus held-spread combat, one/zero ammo,
 release/cadence and all carry/reset paths. Original color-coded assets distinguish

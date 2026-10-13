@@ -256,7 +256,7 @@ new. It stops at the first failed scenario without retrying. Native gates cover
 placed/dropped pickups, key selection and pistol/shotgun preservation, shared
 clip/box ammo, cap200 and retained full-ammo duplicate, two-shot tap/release,
 four-tick sustained cadence, first-pair accuracy versus refire spread, combat,
-one/zero-ammo rejection, live/dead restart and living/dead next-map inventory.
+one/zero-ammo rejection and ordinary clip reload, live/dead restart and living/dead next-map inventory.
 Distinct body/flash colors are fixture oracles, **not** original artwork parity.
 Two audio scenarios check successful effect counts/ALSA-null PCM submission
 and one-time missing-sound diagnostics; missing-body/flash diagnostics are also
