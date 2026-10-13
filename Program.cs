@@ -101,6 +101,7 @@ static class Program
                 rendered++;
                 Thread.Sleep(1);
             }
+            if (audio != null) Console.WriteLine($"Audio: {audio.PlayedSounds} sound events, {audio.SubmittedSamples} PCM samples submitted.");
         }
         if (Value("--output") is string output) renderer.SavePpm(output);
         Console.WriteLine($"Rendered {rendered} frames; wall={renderer.VisibleWallPixels}, " +

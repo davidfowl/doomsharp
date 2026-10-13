@@ -92,6 +92,51 @@ public static class SelfTest
         string first = Hash(renderer.Pixels);
         renderer.Render(game);
         Assert(first == Hash(renderer.Pixels), "fixed-state rendering is deterministic");
+        Wad liftWad = new(demo);
+        byte[] sectors = liftWad.Require("SECTORS"), lines = liftWad.Require("LINEDEFS");
+        BinaryPrimitives.WriteInt16LittleEndian(sectors.AsSpan(0), 64);
+        BinaryPrimitives.WriteInt16LittleEndian(sectors.AsSpan(26 + 2), 128);
+        BinaryPrimitives.WriteInt16LittleEndian(sectors.AsSpan(24), 7);
+        BinaryPrimitives.WriteUInt16LittleEndian(lines.AsSpan(2 * 14 + 6), 62);
+        BinaryPrimitives.WriteUInt16LittleEndian(lines.AsSpan(2 * 14 + 8), 7);
+        Game liftGame = new(liftWad, "E1M1");
+        foreach (Actor actor in liftGame.Actors) actor.Removed = true;
+        Input liftInput = new() { Held = Buttons.Forward };
+        for (int i = 0; i < 25; i++) liftGame.Tick(liftInput, 1.0 / 35);
+        liftInput.Held = Buttons.Use; liftGame.Tick(liftInput, 1.0 / 35);
+        liftInput.Held = Buttons.None;
+        for (int i = 0; i < 40; i++) liftGame.Tick(liftInput, 1.0 / 35);
+        Assert(liftGame.Map.Sectors[0].Floor == 0 && liftGame.Feet == 0 &&
+            liftGame.Map.Sectors[0].FloorDirection == 2, "tagged lift lowers, carries player and waits");
+        for (int i = 0; i < 160; i++) liftGame.Tick(liftInput, 1.0 / 35);
+        Assert(liftGame.Map.Sectors[0].Floor == 64 && liftGame.Feet == 64 &&
+            liftGame.Map.Sectors[0].FloorDirection == 0, "lift returns to original height carrying player");
+        Wad teleportWad = new(demo);
+        sectors = teleportWad.Require("SECTORS"); lines = teleportWad.Require("LINEDEFS");
+        BinaryPrimitives.WriteInt16LittleEndian(sectors.AsSpan(26 + 2), 128);
+        BinaryPrimitives.WriteInt16LittleEndian(sectors.AsSpan(2 * 26 + 24), 7);
+        BinaryPrimitives.WriteUInt16LittleEndian(lines.AsSpan(2 * 14 + 6), 97);
+        BinaryPrimitives.WriteUInt16LittleEndian(lines.AsSpan(2 * 14 + 8), 7);
+        byte[] things = teleportWad.Require("THINGS");
+        BinaryPrimitives.WriteUInt16LittleEndian(things.AsSpan(2 * 10 + 6), 14);
+        Game teleportGame = new(teleportWad, "E1M1");
+        foreach (Actor actor in teleportGame.Actors) actor.Removed = true;
+        Input teleportInput = new() { Held = Buttons.Forward };
+        for (int i = 0; i < 40 && teleportGame.Position.X < 400; i++) teleportGame.Tick(teleportInput, 1.0 / 35);
+        Assert(teleportGame.Position == new Vec(450, 128) && teleportGame.Feet == 16 &&
+            Math.Abs(teleportGame.Angle - Math.PI) < .0001, "tagged walk teleport selects destination, floor and angle");
+        Assert(Game.NextMapName("E1M3", true) == "E1M9" && Game.NextMapName("E1M9", false) == "E1M4" &&
+            Game.NextMapName("E2M9", false) == "E2M6" && Game.NextMapName("E1M8", false) == null,
+            "episode secret routing and episode ending");
+        Assert(Game.NextMapName("MAP15", true) == "MAP31" && Game.NextMapName("MAP31", true) == "MAP32" &&
+            Game.NextMapName("MAP32", false) == "MAP16" && Game.NextMapName("MAP30", false) == null,
+            "DOOM II secret routing and campaign ending");
+        Wad skyWad = new(demo);
+        System.Text.Encoding.ASCII.GetBytes("F_SKY1\0\0").CopyTo(skyWad.Require("SECTORS"), 12);
+        Game skyGame = new(skyWad, "E1M1");
+        renderer.Render(skyGame);
+        Assert(renderer.VisiblePlanePixels > 1000 && skyGame.Assets.MissingTextures == 0,
+            "sky ceiling participates in depth without loading a nonexistent sky flat");
         Console.WriteLine($"SELF-TEST PASSED: {checks} behavioral checks; frame SHA256 {first}");
     }
     static string Hash(int[] pixels) => Convert.ToHexString(SHA256.HashData(System.Runtime.InteropServices.MemoryMarshal.AsBytes(pixels.AsSpan())));

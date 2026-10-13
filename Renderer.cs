@@ -6,6 +6,7 @@ public sealed class Renderer
     public int Height { get; }
     public int[] Pixels { get; }
     readonly double[] depth;
+    readonly int[] skyPixels;
     readonly int viewHeight;
     readonly double focal;
     Vec position, forward, right;
@@ -22,7 +23,7 @@ public sealed class Renderer
     {
         Width = width; Height = height; viewHeight = height - height / 8;
         focal = width / 2.0; horizon = viewHeight / 2.0;
-        Pixels = new int[width * height]; depth = new double[width * viewHeight];
+        Pixels = new int[width * height]; depth = new double[width * viewHeight]; skyPixels = new int[width * viewHeight];
     }
 
     public void Render(Game state)
@@ -45,8 +46,10 @@ public sealed class Renderer
             {
                 Vec a = polygon[0], b = polygon[i], c = polygon[i + 1];
                 if (eye > sector.Floor) Plane(a, b, c, sector.Floor, state.Assets.Flat(sector.FloorTexture), sector.Light);
-                if (eye < sector.Ceiling && sector.CeilingTexture != "F_SKY1")
-                    Plane(a, b, c, sector.Ceiling, state.Assets.Flat(sector.CeilingTexture), sector.Light);
+                if (eye < sector.Ceiling)
+                    Plane(a, b, c, sector.Ceiling, sector.CeilingTexture == "F_SKY1" ?
+                        state.Assets.Texture(state.Assets.SkyName) : state.Assets.Flat(sector.CeilingTexture),
+                        sector.Light, sector.CeilingTexture == "F_SKY1");
             }
             for (int i = 0; i < sub.Count; i++) DrawSeg(map.Segs[sub.First + i]);
         }
@@ -69,7 +72,8 @@ public sealed class Renderer
             double angle = game.Angle - Math.Atan((x - Width / 2.0) / focal);
             int sx = (int)(angle / Math.Tau * sky.Width * 4);
             for (int y = 0; y < viewHeight; y++)
-                Pixels[y * Width + x] = Math.Max(0, sky.Sample(sx, Math.Clamp(y * sky.Height / viewHeight, 0, sky.Height - 1)));
+                Pixels[y * Width + x] = skyPixels[y * Width + x] =
+                    Math.Max(0, sky.Sample(sx, Math.Clamp(y * sky.Height / viewHeight, 0, sky.Height - 1)));
         }
     }
 
@@ -79,9 +83,9 @@ public sealed class Renderer
         return new(Vec.Dot(d, right), z - eye, Vec.Dot(d, forward), u, v);
     }
 
-    void Plane(Vec a, Vec b, Vec c, double z, Picture texture, int light)
+    void Plane(Vec a, Vec b, Vec c, double z, Picture texture, int light, bool sky = false)
     {
-        DrawPolygon([World(a, z, a.X, -a.Y), World(b, z, b.X, -b.Y), World(c, z, c.X, -c.Y)], texture, light, 1);
+        DrawPolygon([World(a, z, a.X, -a.Y), World(b, z, b.X, -b.Y), World(c, z, c.X, -c.Y)], texture, light, sky ? 3 : 1);
     }
 
     void DrawSeg(Seg seg)
@@ -174,6 +178,11 @@ public sealed class Renderer
                 double distance = 1 / inverse;
                 int index = y * Width + x;
                 if (distance >= depth[index]) continue;
+                if (kind == 3)
+                {
+                    depth[index] = distance; Pixels[index] = skyPixels[index]; VisiblePlanePixels++;
+                    continue;
+                }
                 int u = (int)Math.Floor((w0 * a.U + w1 * b.U + w2 * c.U) * distance);
                 int v = (int)Math.Floor((w0 * a.V + w1 * b.V + w2 * c.V) * distance);
                 if (kind == 2 && (u < 0 || v < 0 || u >= texture.Width || v >= texture.Height)) continue;

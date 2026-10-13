@@ -13,6 +13,9 @@ public sealed class Audio : IDisposable
     readonly IAudioDevice device;
     volatile bool stop;
     volatile Exception? failure;
+    long submittedSamples;
+    public long SubmittedSamples => Interlocked.Read(ref submittedSamples);
+    public int PlayedSounds { get; private set; }
 
     public Audio(Assets assets)
     {
@@ -28,6 +31,7 @@ public sealed class Audio : IDisposable
         if (failure != null) throw new InvalidOperationException("Audio playback failed; use --no-audio if no audio device is available.", failure);
         if (!sounds.TryGetValue(name, out short[]? sound)) { sound = assets.Sound(name); sounds[name] = sound; }
         if (sound == null) return;
+        PlayedSounds++;
         lock (gate)
         {
             if (voices.Count == 16) voices.RemoveAt(0);
@@ -39,6 +43,7 @@ public sealed class Audio : IDisposable
         try
         {
             short[] output = new short[512];
+            System.Diagnostics.Stopwatch clock = System.Diagnostics.Stopwatch.StartNew();
             while (!stop)
             {
                 Array.Clear(output);
@@ -55,6 +60,9 @@ public sealed class Audio : IDisposable
                     }
                 }
                 device.Write(output);
+                long total = Interlocked.Add(ref submittedSamples, output.Length);
+                double wait = total / (double)SampleRate - clock.Elapsed.TotalSeconds;
+                if (wait > .001) Thread.Sleep((int)(wait * 1000));
             }
         }
         catch (Exception ex)

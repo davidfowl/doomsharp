@@ -32,7 +32,7 @@ public static class Demo
         byte[] Monster(char frame) => Patch(32, 56, 16, 56, (x, y) =>
             Math.Pow((x - 16) / 14.0, 2) + Math.Pow((y - 28) / 27.0, 2) > 1 ? null :
             (byte)(y is > 10 and < 17 && x is > 7 and < 24 ? 230 : 60 + (frame - 'A') * 10));
-        foreach (char frame in "ABCDGHIJKL") Raw($"POS S{frame}0".Replace(" ", ""), Monster(frame));
+        foreach (char frame in "ABCDGHIJKL") Raw($"POSS{frame}0", Monster(frame));
         Raw("SHOTA0", Patch(40, 16, 20, 16, (x, y) => y is >= 6 and <= 10 ? (byte)220 : null));
         Raw("CLIPA0", Patch(12, 16, 6, 16, (x, y) => (byte)(x == 0 || y == 0 ? 200 : 100)));
         Raw("BKEYA0", Patch(12, 16, 6, 16, (x, y) => (byte)240));
@@ -42,7 +42,7 @@ public static class Demo
         Raw("SHTGA0", Patch(70, 65, 35, 65, (x, y) => x >= 28 && x <= 42 ? (byte)(y < 40 ? 210 : 80) : null));
         Raw("SHTGB0", Patch(70, 65, 35, 65, (x, y) => x >= 23 && x <= 47 ? (byte)(y < 20 ? 255 : 180) : null));
         Raw("BAL1A0", Patch(12, 12, 6, 12, (x, y) => Math.Pow(x - 6, 2) + Math.Pow(y - 6, 2) < 30 ? (byte)250 : null));
-        foreach (string sound in new[] { "PISTOL", "SHOTGN", "DOROPN", "DORCLS", "ITEMUP", "POPAIN", "PODTH1", "PLPAIN", "PLDETH", "NOWAY", "SWTCHN", "BAREXP", "FIRSHT", "FIRXPL" })
+        foreach (string sound in new[] { "PISTOL", "SHOTGN", "DOROPN", "DORCLS", "ITEMUP", "POPAIN", "PODTH1", "PLPAIN", "PLDETH", "NOWAY", "SWTCHN", "BAREXP", "FIRSHT", "FIRXPL", "TELEPT", "PSTART", "PSTOP" })
             Add("DS" + sound, w =>
             {
                 const int n = 2205;

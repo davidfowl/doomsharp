@@ -33,6 +33,17 @@ jobs:
           if [[ "${{ runner.os }}" == "Windows" ]]; then executable="${executable}.exe"; fi
           "$executable" --self-test
           "$executable" --demo --headless --frames 35 --output artifacts/demo.ppm
+      - name: Exercise native desktop backend
+        shell: bash
+        run: |
+          executable="artifacts/${{ matrix.rid }}/DoomSharp"
+          if [[ "${{ runner.os }}" == "Linux" ]]; then
+            xvfb-run -a "$executable" --demo --no-audio --frames 35 --output artifacts/desktop.ppm
+          elif [[ "${{ runner.os }}" == "Windows" ]]; then
+            "${executable}.exe" --demo --no-audio --frames 35 --output artifacts/desktop.ppm
+          else
+            "$executable" --demo --no-audio --frames 35 --output artifacts/desktop.ppm
+          fi
       - uses: actions/upload-artifact@v4
         with:
           name: doomsharp-${{ matrix.rid }}

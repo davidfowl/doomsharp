@@ -77,6 +77,7 @@ public sealed class Game
     Buttons previous;
     double damageTick, messageTime;
     public int UnsupportedThings { get; private set; }
+    bool secretExit;
 
     public Game(Wad wad, string map)
     {
@@ -94,7 +95,7 @@ public sealed class Game
         UnsupportedThings = 0;
         foreach (Thing thing in Map.Things)
         {
-            if (thing.Type is >= 1 and <= 4 or 11 || (thing.Flags & 16) != 0 || (thing.Flags & 2) == 0) continue;
+            if (thing.Type is >= 1 and <= 4 or 11 or 14 || (thing.Flags & 16) != 0 || (thing.Flags & 2) == 0) continue;
             Actor? actor = CreateActor(thing);
             if (actor == null)
             {
@@ -213,6 +214,7 @@ public sealed class Game
         }
         input.MouseX = 0;
         UpdateDoors(dt);
+        UpdateFloors(dt);
         foreach (Actor actor in Actors.ToArray()) UpdateActor(actor, dt);
         UpdateProjectiles(dt);
     }
@@ -242,12 +244,18 @@ public sealed class Game
     void Use()
     {
         Vec end = Position + new Vec(Math.Cos(Angle), Math.Sin(Angle)) * 72;
-        Line? best = null; double nearest = 2;
-        foreach (Line l in Map.Lines)
-            if (Map.Intersects(Position, end, Map.Vertices[l.A], Map.Vertices[l.B], out double t) && t < nearest)
-            { nearest = t; best = l; }
-        if (best == null) { PlaySound?.Invoke("NOWAY"); return; }
-        Activate(best, false);
+        List<(Line Line, double Distance)> hits = [];
+        foreach (Line line in Map.Lines)
+            if (Map.Intersects(Position, end, Map.Vertices[line.A], Map.Vertices[line.B], out double t))
+                hits.Add((line, t));
+        foreach (var hit in hits.OrderBy(h => h.Distance))
+        {
+            if (hit.Line.Special != 0) { Activate(hit.Line, false); return; }
+            if (hit.Line.Left == 65535) break;
+            Sector a = Map.Sectors[Map.Sides[hit.Line.Right].Sector], b = Map.Sectors[Map.Sides[hit.Line.Left].Sector];
+            if (Math.Min(a.Ceiling, b.Ceiling) <= Math.Max(a.Floor, b.Floor)) break;
+        }
+        PlaySound?.Invoke("NOWAY");
     }
 
     void CrossLines(Vec old, Vec next)
@@ -256,7 +264,31 @@ public sealed class Game
             if (l.Special != 0 && Map.Intersects(old, next, Map.Vertices[l.A], Map.Vertices[l.B], out double t) &&
                 t > 0 && Vec.Cross(Map.Vertices[l.B] - Map.Vertices[l.A], old - Map.Vertices[l.A]) *
                 Vec.Cross(Map.Vertices[l.B] - Map.Vertices[l.A], next - Map.Vertices[l.A]) < 0)
+            {
+                if (CrossingTeleport(l, old)) break;
                 Activate(l, true);
+            }
+    }
+
+    bool CrossingTeleport(Line line, Vec old)
+    {
+        if (line.Special is not (39 or 97) ||
+            Vec.Cross(Map.Vertices[line.B] - Map.Vertices[line.A], old - Map.Vertices[line.A]) >= 0) return false;
+        foreach (Thing destination in Map.Things.Where(t => t.Type == 14))
+        {
+            Sector sector = Map.Sectors[Map.FindSector(destination.Position)];
+            if (line.Tag == 0 || sector.Tag != line.Tag) continue;
+            if (!Map.CanMove(destination.Position, destination.Position, 16, 56, sector.Floor) ||
+                Actors.Any(a => !a.Removed && a.Solid && a.Health > 0 &&
+                    (a.Position - destination.Position).Length < a.Radius + 16))
+            { Say("TELEPORT DESTINATION BLOCKED"); return true; }
+            Position = destination.Position; Feet = sector.Floor; Angle = destination.Angle * Math.PI / 180;
+            PickupFlash = .3; PlaySound?.Invoke("TELEPT");
+            if (line.Special == 39) line.Special = 0;
+            return true;
+        }
+        Say("TELEPORT HAS NO TAGGED DESTINATION");
+        return true;
     }
 
     void Activate(Line line, bool crossing)
@@ -264,8 +296,10 @@ public sealed class Game
         int special = line.Special;
         if ((!crossing && special is 11 or 51) || (crossing && special is 52 or 124))
         {
-            Finished = true; Say("LEVEL COMPLETE - FIRE TO CONTINUE"); PlaySound?.Invoke("SWTCHN"); return;
+            Finished = true; secretExit = special is 51 or 124;
+            Say("LEVEL COMPLETE - FIRE TO CONTINUE"); PlaySound?.Invoke("SWTCHN"); return;
         }
+        if (ActivateFloor(line, crossing)) return;
         bool door = crossing ? special is 2 or 3 or 4 or 16 or 86 or 90 :
             special is 1 or 26 or 27 or 28 or 31 or 32 or 33 or 34 or 29 or 63 or 103 or 111 or 112 or 113;
         if (!door)
@@ -287,6 +321,79 @@ public sealed class Game
             PlaySound?.Invoke(sector.DoorDirection > 0 ? "DOROPN" : "DORCLS");
         }
         if (special is 2 or 3 or 4 or 16 or 29 or 31 or 32 or 33 or 34 or 103 or 111 or 112 or 113) line.Special = 0;
+    }
+
+    IEnumerable<int> TaggedSectors(Line line) => Enumerable.Range(0, Map.Sectors.Length)
+        .Where(i => line.Tag != 0 && Map.Sectors[i].Tag == line.Tag);
+
+    IEnumerable<int> Neighbors(int sector)
+    {
+        foreach (int index in Map.SectorLines[sector])
+        {
+            Line line = Map.Lines[index];
+            if (line.Left == 65535) continue;
+            int right = Map.Sides[line.Right].Sector, left = Map.Sides[line.Left].Sector;
+            int other = right == sector ? left : right;
+            if (other != sector) yield return other;
+        }
+    }
+
+    bool ActivateFloor(Line line, bool crossing)
+    {
+        int special = line.Special;
+        bool lift = crossing ? special is 10 or 88 or 120 or 121 : special is 21 or 62 or 122 or 123;
+        bool lower = crossing ? special is 38 or 82 : special is 23 or 60;
+        bool raiseNext = crossing ? special is 119 or 128 : special is 18 or 69;
+        bool raise24 = crossing && special is 58 or 92;
+        if (!lift && !lower && !raiseNext && !raise24) return false;
+        bool activated = false;
+        foreach (int i in TaggedSectors(line))
+        {
+            Sector sector = Map.Sectors[i];
+            if (sector.FloorDirection != 0) continue;
+            double[] heights = Neighbors(i).Select(n => Map.Sectors[n].Floor).ToArray();
+            double target = raise24 ? sector.Floor + 24 : raiseNext
+                ? heights.Where(h => h > sector.Floor).DefaultIfEmpty(sector.Floor).Min()
+                : heights.Append(sector.Floor).Min();
+            if (target == sector.Floor) continue;
+            sector.FloorOrigin = sector.Floor; sector.FloorTarget = target;
+            sector.FloorDirection = target > sector.Floor ? 1 : -1;
+            sector.Lift = lift; sector.LiftWait = 3;
+            sector.FloorSpeed = special is 120 or 121 or 122 or 123 ? 140 : lift ? 70 : 35;
+            activated = true;
+        }
+        if (activated)
+        {
+            PlaySound?.Invoke("PSTART");
+            if (special is 10 or 21 or 120 or 122 or 38 or 23 or 119 or 18 or 58) line.Special = 0;
+        }
+        return true;
+    }
+
+    void UpdateFloors(double dt)
+    {
+        for (int i = 0; i < Map.Sectors.Length; i++)
+        {
+            Sector sector = Map.Sectors[i];
+            if (sector.FloorDirection == 0) continue;
+            if (sector.FloorDirection == 2)
+            {
+                sector.LiftWait -= dt;
+                if (sector.LiftWait <= 0) { sector.FloorTarget = sector.FloorOrigin; sector.FloorDirection = 1; }
+                continue;
+            }
+            double next = sector.Floor + sector.FloorDirection * sector.FloorSpeed * dt;
+            next = sector.FloorDirection > 0 ? Math.Min(next, sector.FloorTarget) : Math.Max(next, sector.FloorTarget);
+            bool playerOn = Map.FindSector(Position) == i;
+            bool occupied = playerOn && Health > 0 ||
+                Actors.Any(a => a.Solid && !a.Removed && a.Health > 0 && Map.FindSector(a.Position) == i);
+            if (next > sector.Floor && occupied && sector.Ceiling - next < 56) continue;
+            sector.Floor = next;
+            if (playerOn) Feet = next;
+            if (next != sector.FloorTarget) continue;
+            sector.FloorDirection = sector.Lift && next != sector.FloorOrigin ? 2 : 0;
+            PlaySound?.Invoke("PSTOP");
+        }
     }
 
     void UpdateDoors(double dt)
@@ -474,10 +581,25 @@ public sealed class Game
 
     void NextMap()
     {
-        List<string> maps = Wad.Maps;
-        int index = maps.IndexOf(Map.Name);
-        if (index + 1 >= maps.Count) { Say("END OF AVAILABLE MAPS - R TO REPLAY"); return; }
-        Load(maps[index + 1], false);
+        string? next = NextMapName(Map.Name, secretExit);
+        if (next == null || !Wad.Maps.Contains(next)) { Say("END OF AVAILABLE MAPS - R TO REPLAY"); return; }
+        Load(next, false);
+    }
+
+    public static string? NextMapName(string current, bool secret)
+    {
+        if (current.StartsWith('E'))
+        {
+            int episode = current[1] - '0', level = current[3] - '0';
+            if (secret) return $"E{episode}M9";
+            if (level == 8) return null;
+            int next = level == 9 ? episode switch { 1 => 4, 2 => 6, 3 => 7, 4 => 3, _ => 1 } : level + 1;
+            return $"E{episode}M{next}";
+        }
+        int number = int.Parse(current.AsSpan(3), System.Globalization.CultureInfo.InvariantCulture);
+        if (secret && number is 15 or 31) return number == 15 ? "MAP31" : "MAP32";
+        if (number == 30) return null;
+        return $"MAP{(number is 31 or 32 ? 16 : number + 1):D2}";
     }
 
     void Load(string name, bool reset)
@@ -487,7 +609,7 @@ public sealed class Game
         {
             Health = 100; Armor = 0; Bullets = 50; Shells = 0; HasShotgun = false; ShotgunSelected = false;
         }
-        Keys = 0; Kills = 0; Secrets = 0; Time = 0; FireTime = 0; Finished = false;
+        Keys = 0; Kills = 0; Secrets = 0; Time = 0; FireTime = 0; Finished = false; secretExit = false;
         DamageFlash = 0; PickupFlash = 0; damageTick = 0; WalkTime = 0;
         Spawn(); Say(name);
     }

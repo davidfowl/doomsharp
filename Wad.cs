@@ -60,6 +60,9 @@ public sealed class Sector
     public readonly int Light, Special, Tag;
     public double DoorTime;
     public int DoorDirection;
+    public double FloorTarget, FloorOrigin, LiftWait, FloorSpeed;
+    public int FloorDirection;
+    public bool Lift;
     public Sector(byte[] b, int p)
     {
         Floor = Wad.I16(b, p); Ceiling = OriginalCeiling = Wad.I16(b, p + 2);

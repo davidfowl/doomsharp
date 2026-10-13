@@ -46,7 +46,8 @@ the mouse, then use mouse movement to turn and the left button or Ctrl to fire.
 E/Space uses a door or switch, Shift runs, 1 selects pistol, 2 selects an acquired
 shotgun, Tab toggles the automap, R restarts, and Esc quits. Losing window focus
 releases mouse capture and held keys. After an exit, fire/use advances to the next
-map in WAD directory order.
+map using classic episode/DOOM II normal and secret exit routes. Episode finales
+stop at the completion screen; start another episode with `--map E2M1`, etc.
 
 ## Implemented
 
@@ -58,7 +59,8 @@ map in WAD directory order.
 - Pistol/shotgun hitscan, ammo, health/armor, keys, pickups, barrels, enemy deaths
   and drops; simplified enemy chase, melee, hitscan and projectile attacks.
 - Common manual/tagged doors, key checks, door obstruction reopening, use/walk
-  exits, damaging floors, secrets, death/restart and map progression.
+  exits, tagged lower/wait/raise lifts, lower-to-lowest and raise-to-next/24 floors,
+  tagged walk teleports, damaging floors, secrets, death/restart and map progression.
 - WAD DMX sound decoding/resampling and a 16-voice native PCM effects mixer.
 - HUD, weapon overlays, automap, headless framebuffer export, original demo and
   package-free deterministic behavioral tests.
@@ -72,7 +74,7 @@ proprietary WAD, original DOOM source, or third-party engine is included here.
 The renderer uses our own triangle rasterizer rather than ported DOOM code.
 
 Map loading/rendering does **not** prove a whole campaign is completable. The
-engine does not yet implement lifts, moving floors/stairs/crushers, teleports,
+engine does not yet implement stairs/crushers, every lift/moving-floor variant,
 all switch/trigger specials, switch-texture changes, exact monster state tables,
 monster infighting, boss scripts, all weapons/powerups, original physics/RNG,
 animated textures/flats, music/MUS playback, savegames, menus or multiplayer.
@@ -80,8 +82,9 @@ Some original decorations and item types are omitted with explicit diagnostics.
 DOOM II enemies use approximate behaviors; rotations/animation are preliminary.
 Only the medium-skill single-player thing flags are selected. No PWAD overlay
 stack, Hexen/UDMF maps, extended BSP nodes, Boom/MBF/DEHACKED behavior or mods.
-DOOM episode secret/normal routing is not yet implemented: progression follows
-directory order. Missing textures show an explicitly logged diagnostic pattern.
+Teleport destination blockers are rejected rather than telefragged. Moving
+floors are non-crushing and enemy/player behavior is approximate. Missing textures
+show an explicitly logged diagnostic pattern.
 These gaps can block authentic WAD progression; **full original-DOOM parity is
 unfinished**.
 
@@ -104,5 +107,5 @@ map at its player start, reporting unsupported things and missing textures.
 desktop runs. PPM exports contain only the assets from the WAD you supply.
 
 CI builds and publishes Native AOT separately on Linux, Windows and macOS and
-runs the behavioral tests and headless demo on each. A passing headless job is
-not evidence of native window/audio runtime behavior on that platform.
+runs the behavioral tests, headless demo and a bounded native desktop smoke run
+on each. A smoke window is not evidence of interactive input or audible sound.
