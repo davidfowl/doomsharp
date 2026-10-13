@@ -311,14 +311,21 @@ def run(args):
             check("shotgun-selection-retains-shells", values["ammo"] == 7 and colors(final)["111"] > 1000, **values)
         elif case in ("cadence", "missing"):
             game.key("Control_L", True)
-            time.sleep(.04)
-            first, first_hud = observe("02-first-shot")
-            time.sleep(.10)
-            second, second_hud = observe("03-second-shot")
-            if case == "cadence":
-                check("distinct-body-and-flash-phases", colors(first)["151"] > 1000 and
-                      colors(first)["237"] > 100 and colors(second)["173"] > 1000 and
-                      colors(second)["219"] > 100, first=colors(first), second=colors(second))
+            phases = {}
+            for index in range(10):
+                time.sleep(.04)
+                sampled, second_hud = observe(f"02-fire-phase-{index:02}")
+                rendered = colors(sampled)
+                if rendered["151"] > 1000 and (
+                        rendered["237"] > 100 if case == "cadence" else second_hud["ammo"] < 70):
+                    phases.setdefault("first", sampled)
+                if rendered["219"] > 100 and (case == "missing" or rendered["173"] > 1000):
+                    phases.setdefault("second", sampled)
+                if len(phases) == 2:
+                    break
+            check("distinct-body-and-flash-phases" if case == "cadence" else "real-flash-with-missing-body",
+                  len(phases) == 2, phases={key: colors(value) for key, value in phases.items()})
+            second = phases["second"]
             time.sleep(.8)
             _, held = observe("04-held")
             delta = game.metadata["frames"][-1]["seconds"] - game.metadata["frames"][-2]["seconds"]
