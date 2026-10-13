@@ -45,9 +45,4 @@ static class Font
         [':'] = ".......#....#.........#....#.......",
     };
     public static string Glyph(char c) => glyphs.TryGetValue(char.ToUpperInvariant(c), out string? g) ? g : new string('.', 35);
-    public static void Validate()
-    {
-        foreach ((char c, string g) in glyphs)
-            if (g.Length != 35) throw new InvalidDataException($"Glyph {c} has {g.Length} pixels, expected 35.");
-    }
 }

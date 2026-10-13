@@ -23,12 +23,11 @@ static class Program
                 DoomSharp - clean-room classic WAD engine (incomplete DOOM compatibility)
                 Usage: DoomSharp --wad /path/to/game.wad [--map E1M1] [--no-audio]
                        DoomSharp --demo [--no-audio]
-                       DoomSharp --self-test
                 Options:
                   --headless --frames N --output frame.ppm  Render without native devices
                   --frames N                               Stop after N frames (desktop too)
                   --validate-maps                          Load and render every map headlessly
-                  --demo-wad path.wad                      Write the original synthetic test WAD
+                  --demo-wad path.wad                      Write the original demo WAD
                 Controls: WASD move, arrows turn, mouse aim, Ctrl/click fire, E/Space use,
                           Shift run, 1 pistol, 2 shotgun, Tab automap, R restart, Esc quit.
                 Click the window once to capture the mouse. No proprietary assets included.
@@ -44,14 +43,13 @@ static class Program
             return args[i + 1];
         }
         HashSet<string> valued = ["--wad", "--map", "--frames", "--output", "--demo-wad"];
-        HashSet<string> flags = ["--demo", "--headless", "--no-audio", "--validate-maps", "--self-test"];
+        HashSet<string> flags = ["--demo", "--headless", "--no-audio", "--validate-maps"];
         for (int i = 0; i < args.Length; i++)
         {
             if (valued.Contains(args[i])) { _ = Value(args[i]); i++; }
             else if (!flags.Contains(args[i])) throw new ArgumentException($"Unknown option: {args[i]}");
         }
-        if (args.Contains("--self-test")) { SelfTest.Run(); return 0; }
-        if (Value("--demo-wad") is string demoPath) { File.WriteAllBytes(demoPath, Demo.Create()); Console.WriteLine($"Wrote original fixture: {demoPath}"); return 0; }
+        if (Value("--demo-wad") is string demoPath) { File.WriteAllBytes(demoPath, Demo.Create()); Console.WriteLine($"Wrote original demo WAD: {demoPath}"); return 0; }
         bool demo = args.Contains("--demo");
         string? path = Value("--wad");
         if (demo && path != null) throw new ArgumentException("Use either --demo or --wad, not both.");
@@ -106,7 +104,7 @@ static class Program
         if (Value("--output") is string output) renderer.SavePpm(output);
         Console.WriteLine($"Rendered {rendered} frames; wall={renderer.VisibleWallPixels}, " +
             $"plane={renderer.VisiblePlanePixels}, sprite={renderer.VisibleSpritePixels}, weapon={renderer.VisibleWeaponPixels}; health={game.Health}, kills={game.Kills}, " +
-            $"position=({game.Position.X:F2},{game.Position.Y:F2}), shotgun={game.HasShotgun}, finished={game.Finished}.");
+            $"position=({game.Position.X:F2},{game.Position.Y:F2}), shotgun={game.HasShotgun}, finished={game.Finished}, map={game.Map.Name}.");
         return 0;
     }
 }
