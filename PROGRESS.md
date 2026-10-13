@@ -35,6 +35,7 @@ historical failures or independent downloaded-CI qualification.
 | Classic WAD loading and BSP textured geometry | Working (limited coverage) | CI renders the generated demo; engine PR #1 reports 68 Freedoom map-start renders, not campaign completion; no extended map formats |
 | Basic pistol/shotgun loop | Partial | Native demo observes shotgun pickup/kill/live restart; no current exact damage/RNG or complete pistol/all-weapon acceptance |
 | Chaingun pickup/fire/inventory | Partial | Type2002 and chaingunner drop, key4, shared bullets, four-tick shots/two-shot pairs and supplied body/flash patches; dedicated Linux executable scenarios below, not exact original timing/RNG/visual parity or broad platform gameplay |
+| Rocket launcher/inventory/projectiles | Partial | Type2003/key5, separate2010/2046 ammo/cap50, real20-unit/tick swept missiles, direct/occluded radial damage and supplied weapon/flight/explosion patches; bounded native scenarios described below, not exact original autoaim/windup/RNG/visual or campaign parity |
 | Movement, collision and sector actions | Partial | Native door/lift paths and selected boundaries; tagged locked fast-door99/133-137 action scope has dedicated executable scenarios below, not every mover/trigger |
 | Map progression and damaging exits | Partial | Native Linux input observes E1M1 to E1M2 with inventory/health retained; local classic-map scenarios qualify sector-11 damage/exit, fresh dead-player next-map state and finale/missing-map stop; not original campaign completion |
 | Actors, sprites, pickups and barrels | Partial | Native demo observes pickup and one enemy kill; exact states/attacks, infighting, boss behavior and many item/visual cases remain unfinished or unverified |
@@ -197,6 +198,34 @@ The same-weapon collector now requires a visible centered target after ordinary
 strafing, two seconds of empty fire with no kill/flash, then ordinary clip pickup
 and two accurate pairs killing that target. This strengthens qualification
 without changing engine behavior or weakening existing gates.
+
+The rocket increment adds actual moving player missiles, not renamed bullets.
+At35Hz, travel is20 units/tick and shot spacing20 ticks; contact sweeps the
+radius11/height8 body against closed geometry and solid actors, chooses the
+first hit, and applies20-160 direct plus bounded128-unit occluded splash damage,
+including self-damage and barrel chains. Impact damage is applied once, followed
+by8/6/4-tick explosion frames and removal. Type2003/2010/2046 pickups provide
+2/1/5 rockets up to50, with separate ammo and living carry/reset semantics.
+Real `MISG`/`MISF`/rotated `MISLA`/`MISLB`-`MISLD` WAD patches and launch/blast
+sounds are used; missing assets are explicitly diagnosed. Existing monster
+projectiles retain their speed/damage/art and now also use swept player contacts.
+
+[Native rocket orchestration](scripts/native-rockets.py) defines21 fresh
+full-game cases using ordinary OS input and visible output. It includes a
+400-health direct target (three maximum128-point blasts alone cannot kill it),
+aligned dry-fire target then ordinary rocket reload, bullet-clip non-refill
+control, near/far and wall-shielded splash with surviving-target hitscan controls,
+closed thin-wall versus open-boundary movement, exactly-once self-damage/cleanup,
+all supplied firing/explosion phases, projected travel speed and held cadence,
+cap/duplicates, lifecycle, barrel and existing monster-projectile preservation.
+README has the normal build/generation/run commands and precise gates.
+These are local Linux virtual-X11 executable gates, not a natural-map campaign,
+physical input, audible audio or Windows/macOS gameplay qualification. ALSA null
+only establishes submitted PCM; CI's three-host AOT/demo/presentation scope is
+unchanged. Horizontal/no-autoaim fire, immediate launch rather than exact
+original windup, Euclidean blast distance, BCL RNG, absent backpack/skill
+multipliers and incomplete weapon raise/lower/visual timing remain limitations.
+The independent frozen navigation qualifier is not repinned or replayed.
 
 | Platform / architecture | Build evidence | Runtime evidence |
 | --- | --- | --- |

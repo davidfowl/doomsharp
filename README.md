@@ -46,7 +46,8 @@ not silently treated as success. Run macOS from a graphical login session.
 WASD moves and strafes; arrows turn (up/down also move). Click once to capture
 the mouse, then use mouse movement to turn and the left button or Ctrl to fire.
 E/Space uses a door or switch, Shift runs, 1 selects pistol, 2 selects an acquired
-shotgun, 4 selects an acquired chaingun, Tab toggles the automap, R restarts, and Esc quits. Losing window focus
+shotgun, 4 selects an acquired chaingun, 5 selects an acquired rocket launcher,
+Tab toggles the automap, R restarts, and Esc quits. Losing window focus
 releases mouse capture and held keys. After an exit, fire/use advances to the next
 map using classic episode/DOOM II normal and secret exit routes. Episode finales
 stop at the completion screen; start another episode with `--map E2M1`, etc.
@@ -64,6 +65,8 @@ of offering a nonexistent continuation.
 - Cylinder/wall and actor collision, sliding and 24-unit steps, sector headroom.
 - Pistol/shotgun/chaingun hitscan, ammo, health/armor, keys, pickups, barrels, enemy deaths
   and drops; simplified enemy chase, melee, hitscan and projectile attacks.
+- Rocket launcher pickups, separate rocket ammo, swept moving missiles and
+  direct/radial impacts, including wall occlusion, self-damage and barrel chains.
 - Common manual/tagged doors, key checks, door obstruction reopening, use/walk
   exits, tagged lower/wait/raise lifts, lower-to-lowest and raise-to-next/24 floors,
   tagged walk teleports, damaging floors, secrets, death/restart and map progression.
@@ -86,6 +89,25 @@ are diagnosed, not replaced with pistol artwork. An unowned selection or empty
 weapon gives explicit feedback; empty fire causes no damage/ammo underflow.
 Automatic empty-weapon/fist fallback, weapon raising/lowering, original autoaim,
 RNG and exact original-game timing/visual comparison remain unfinished.
+
+The rocket launcher uses its own pool (capacity50): type2003 grants2 rockets,
+type2010 grants1 and type2046 grants5. New ownership selects the weapon even at
+full ammo; owned full-ammo pickups remain, and duplicates refill without forcing
+selection. Living next-map transitions carry ownership/ammo; restart or dead-player
+transitions reset them. Empty fire gives feedback without a missile or flash.
+At35Hz, rockets travel20 map units per tick and successful shots are20 ticks
+apart. Release stops refire; selection waits for the started firing cycle.
+Swept radius11/height8 missiles choose the first geometry or solid-actor contact,
+apply20-160 direct damage to shootable targets and a bounded128-unit blast with
+distance/radius falloff, line-of-sight occlusion and player self-damage. Barrel
+chains share the blast helper. Explosion damage runs once, with18 ticks of
+supplied `MISLB0`/`MISLC0`/`MISLD0` animation before removal. Flight uses the real
+eight-way `MISLA` patches, including combined/mirrored rotation lumps. Supplied
+`MISGA0`/`MISGB0` and `MISFA0`-`MISFD0` weapon patches and `DSRLAUNC`/`DSBAREXP`
+effects are used; missing assets are explicitly diagnosed, not invented.
+Horizontal firing/no autoaim, immediate launch rather than exact original windup,
+Euclidean blast falloff, BCL RNG, absent backpack/skill multipliers and incomplete
+raise/lower/visual parity remain limitations.
 
 ## Compatibility limits
 
@@ -270,3 +292,47 @@ Inputs, frames, events, stdout/stderr, collector outcomes and source/executable/
 fixture/runner hashes are retained locally, not bundled or implied public raw
 downloads. Existing three-OS CI remains native demo/headless/desktop smoke,
 not this weapon corpus.
+
+### Native rocket-launcher qualification
+
+[Original rocket orchestration](scripts/native-rockets.py) exercises the full
+published executable, not engine methods. From a clean checkout, generate the
+unchanged publisher assets first, then use new output directories:
+
+```sh
+dotnet publish -c Release -r linux-x64 -o artifacts/linux-x64
+dotnet run --project tools/e2e-fixtures/FixtureGenerator.csproj -c Release
+python3 scripts/native-rockets.py generate --output-dir artifacts/rocket-inputs
+python3 scripts/native-rockets.py qualify artifacts/linux-x64/DoomSharp \
+  --source-commit "$(git rev-parse HEAD)" --input-dir artifacts/rocket-inputs \
+  --output-dir artifacts/rocket-native
+```
+
+The runner starts its own isolated Xvfb; do not wrap it in `xvfb-run`.
+Its21 distinct fresh native cases cover pickup/key5 and all existing weapon
+pools, missile/box ammo and cap50/duplicates, visible travel before damage,
+direct damage beyond what three128-point blasts can kill, a miss with a
+hittable-target positive control, near/far splash and a wall-shielded target
+with an ordinary hitscan positive control. A closed zero-thickness wall at X85
+must impact on the near side: player health100->30, no behind-wall kill; its
+open-boundary twin must let the projectile through. Depletion aligns a visible
+live target before two seconds of empty fire, checks no projectile/flash/kill,
+demonstrates that a bullet clip does not refill rockets, then collects ordinary
+rocket ammo and kills that same target.
+
+The real colored WAD patches distinguish all four muzzle-flash and three
+explosion phases. A known16-unit patch's changing native projected width gives
+a700-unit/s flight interval with one35Hz-tick and two-native-pixel uncertainty;
+four missiles over two seconds qualify the20-tick firing cadence. Release,
+single impact/despawn, living carry, live/dead restart, dead-player next-map
+defaults, barrel chains, existing monster projectiles and explicit missing
+patch/sound diagnostics have separate gates. Two cases count launch/explosion
+effects and PCM submitted to ALSA null, **not audible output**.
+
+These original sparse-BSP synthetic fixtures are bounded weapon oracles, not
+original campaign maps/artwork, exact original timing/RNG/visual parity or
+physical/broad-OS gameplay proof. Failures stop the matrix and retain raw frames,
+events, summaries, exit codes and source/executable/input/runner hashes; no
+unchanged retry is performed. Local raw packets remain worker-local unless
+explicitly published. The unchanged three-host CI covers AOT/demo/presentation,
+not this dedicated rocket corpus or the independent frozen navigation route.

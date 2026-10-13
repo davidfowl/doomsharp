@@ -31,6 +31,7 @@ static class Platform
         '1' => Buttons.Pistol,
         '2' => Buttons.Shotgun,
         '4' => Buttons.Chaingun,
+        '5' => Buttons.RocketLauncher,
         '\t' => Buttons.Map,
         _ => Buttons.None
     };

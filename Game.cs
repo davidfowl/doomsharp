@@ -5,10 +5,10 @@ public enum Buttons
 {
     None = 0, Forward = 1, Back = 2, Left = 4, Right = 8, TurnLeft = 16, TurnRight = 32,
     Fire = 64, Use = 128, Run = 256, Restart = 512, Pistol = 1024, Shotgun = 2048, Map = 4096,
-    Chaingun = 8192
+    Chaingun = 8192, RocketLauncher = 16384
 }
 
-public enum Weapon { Pistol, Shotgun, Chaingun }
+public enum Weapon { Pistol, Shotgun, Chaingun, RocketLauncher }
 
 public sealed class Input
 {
@@ -44,6 +44,8 @@ public sealed class Projectile
 {
     public Vec Position, Velocity;
     public double Z, Time = 5;
+    public bool Rocket, Exploded;
+    public int ExplosionTicks;
 }
 
 public sealed class Game
@@ -59,13 +61,20 @@ public sealed class Game
     public int Armor { get; private set; }
     public int Bullets { get; private set; } = 50;
     public int Shells { get; private set; }
+    public int Rockets { get; private set; }
     public bool HasShotgun { get; private set; }
     public bool HasChaingun { get; private set; }
+    public bool HasRocketLauncher { get; private set; }
     public Weapon SelectedWeapon { get; private set; }
     public bool ShotgunSelected => SelectedWeapon == Weapon.Shotgun;
     public int ChaingunFrame { get; private set; }
     public int ChaingunFlashFrame { get; private set; }
     public int ChaingunFlashTicks { get; private set; }
+    public int RocketFireTicks { get; private set; }
+    public int Ammo => SelectedWeapon switch
+    {
+        Weapon.Shotgun => Shells, Weapon.RocketLauncher => Rockets, _ => Bullets
+    };
     public int Keys { get; private set; }
     public int Kills { get; private set; }
     public int TotalEnemies => Actors.Count(a => a.Enemy);
@@ -140,6 +149,9 @@ public sealed class Game
         64 => new(t, "VILE", true, true, 20, 700),
         2001 => new(t, "SHOT", false, false, 16, 1),
         2002 => new(t, "MGUN", false, false, 16, 1),
+        2003 => new(t, "LAUN", false, false, 16, 1),
+        2010 => new(t, "ROCK", false, false, 16, 1),
+        2046 => new(t, "BROK", false, false, 16, 1),
         2007 => new(t, "CLIP", false, false, 16, 1),
         2048 => new(t, "AMMO", false, false, 16, 1),
         2008 => new(t, "SHEL", false, false, 16, 1),
@@ -206,6 +218,7 @@ public sealed class Game
         Time += dt; FireTime = Math.Max(0, FireTime - dt);
         if (chaingunTicks > 0) chaingunTicks--;
         if (ChaingunFlashTicks > 0) ChaingunFlashTicks--;
+        if (RocketFireTicks > 0) RocketFireTicks--;
         DamageFlash = Math.Max(0, DamageFlash - dt); PickupFlash = Math.Max(0, PickupFlash - dt);
         messageTime -= dt;
         if (messageTime <= 0) Message = "";
@@ -224,6 +237,7 @@ public sealed class Game
             if ((pressed & Buttons.Pistol) != 0) SelectWeapon(Weapon.Pistol);
             if ((pressed & Buttons.Shotgun) != 0) SelectWeapon(Weapon.Shotgun);
             if ((pressed & Buttons.Chaingun) != 0) SelectWeapon(Weapon.Chaingun);
+            if ((pressed & Buttons.RocketLauncher) != 0) SelectWeapon(Weapon.RocketLauncher);
             Angle += (((input.Held & Buttons.TurnLeft) != 0 ? 1 : 0) -
                 ((input.Held & Buttons.TurnRight) != 0 ? 1 : 0)) * dt * 2.4 - input.MouseX * .003;
             Angle = Math.IEEERemainder(Angle, Math.Tau);
@@ -498,12 +512,15 @@ public sealed class Game
 
     void SelectWeapon(Weapon weapon)
     {
-        if (weapon == Weapon.Shotgun && !HasShotgun || weapon == Weapon.Chaingun && !HasChaingun)
+        if (weapon == Weapon.Shotgun && !HasShotgun || weapon == Weapon.Chaingun && !HasChaingun ||
+            weapon == Weapon.RocketLauncher && !HasRocketLauncher)
         {
-            Say($"{weapon.ToString().ToUpperInvariant()} NOT OWNED");
+            Say(weapon == Weapon.RocketLauncher ? "ROCKET LAUNCHER NOT OWNED" :
+                $"{weapon.ToString().ToUpperInvariant()} NOT OWNED");
             return;
         }
-        if (SelectedWeapon == Weapon.Chaingun && (chaingunTicks > 0 || chaingunFollowup))
+        if (SelectedWeapon == Weapon.Chaingun && (chaingunTicks > 0 || chaingunFollowup) ||
+            SelectedWeapon == Weapon.RocketLauncher && RocketFireTicks > 0)
         {
             pendingWeapon = weapon;
             return;
@@ -522,6 +539,7 @@ public sealed class Game
 
     void UpdateWeapon(bool fire)
     {
+        if (SelectedWeapon == Weapon.RocketLauncher && RocketFireTicks > 0) return;
         if (SelectedWeapon == Weapon.Chaingun)
         {
             if (chaingunTicks > 0) return;
@@ -540,7 +558,11 @@ public sealed class Game
         }
         if (SelectedWeapon != Weapon.Chaingun)
         {
-            if (fire && FireTime == 0) Shoot();
+            if (fire && FireTime == 0)
+            {
+                if (SelectedWeapon == Weapon.RocketLauncher) ShootRocket();
+                else Shoot();
+            }
             return;
         }
         if (!fire)
@@ -590,6 +612,19 @@ public sealed class Game
         }
     }
 
+    void ShootRocket()
+    {
+        if (Rockets == 0) { Say("OUT OF AMMO"); FireTime = .3; return; }
+        Rockets--;
+        RocketFireTicks = 20;
+        Projectiles.Add(new()
+        {
+            Rocket = true, Position = Position, Z = Feet + 32,
+            Velocity = new Vec(Math.Cos(Angle), Math.Sin(Angle)) * 700
+        });
+        PlaySound?.Invoke("RLAUNC");
+    }
+
     void Hitscan(double angle)
     {
         Vec direction = new(Math.Cos(angle), Math.Sin(angle));
@@ -609,6 +644,7 @@ public sealed class Game
 
     void Hurt(Actor actor, int damage)
     {
+        if (actor.Removed || actor.Health <= 0) return;
         actor.Health -= damage; actor.HurtTime = .2;
         PlaySound?.Invoke("POPAIN");
         if (actor.Health > 0) return;
@@ -627,17 +663,22 @@ public sealed class Game
         if (actor.Type == 2035)
         {
             actor.Removed = true; PlaySound?.Invoke("BAREXP");
-            foreach (Actor other in Actors.ToArray())
-                if (other != actor && !other.Removed && other.Health > 0 && (other.Enemy || other.Type == 2035))
-                {
-                    double d = (other.Position - actor.Position).Length;
-                    if (d < 128 && Map.ClearSight(actor.Position, other.Position,
-                        Map.Sectors[Map.FindSector(actor.Position)].Floor + 32))
-                        Hurt(other, Math.Max(1, (int)(128 - d)));
-                }
-            double playerDistance = (Position - actor.Position).Length;
-            if (playerDistance < 128 && Map.ClearSight(actor.Position, Position, Eye)) Damage((int)(128 - playerDistance));
+            Blast(actor.Position, Map.Sectors[Map.FindSector(actor.Position)].Floor + 32, false);
         }
+    }
+
+    void Blast(Vec origin, double z, bool rocket)
+    {
+        foreach (Actor other in Actors.ToArray())
+            if (!other.Removed && other.Health > 0 && (other.Enemy || other.Type == 2035))
+            {
+                double distance = Math.Max(0, (other.Position - origin).Length - (rocket ? other.Radius : 0));
+                if (distance < 128 && Map.ClearSight(origin, other.Position, z))
+                    Hurt(other, Math.Max(1, (int)(128 - distance)));
+            }
+        double playerDistance = Math.Max(0, (Position - origin).Length - (rocket ? 16 : 0));
+        if (playerDistance < 128 && Map.ClearSight(origin, Position, rocket ? z : Eye))
+            Damage(Math.Max(1, (int)(128 - playerDistance)));
     }
 
     void UpdateActor(Actor actor, double dt)
@@ -681,14 +722,57 @@ public sealed class Game
     {
         foreach (Projectile p in Projectiles)
         {
+            if (p.Exploded)
+            {
+                p.ExplosionTicks--;
+                continue;
+            }
             Vec next = p.Position + p.Velocity * dt;
-            p.Time -= dt;
-            if (!Map.ClearSight(p.Position, next, p.Z)) p.Time = 0;
-            else if (Health > 0 && (next - Position).Length < 20 && Math.Abs(p.Z - (Feet + 28)) < 28)
-            { Damage(random.Next(1, 9) * 3); p.Time = 0; PlaySound?.Invoke("FIRXPL"); }
+            double impact = Map.ProjectileImpact(p.Position, next, p.Z, p.Rocket ? 11 : 0, p.Rocket ? 8 : 0);
+            Actor? target = null;
+            bool playerHit = false;
+            if (p.Rocket)
+            {
+                foreach (Actor actor in Actors)
+                {
+                    if (actor.Removed || !actor.Solid || actor.Health <= 0) continue;
+                    double floor = Map.Sectors[Map.FindSector(actor.Position)].Floor;
+                    if (p.Z + 4 <= floor || p.Z - 4 >= floor + 56) continue;
+                    double hit = Map.CircleImpact(p.Position, next, actor.Position, actor.Radius + 11);
+                    if (hit < impact) { impact = hit; target = actor; }
+                }
+            }
+            else
+            {
+                p.Time -= dt;
+                if (Health > 0 && Math.Abs(p.Z - (Feet + 28)) < 28)
+                {
+                    double hit = Map.CircleImpact(p.Position, next, Position, 20);
+                    if (hit < impact) { impact = hit; playerHit = true; }
+                }
+            }
+            if (impact <= 1)
+            {
+                p.Position += (next - p.Position) * impact;
+                if (p.Rocket)
+                {
+                    // Mark the impact before damage: barrel chains cannot apply it a second time.
+                    p.Exploded = true; p.ExplosionTicks = 18;
+                    if (target != null && (target.Enemy || target.Type == 2035))
+                        Hurt(target, random.Next(1, 9) * 20);
+                    Blast(p.Position, p.Z, true);
+                    PlaySound?.Invoke("BAREXP");
+                }
+                else
+                {
+                    if (playerHit) { Damage(random.Next(1, 9) * 3); PlaySound?.Invoke("FIRXPL"); }
+                    p.Time = 0;
+                }
+                continue;
+            }
             p.Position = next;
         }
-        Projectiles.RemoveAll(p => p.Time <= 0);
+        Projectiles.RemoveAll(p => p.Rocket ? p.Exploded && p.ExplosionTicks <= 0 : p.Time <= 0);
     }
 
     void Damage(int amount)
@@ -711,6 +795,15 @@ public sealed class Game
                 Bullets = Math.Min(200, Bullets + (actor.Dropped ? 10 : 20));
                 if (newChaingun) SelectWeapon(Weapon.Chaingun);
                 break;
+            case 2003:
+                if (HasRocketLauncher && Rockets >= 50) { taken = false; break; }
+                bool newLauncher = !HasRocketLauncher;
+                HasRocketLauncher = true;
+                Rockets = Math.Min(50, Rockets + 2);
+                if (newLauncher) SelectWeapon(Weapon.RocketLauncher);
+                break;
+            case 2010: if (Rockets >= 50) taken = false; else Rockets++; break;
+            case 2046: if (Rockets >= 50) taken = false; else Rockets = Math.Min(50, Rockets + 5); break;
             case 2007: if (Bullets >= 200) taken = false; else Bullets = Math.Min(200, Bullets + 10); break;
             case 2048: if (Bullets >= 200) taken = false; else Bullets = Math.Min(200, Bullets + 50); break;
             case 2008: if (Shells >= 50) taken = false; else Shells = Math.Min(50, Shells + 4); break;
@@ -773,7 +866,8 @@ public sealed class Game
         Map = new(Wad, name); Assets = new(Wad, name);
         if (reset || Health <= 0)
         {
-            Health = 100; Armor = 0; Bullets = 50; Shells = 0; HasShotgun = false; HasChaingun = false;
+            Health = 100; Armor = 0; Bullets = 50; Shells = 0; Rockets = 0;
+            HasShotgun = false; HasChaingun = false; HasRocketLauncher = false;
             SelectedWeapon = Weapon.Pistol;
         }
         Keys = 0; Kills = 0; Secrets = 0; Time = 0; FireTime = 0; Finished = false; secretExit = false;
@@ -781,6 +875,7 @@ public sealed class Game
         DamageFlash = 0; PickupFlash = 0; damageTick = 0; WalkTime = 0;
         chaingunTicks = 0; chaingunFollowup = false; chaingunRefiring = false; pendingWeapon = null;
         ChaingunFrame = 0; ChaingunFlashFrame = 0; ChaingunFlashTicks = 0;
+        RocketFireTicks = 0;
         Spawn(); Say(name);
     }
 }

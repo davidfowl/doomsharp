@@ -309,4 +309,51 @@ public sealed class Map
         double u = Vec.Cross(a - from, d) / cross;
         return t >= 0 && t <= 1 && u >= 0 && u <= 1;
     }
+
+    public static double CircleImpact(Vec from, Vec to, Vec center, double radius)
+    {
+        Vec offset = from - center, travel = to - from;
+        double c = Vec.Dot(offset, offset) - radius * radius;
+        if (c <= 0) return 0;
+        double a = Vec.Dot(travel, travel), b = Vec.Dot(offset, travel);
+        double discriminant = b * b - a * c;
+        if (a == 0 || b >= 0 || discriminant < 0) return double.PositiveInfinity;
+        double t = (-b - Math.Sqrt(discriminant)) / a;
+        return t is >= 0 and <= 1 ? t : double.PositiveInfinity;
+    }
+
+    public double ProjectileImpact(Vec from, Vec to, double z, double radius, double height)
+    {
+        double earliest = double.PositiveInfinity;
+        foreach (Line line in Lines)
+        {
+            if (line.Left != 65535)
+            {
+                Sector front = Sectors[Sides[line.Right].Sector], back = Sectors[Sides[line.Left].Sector];
+                if (z - height / 2 > Math.Max(front.Floor, back.Floor) &&
+                    z + height / 2 < Math.Min(front.Ceiling, back.Ceiling)) continue;
+            }
+            Vec a = Vertices[line.A], b = Vertices[line.B], edge = b - a, travel = to - from;
+            if (radius == 0)
+            {
+                if (Intersects(from, to, a, b, out double t)) earliest = Math.Min(earliest, t);
+                continue;
+            }
+            if (DistanceToLine(from, a, b) <= radius) return 0;
+            earliest = Math.Min(earliest, Math.Min(CircleImpact(from, to, a, radius), CircleImpact(from, to, b, radius)));
+            double length = edge.Length;
+            if (length == 0) continue;
+            Vec tangent = edge * (1 / length), normal = new(-tangent.Y, tangent.X);
+            double speed = Vec.Dot(travel, normal), start = Vec.Dot(from - a, normal);
+            if (Math.Abs(speed) < 1e-9) continue;
+            for (int side = -1; side <= 1; side += 2)
+            {
+                double t = (side * radius - start) / speed;
+                if (t < 0 || t > 1) continue;
+                double along = Vec.Dot(from + travel * t - a, tangent);
+                if (along >= 0 && along <= length) earliest = Math.Min(earliest, t);
+            }
+        }
+        return earliest;
+    }
 }
