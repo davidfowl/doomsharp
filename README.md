@@ -32,9 +32,9 @@ and zlib development headers; macOS requires Xcode command-line tools.
 
 | Platform | Native facilities | Status |
 |---|---|---|
-| Linux | X11 (`libX11.so.6`), ALSA (`libasound.so.2`) | x64 AOT and bounded desktop presentation verified in CI; OS-injected demo input and ALSA null output worker-reported (see below); Wayland needs XWayland |
-| Windows | Win32/GDI, waveOut (`winmm`) | x64 AOT, engine tests and bounded desktop presentation verified in CI; interactive input/audio unverified |
-| macOS | AppKit/CoreGraphics/QuartzCore, AudioQueue | ARM64 AOT, engine tests and bounded desktop presentation verified in CI; interactive input/audio unverified |
+| Linux | X11 (`libX11.so.6`), ALSA (`libasound.so.2`) | x64 AOT and desktop presentation; reproducible OS-input demo/restart and ALSA null qualification below; Wayland needs XWayland |
+| Windows | Win32/GDI, waveOut (`winmm`) | x64 AOT and bounded desktop presentation; interactive input/audio unverified |
+| macOS | AppKit/CoreGraphics/QuartzCore, AudioQueue | ARM64 AOT and bounded desktop presentation; interactive input/audio unverified |
 
 The window is initially 960x600 with an internal 640x400 software framebuffer.
 Linux requires a 24/32-bit TrueColor X11 display. Audio uses the default OS device;
@@ -64,8 +64,7 @@ stop at the completion screen; start another episode with `--map E2M1`, etc.
   exits, tagged lower/wait/raise lifts, lower-to-lowest and raise-to-next/24 floors,
   tagged walk teleports, damaging floors, secrets, death/restart and map progression.
 - WAD DMX sound decoding/resampling and a 16-voice native PCM effects mixer.
-- HUD, weapon overlays, automap, headless framebuffer export, original demo and
-  package-free deterministic behavioral tests.
+- HUD, weapon overlays, automap, headless framebuffer export and original demo.
 
 ## Compatibility limits
 
@@ -93,20 +92,29 @@ unfinished**.
 ## Verification
 
 ```sh
-dotnet run -c Release -- --self-test
-dotnet run -c Release -- --demo --headless --frames 35 --output demo.ppm
-dotnet run -c Release -- --wad /path/to/freedoom1.wad --validate-maps
-./artifacts/linux-x64/DoomSharp --self-test
+dotnet publish -c Release -r linux-x64 -o artifacts/linux-x64
+./artifacts/linux-x64/DoomSharp --demo --headless --frames 35 --output demo.ppm
+./artifacts/linux-x64/DoomSharp --wad /path/to/freedoom1.wad --validate-maps
+xvfb-run -a python3 scripts/native-demo.py artifacts/linux-x64/DoomSharp
 ```
 
-`--self-test` runs 37 isolated behavioral checks using a WAD generated in memory: malformed data, BSP queries,
-collision/occlusion, patch transparency, texture composition, DMX resampling,
-textured rendering, classic weapon-patch offsets, a pickup/door/combat/step/exit/restart
-sequence, lifts carrying the player, teleports, sky depth and secret exit routing.
-These checks call engine methods directly, without the native input/window/audio loop;
-**they are not actual-game end-to-end (E2E) verification**. The demo
-assets are procedurally generated source-owned content; `--demo-wad path.wad`
-can write the fixture for inspection. `--validate-maps` loads and renders each
+There are **no unit tests or isolated engine-method harnesses**. The former
+37-check harness and its startup shortcut have been removed. Production WAD
+validation and error diagnostics remain intact.
+
+The [native demo orchestration](scripts/native-demo.py) uses Python's standard
+library and native X11/XTest, only as development automation. It launches the
+published game, sends OS keyboard events, and checks its public exit status,
+summary and complete exported frame. Scenarios cover missing-file/invalid-frame
+startup rejections, a pickup/door/combat/exit playthrough and a live restart.
+It never calls engine internals, alters running game state, or injects a forced
+exit. It uses ALSA null output: **PCM submission is not audible playback**.
+Linux needs Xvfb/XTest for this automation, not for ordinary gameplay.
+Logs, frames, the executable hash and outcomes are written to
+`artifacts/native-demo`; failed scenarios remain failures and CI retains artifacts.
+
+The demo assets are procedurally generated original content; `--demo-wad path.wad`
+can write that encounter for inspection. `--validate-maps` loads and renders each
 map at its player start, reporting unsupported things and missing textures.
 `--headless` opens neither a window nor an audio device. `--frames N` also bounds
 desktop runs. PPM exports contain only the assets from the WAD you supply.
@@ -126,9 +134,10 @@ Separate [synthetic fixture tooling](tools/e2e-fixtures/README.md) is now merged
 its instructions and worker-reported outcomes are not the raw qualification
 packet or original-game compatibility proof.
 
-CI builds and publishes Native AOT separately on Linux, Windows and macOS and
-runs the isolated behavioral checks, headless demo and a bounded native desktop
-smoke run on each. The [confirmed main CI run](https://github.com/davidfowl/doomsharp/actions/runs/38367324903)
-uses 35-frame desktop runs with `--no-audio` and no injected gameplay input.
-Native AOT builds/presentation smoke are **not game E2E** or evidence of
-interactive input or audible sound.
+The [current CI workflow](.github/workflows/build.yml) publishes Native AOT
+separately on Linux, Windows and macOS, then runs the actual native executable
+for headless/demo desktop scenarios. Linux additionally runs the OS-input
+demo/restart qualification above; its logs and frames accompany the native
+artifacts. Windows/macOS remain bounded no-audio presentation smoke, **not**
+interactive gameplay qualification. No run proves complete original-DOOM
+campaign behavior or physical input/audible sound.
