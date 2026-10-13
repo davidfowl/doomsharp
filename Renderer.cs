@@ -221,8 +221,8 @@ public sealed class Renderer
         {
             Picture? picture = ProjectileSprite(projectile);
             if (picture != null)
-                Billboard(projectile.Position, projectile.Z + picture.Height / 2 -
-                    (picture.Top > 0 ? picture.Top : picture.Height), picture, 255);
+                Billboard(projectile.Position, projectile.Rocket ? projectile.Z + picture.Height / 2 -
+                    (picture.Top > 0 ? picture.Top : picture.Height) : projectile.Z - picture.Height / 2, picture, 255);
         }
     }
 

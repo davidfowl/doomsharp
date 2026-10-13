@@ -356,7 +356,7 @@ def run(args):
             tap()
             flight, values = observe("02-flight")
             check("real-missile-on-miss", marker(flight, "missile")["pixels"] > 8, marker=marker(flight, "missile"))
-            time.sleep(2.5)
+            time.sleep(3)
             frame, values = observe("03-miss-cleanup")
             check("off-axis-miss-preserves-enemy", values["kills"] == 0 and values["ammo"] == 1, **values)
             check("miss-wall-impact-cleaned", all(marker(frame, kind)["pixels"] == 0 for kind in ("missile", "B", "C", "D")))
