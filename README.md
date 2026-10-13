@@ -257,6 +257,10 @@ placed/dropped pickups, key selection and pistol/shotgun preservation, shared
 clip/box ammo, cap200 and retained full-ammo duplicate, two-shot tap/release,
 four-tick sustained cadence, first-pair accuracy versus refire spread, combat,
 one/zero-ammo rejection and ordinary clip reload, live/dead restart and living/dead next-map inventory.
+The dry-fire damage negative aligns a visible marked enemy with the crosshair
+using ordinary strafing, requires it to survive two seconds of empty fire, then
+collects a clip and kills that target with two accurate pairs. Thus a miss is not
+used as a substitute for an empty-ammo damage rejection.
 Distinct body/flash colors are fixture oracles, **not** original artwork parity.
 Two audio scenarios check successful effect counts/ALSA-null PCM submission
 and one-time missing-sound diagnostics; missing-body/flash diagnostics are also

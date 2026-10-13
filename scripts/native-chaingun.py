@@ -155,6 +155,12 @@ def generate(output):
         lumps = [(n, b) for n, b in assets
                  if (case != "missing" or n not in ("CHGGB0", "CHGFA0")) and
                  (case != "audio-missing" or n != "DSPISTOL")]
+        if case == "one-empty":
+            index = next(i for i, (n, _) in enumerate(lumps) if n == "PLAYPAL")
+            palette = bytearray(lumps[index][1])
+            for start in range(0, len(palette), 768):
+                palette[start + 80 * 3:start + 80 * 3 + 3] = b"\xff\0\xff"
+            lumps[index] = ("PLAYPAL", bytes(palette))
         lumps += room("E1M1", things, 5 if case == "death" else 11 if case == "dead-next" else 0,
                       case == "carry", case in ("combat", "accuracy-spread", "one-empty", "drop"))
         if case in ("carry", "dead-next"):
@@ -219,6 +225,15 @@ def colors(frame):
 def green(frame):
     return sum(frame.rgb[i + 1] > frame.rgb[i] + 50 and frame.rgb[i + 1] > frame.rgb[i + 2] + 50
                for i in range(0, 960 * 525 * 3, 3))
+
+def target_marker(frame):
+    points = []
+    for y in range(230, 310):
+        for x in range(440, 520):
+            red, green, blue = frame.pixel(x, y)
+            if red > green + 30 and blue > green + 30:
+                points.append(x)
+    return {"pixels": len(points), "centerX": sum(points) / len(points) if points else None}
 
 
 def run(args):
@@ -296,14 +311,21 @@ def run(args):
             check("shotgun-selection-retains-shells", values["ammo"] == 7 and colors(final)["111"] > 1000, **values)
         elif case in ("cadence", "missing"):
             game.key("Control_L", True)
-            time.sleep(.04)
-            first, first_hud = observe("02-first-shot")
-            time.sleep(.10)
-            second, second_hud = observe("03-second-shot")
-            if case == "cadence":
-                check("distinct-body-and-flash-phases", colors(first)["151"] > 1000 and
-                      colors(first)["237"] > 100 and colors(second)["173"] > 1000 and
-                      colors(second)["219"] > 100, first=colors(first), second=colors(second))
+            phases = {}
+            for index in range(10):
+                time.sleep(.04)
+                sampled, second_hud = observe(f"02-fire-phase-{index:02}")
+                rendered = colors(sampled)
+                if rendered["151"] > 1000 and (
+                        rendered["237"] > 100 if case == "cadence" else second_hud["ammo"] < 70):
+                    phases.setdefault("first", sampled)
+                if rendered["219"] > 100 and (case == "missing" or rendered["173"] > 1000):
+                    phases.setdefault("second", sampled)
+                if len(phases) == 2:
+                    break
+            check("distinct-body-and-flash-phases" if case == "cadence" else "real-flash-with-missing-body",
+                  len(phases) == 2, phases={key: colors(value) for key, value in phases.items()})
+            second = phases["second"]
             time.sleep(.8)
             _, held = observe("04-held")
             delta = game.metadata["frames"][-1]["seconds"] - game.metadata["frames"][-2]["seconds"]
@@ -394,17 +416,33 @@ def run(args):
             empty, values = observe("06-empty-followup")
             check("empty-followup-no-negative-ammo-or-flash", values["ammo"] == 0 and values["kills"] == 0 and
                   colors(empty)["219"] == colors(empty)["237"] == 0 and message(empty, "OUT OF AMMO"), **values)
-            game.hold("Control_L", .6)
+            game.hold("a", 1.2)
+            aligned, values = observe("07-aligned-live-target")
+            marker = target_marker(aligned)
+            game.metadata["frames"][-1]["targetMarker"] = marker
+            check("empty-fire-has-centered-hittable-target", marker["pixels"] > 100 and
+                  marker["centerX"] is not None and abs(marker["centerX"] - 480) <= 6.5 and
+                  values["ammo"] == values["kills"] == 0, marker=marker, **values)
+            game.hold("Control_L", 2)
             dry, values = observe("07-dry-held")
             check("held-empty-no-damage-or-success-effect", values["ammo"] == 0 and values["kills"] == 0 and
                   colors(dry)["219"] == colors(dry)["237"] == 0 and message(dry, "OUT OF AMMO"), **values)
+            game.hold("d", 1.2)
             game.hold("w", .85)
             time.sleep(.18)
             _, values = observe("08-empty-pool-clip")
             check("ordinary-clip-restores-empty-pool", values["ammo"] == 10, **values)
+            game.hold("a", 1.2)
+            aimed, values = observe("09-reloaded-aligned-target")
+            marker = target_marker(aimed)
+            game.metadata["frames"][-1]["targetMarker"] = marker
+            check("reload-retains-centered-target", marker["pixels"] > 100 and marker["centerX"] is not None and
+                  abs(marker["centerX"] - 480) <= 8 and values["ammo"] == 10 and values["kills"] == 0,
+                  marker=marker, **values)
             tap()
-            reloaded, values = observe("09-reloaded-pair")
-            check("reloaded-chaingun-resumes-paired-fire", values["ammo"] == 8 and values["kills"] == 0 and
+            tap()
+            reloaded, values = observe("10-reloaded-kill")
+            check("reloaded-pairs-kill-previous-dry-target", values["ammo"] == 6 and values["kills"] == 1 and
                   colors(reloaded)["151"] > 1000, **values)
         elif case == "unowned":
             game.hold("4", .06)
