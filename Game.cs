@@ -28,6 +28,8 @@ public sealed class Actor
     public int Health;
     public double Cooldown, HurtTime, DeathTime;
     public bool Removed;
+    public char? FixedFrame;
+    public bool Hanging;
     public Actor(Thing thing, string sprite, bool enemy, bool solid, double radius, int health)
     {
         Position = thing.Position; Type = thing.Type; Sprite = sprite; Enemy = enemy; Solid = solid;
@@ -155,8 +157,33 @@ public sealed class Game
         55 => new(t, "SMBT", false, true, 16, 1),
         56 => new(t, "SMGT", false, true, 16, 1),
         57 => new(t, "SMRT", false, true, 16, 1),
-        10 => new(t, "PLAY", false, false, 16, 0),
-        15 => new(t, "PLAY", false, false, 16, 0),
+        36 => new(t, "COL5", false, true, 16, 1),
+        37 => new(t, "COL6", false, true, 16, 1),
+        41 => new(t, "CEYE", false, true, 16, 1),
+        42 => new(t, "FSKU", false, true, 16, 1),
+        43 => new(t, "TRE1", false, true, 16, 1),
+        47 => new(t, "SMIT", false, true, 16, 1),
+        54 => new(t, "TRE2", false, true, 32, 1),
+        24 => new(t, "POL5", false, false, 16, 1),
+        25 => new(t, "POL1", false, true, 16, 1),
+        26 => new(t, "POL6", false, true, 16, 1),
+        27 => new(t, "POL4", false, true, 16, 1),
+        28 => new(t, "POL2", false, true, 16, 1),
+        29 => new(t, "POL3", false, true, 16, 1),
+        49 or 63 => new(t, "GOR1", false, t.Type == 49, 16, 1) { Hanging = true },
+        50 or 59 => new(t, "GOR2", false, t.Type == 50, 16, 1) { Hanging = true },
+        51 or 61 => new(t, "GOR3", false, t.Type == 51, 16, 1) { Hanging = true },
+        52 or 60 => new(t, "GOR4", false, t.Type == 52, 16, 1) { Hanging = true },
+        53 or 62 => new(t, "GOR5", false, t.Type == 53, 16, 1) { Hanging = true },
+        10 => new(t, "PLAY", false, false, 16, 0) { FixedFrame = 'N' },
+        15 => new(t, "PLAY", false, false, 16, 0) { FixedFrame = 'W' },
+        18 => new(t, "POSS", false, false, 16, 0) { FixedFrame = 'L' },
+        19 => new(t, "SPOS", false, false, 16, 0) { FixedFrame = 'L' },
+        20 => new(t, "TROO", false, false, 16, 0) { FixedFrame = 'M' },
+        21 => new(t, "SARG", false, false, 16, 0) { FixedFrame = 'N' },
+        22 => new(t, "HEAD", false, false, 16, 0) { FixedFrame = 'L' },
+        23 => new(t, "SKUL", false, false, 16, 0) { FixedFrame = 'K' },
+        12 => new(t, "PLAY", false, false, 16, 0) { FixedFrame = 'W' },
         _ => null
     };
 
@@ -312,7 +339,7 @@ public sealed class Game
         bool manual = special is 1 or 26 or 27 or 28 or 31 or 32 or 33 or 34;
         IEnumerable<int> targets = manual
             ? line.Left == 65535 ? [] : [Map.Sides[line.Left].Sector]
-            : Enumerable.Range(0, Map.Sectors.Length).Where(i => Map.Sectors[i].Tag == line.Tag && line.Tag != 0);
+            : TaggedSectors(line);
         foreach (int s in targets)
         {
             Sector sector = Map.Sectors[s];
@@ -406,13 +433,7 @@ public sealed class Game
             if (sector.DoorDirection == 1)
             {
                 target = double.MaxValue;
-                foreach (int n in Map.SectorLines[i])
-                {
-                    Line line = Map.Lines[n];
-                    if (line.Left == 65535) continue;
-                    int other = Map.Sides[line.Right].Sector == i ? Map.Sides[line.Left].Sector : Map.Sides[line.Right].Sector;
-                    target = Math.Min(target, Map.Sectors[other].Ceiling - 4);
-                }
+                foreach (int neighbor in Neighbors(i)) target = Math.Min(target, Map.Sectors[neighbor].Ceiling - 4);
                 if (target == double.MaxValue) target = Math.Max(sector.OriginalCeiling, sector.Floor + 124);
                 target = Math.Max(sector.Floor, target);
                 sector.Ceiling = Math.Min(target, sector.Ceiling + 90 * dt);

@@ -56,6 +56,8 @@ public static class SelfTest
         renderer.Render(game);
         Assert(renderer.VisibleWallPixels > 1000 && renderer.VisiblePlanePixels > 1000,
             "textured walls AND perspective floors/ceilings cover meaningful pixels");
+        Assert(renderer.VisibleWeaponPixels > 500 && game.Assets.Patch("PISGA0")!.Left < 0,
+            "weapon overlay honors classic negative screen-origin patch offsets");
         int[] closedFrame = (int[])renderer.Pixels.Clone();
         Input input = new() { Held = Buttons.Forward };
         for (int i = 0; i < 25; i++) game.Tick(input, 1.0 / 35);

@@ -7,6 +7,7 @@ public sealed class Renderer
     public int[] Pixels { get; }
     readonly double[] depth;
     readonly int[] skyPixels;
+    readonly HashSet<string> missingSprites = [];
     readonly int viewHeight;
     readonly double focal;
     Vec position, forward, right;
@@ -15,6 +16,7 @@ public sealed class Renderer
     public int VisibleWallPixels { get; private set; }
     public int VisiblePlanePixels { get; private set; }
     public int VisibleSpritePixels { get; private set; }
+    public int VisibleWeaponPixels { get; private set; }
 
     readonly record struct Vertex(double X, double Y, double Z, double U, double V);
     readonly record struct Screen(double X, double Y, double InvZ, double U, double V);
@@ -32,7 +34,7 @@ public sealed class Renderer
         forward = new(Math.Cos(state.Angle), Math.Sin(state.Angle)); right = new(forward.Y, -forward.X);
         Array.Fill(depth, double.PositiveInfinity);
         Array.Fill(Pixels, 0x15151b);
-        VisibleWallPixels = VisiblePlanePixels = VisibleSpritePixels = 0;
+        VisibleWallPixels = VisiblePlanePixels = VisibleSpritePixels = VisibleWeaponPixels = 0;
         DrawSky();
         Map map = state.Map;
         foreach (int subIndex in map.BackToFront(position))
@@ -207,11 +209,12 @@ public sealed class Renderer
         foreach (Actor actor in game.Actors)
         {
             if (actor.Removed) continue;
-            char frame = actor.Health <= 0 && actor.Enemy ? (char)('H' + Math.Min(4, (int)(actor.DeathTime * 8))) :
-                actor.HurtTime > 0 && actor.Enemy ? 'G' : (char)('A' + (actor.Enemy ? (int)(game.Time * 5) % 4 : 0));
+            char frame = actor.FixedFrame ?? (actor.Health <= 0 && actor.Enemy ? (char)('H' + Math.Min(4, (int)(actor.DeathTime * 8))) :
+                actor.HurtTime > 0 && actor.Enemy ? 'G' : (char)('A' + (actor.Enemy ? (int)(game.Time * 5) % 4 : 0)));
             Picture? picture = Sprite(actor.Sprite, frame, actor);
             if (picture == null) continue;
             double floor = game.Map.Sectors[game.Map.FindSector(actor.Position)].Floor;
+            if (actor.Hanging) floor = game.Map.Sectors[game.Map.FindSector(actor.Position)].Ceiling - picture.Top;
             Billboard(actor.Position, floor, picture, game.Map.Sectors[game.Map.FindSector(actor.Position)].Light);
         }
         foreach (Projectile projectile in game.Projectiles)
@@ -247,7 +250,10 @@ public sealed class Renderer
                 }
                 return patch;
             }
-        return game.Assets.Patch($"{prefix}A0") ?? game.Assets.Patch($"{prefix}A1");
+        Picture? fallback = game.Assets.Patch($"{prefix}A0") ?? game.Assets.Patch($"{prefix}A1");
+        if (fallback == null && missingSprites.Add(prefix))
+            Console.Error.WriteLine($"Missing sprite family {prefix}; its actors cannot be drawn.");
+        return fallback;
     }
 
     void Billboard(Vec center, double floor, Picture p, int light)
@@ -265,10 +271,14 @@ public sealed class Renderer
         string name = game.ShotgunSelected ? (game.FireTime > .65 ? "SHTGB0" : "SHTGA0") :
             game.FireTime > .15 ? "PISGB0" : "PISGA0";
         Picture? p = game.Assets.Patch(name);
-        if (p == null) return;
+        if (p == null)
+        {
+            if (missingSprites.Add(name)) Console.Error.WriteLine($"Missing weapon patch {name}; weapon overlay cannot be drawn.");
+            return;
+        }
         double scale = Width / 320.0;
-        int x = (int)((160 - p.Left) * scale + Math.Sin(game.WalkTime * 5) * game.Bob * 3);
-        int y = (int)((200 - p.Top) * scale - (Height - viewHeight));
+        int x = (int)(-p.Left * scale + Math.Sin(game.WalkTime * 5) * game.Bob * 3);
+        int y = (int)(-p.Top * scale);
         Blit(p, x, y, scale);
     }
 
@@ -278,7 +288,7 @@ public sealed class Renderer
             for (int x = Math.Max(0, left); x < Math.Min(Width, left + p.Width * scale); x++)
             {
                 int color = p.Pixels[(int)((y - top) / scale) * p.Width + (int)((x - left) / scale)];
-                if (color >= 0) Pixels[y * Width + x] = color;
+                if (color >= 0) { Pixels[y * Width + x] = color; VisibleWeaponPixels++; }
             }
     }
 

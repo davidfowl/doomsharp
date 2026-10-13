@@ -30,9 +30,9 @@ and zlib development headers; macOS requires Xcode command-line tools.
 
 | Platform | Native facilities | Status |
 |---|---|---|
-| Linux | X11 (`libX11.so.6`), ALSA (`libasound.so.2`) | Linux x64 AOT verified; Wayland needs XWayland |
-| Windows | Win32/GDI, waveOut (`winmm`) | Implemented; runtime validation requires a Windows host |
-| macOS | AppKit/CoreGraphics/QuartzCore, AudioQueue | Implemented; runtime validation requires a macOS host |
+| Linux | X11 (`libX11.so.6`), ALSA (`libasound.so.2`) | x64 AOT, desktop/input loop and ALSA null-device output verified; Wayland needs XWayland |
+| Windows | Win32/GDI, waveOut (`winmm`) | x64 AOT, engine tests and bounded desktop presentation verified in CI; interactive input/audio unverified |
+| macOS | AppKit/CoreGraphics/QuartzCore, AudioQueue | ARM64 AOT, engine tests and bounded desktop presentation verified in CI; interactive input/audio unverified |
 
 The window is initially 960x600 with an internal 640x400 software framebuffer.
 Linux requires a 24/32-bit TrueColor X11 display. Audio uses the default OS device;
@@ -97,14 +97,24 @@ dotnet run -c Release -- --wad /path/to/freedoom1.wad --validate-maps
 ./artifacts/linux-x64/DoomSharp --self-test
 ```
 
-`--self-test` generates its WAD in memory, checks malformed data, BSP queries,
+`--self-test` runs 37 checks using a WAD generated in memory: malformed data, BSP queries,
 collision/occlusion, patch transparency, texture composition, DMX resampling,
-textured rendering and a pickup/door/combat/step/exit/restart sequence. The demo
+textured rendering, classic weapon-patch offsets, a pickup/door/combat/step/exit/restart
+sequence, lifts carrying the player, teleports, sky depth and secret exit routing. The demo
 assets are procedurally generated source-owned content; `--demo-wad path.wad`
 can write the fixture for inspection. `--validate-maps` loads and renders each
 map at its player start, reporting unsupported things and missing textures.
 `--headless` opens neither a window nor an audio device. `--frames N` also bounds
 desktop runs. PPM exports contain only the assets from the WAD you supply.
+
+Freedoom 0.13.0's 36 Phase 1 and 32 Phase 2 maps have been loaded and rendered
+at their player starts, with zero missing textures. This is parser/renderer
+compatibility evidence, **not** a campaign-completion claim. The official release
+archive's SHA-256 was checked against its published checksum; those assets are
+not committed or bundled. A separate Linux/Xvfb test injected OS keyboard events
+to collect the shotgun, open the door, kill the enemy and exit the demo, and
+exercised mouse capture plus the ALSA mixer against a null output device.
+Physical audible playback has not been verified.
 
 CI builds and publishes Native AOT separately on Linux, Windows and macOS and
 runs the behavioral tests, headless demo and a bounded native desktop smoke run

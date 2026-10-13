@@ -37,10 +37,10 @@ public static class Demo
         Raw("CLIPA0", Patch(12, 16, 6, 16, (x, y) => (byte)(x == 0 || y == 0 ? 200 : 100)));
         Raw("BKEYA0", Patch(12, 16, 6, 16, (x, y) => (byte)240));
         Raw("BAR1A0", Patch(24, 40, 12, 40, (x, y) => (byte)(y % 10 == 0 ? 40 : 180)));
-        Raw("PISGA0", Patch(60, 50, 30, 50, (x, y) => x >= 20 && x <= 40 ? (byte)(y < 30 ? 210 : 100) : null));
-        Raw("PISGB0", Patch(60, 50, 30, 50, (x, y) => x >= 20 && x <= 40 ? (byte)(y < 20 ? 250 : 130) : null));
-        Raw("SHTGA0", Patch(70, 65, 35, 65, (x, y) => x >= 28 && x <= 42 ? (byte)(y < 40 ? 210 : 80) : null));
-        Raw("SHTGB0", Patch(70, 65, 35, 65, (x, y) => x >= 23 && x <= 47 ? (byte)(y < 20 ? 255 : 180) : null));
+        Raw("PISGA0", Patch(60, 50, -130, -125, (x, y) => x >= 20 && x <= 40 ? (byte)(y < 30 ? 210 : 100) : null));
+        Raw("PISGB0", Patch(60, 50, -130, -125, (x, y) => x >= 20 && x <= 40 ? (byte)(y < 20 ? 255 : 130) : null));
+        Raw("SHTGA0", Patch(70, 65, -125, -110, (x, y) => x >= 28 && x <= 42 ? (byte)(y < 40 ? 210 : 80) : null));
+        Raw("SHTGB0", Patch(70, 65, -125, -110, (x, y) => x >= 23 && x <= 47 ? (byte)(y < 20 ? 255 : 180) : null));
         Raw("BAL1A0", Patch(12, 12, 6, 12, (x, y) => Math.Pow(x - 6, 2) + Math.Pow(y - 6, 2) < 30 ? (byte)250 : null));
         foreach (string sound in new[] { "PISTOL", "SHOTGN", "DOROPN", "DORCLS", "ITEMUP", "POPAIN", "PODTH1", "PLPAIN", "PLDETH", "NOWAY", "SWTCHN", "BAREXP", "FIRSHT", "FIRXPL", "TELEPT", "PSTART", "PSTOP" })
             Add("DS" + sound, w =>

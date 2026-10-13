@@ -29,7 +29,11 @@ public sealed class Audio : IDisposable
     public void Play(string name)
     {
         if (failure != null) throw new InvalidOperationException("Audio playback failed; use --no-audio if no audio device is available.", failure);
-        if (!sounds.TryGetValue(name, out short[]? sound)) { sound = assets.Sound(name); sounds[name] = sound; }
+        if (!sounds.TryGetValue(name, out short[]? sound))
+        {
+            sound = assets.Sound(name); sounds[name] = sound;
+            if (sound == null) Console.Error.WriteLine($"Missing sound DS{name}; this effect cannot be played.");
+        }
         if (sound == null) return;
         PlayedSounds++;
         lock (gate)

@@ -105,7 +105,7 @@ static class Program
         }
         if (Value("--output") is string output) renderer.SavePpm(output);
         Console.WriteLine($"Rendered {rendered} frames; wall={renderer.VisibleWallPixels}, " +
-            $"plane={renderer.VisiblePlanePixels}, sprite={renderer.VisibleSpritePixels}; health={game.Health}, kills={game.Kills}, " +
+            $"plane={renderer.VisiblePlanePixels}, sprite={renderer.VisibleSpritePixels}, weapon={renderer.VisibleWeaponPixels}; health={game.Health}, kills={game.Kills}, " +
             $"position=({game.Position.X:F2},{game.Position.Y:F2}), shotgun={game.HasShotgun}, finished={game.Finished}.");
         return 0;
     }
