@@ -176,3 +176,22 @@ python3 scripts/native-lift-cycle.py artifacts/linux-x64/DoomSharp --source-comm
 
 Run after publishing that exact source. These are fixture-specific virtual-X11
 observations, not exact original timing, every lift variant or campaign proof.
+
+Linux automap input qualification uses genuine native `XK_Tab` (`0xff09`) press/
+release events, observes ordinary 3D -> automap -> 3D frames, and checks W movement
+and Ctrl firing as positive controls. X11 Tab/ISO_Left_Tab keysyms are normalized
+at the backend boundary; shared Windows/macOS mappings are unchanged.
+
+```sh
+python3 scripts/native-tab.py artifacts/linux-x64/DoomSharp --source-commit "$SOURCE" --output-dir artifacts/tab-input
+```
+
+This runner starts its own isolated Xvfb, like the lift runners; do not wrap it
+in `xvfb-run`. It requires the generated `portal-equal.wad` above, X11/XTest native
+libraries and a new output directory. Its five gates require initial/final 3D
+background fraction below0.05, automap background fraction above0.90, final W
+position X in [0,30] from -64, and rendered ammo50 -> 48 after Ctrl. The frames,
+native input mappings, public output and hashes are retained even on failure.
+This is Linux virtual-input/framebuffer evidence, not physical keyboard or
+Windows/macOS interactive qualification; current CI remains the documented demo
+scope.

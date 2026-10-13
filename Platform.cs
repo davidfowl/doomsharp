@@ -86,6 +86,7 @@ sealed unsafe class X11Platform : IPlatform
             if (type is 2 or 3)
             {
                 uint key = (uint)XLookupKeysym(e, 0);
+                if (key is 0xff09 or 0xfe20) key = '\t';
                 if (key == 0xff1b && type == 2) input.Quit = true;
                 input.Set(Platform.Key(key), type == 2);
             }
