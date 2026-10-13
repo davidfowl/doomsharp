@@ -191,6 +191,13 @@ autoaim/RNG/physics and full original visual/timing comparison remain unfinished
 This increment does not establish a natural-map exit/campaign or all-weapon
 compatibility; those and physical/broad-OS acceptance remain open.
 
+The original dry-fire packet's target was off-axis: ammo/flash rejection passed,
+but its zero kills alone did not prove a hittable enemy received no damage.
+The same-weapon collector now requires a visible centered target after ordinary
+strafing, two seconds of empty fire with no kill/flash, then ordinary clip pickup
+and two accurate pairs killing that target. This strengthens qualification
+without changing engine behavior or weakening existing gates.
+
 | Platform / architecture | Build evidence | Runtime evidence |
 | --- | --- | --- |
 | Linux x64 | Native AOT publish | Actual game: headless/X11 frames, OS-injected demo/live restart and ALSA null submission; physical input/audio unverified |
