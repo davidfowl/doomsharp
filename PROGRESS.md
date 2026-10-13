@@ -75,7 +75,10 @@ was worker-reported at engine head
 [`72c525746d705c80aaf76e1a014b0e04f97c3d9f`](https://github.com/davidfowl/doomsharp/commit/72c525746d705c80aaf76e1a014b0e04f97c3d9f).
 Its qualification document/archive are worker-local and were not independently
 inspected for this docs update; no public evidence packet is linked here.
-Publishing an accessible compatibility packet remains an integration gap.
+Separate [synthetic fixture tooling](tools/e2e-fixtures/README.md) is now merged
+in [PR #5](https://github.com/davidfowl/doomsharp/pull/5), with reproduction
+instructions and worker-reported outcomes; generated evidence is not committed.
+Accessible raw qualification evidence remains an integration gap.
 These synthetic runs do **not** establish physical keyboard/mouse, audible
 sound or original-map full gameplay. Other architectures remain unverified.
 

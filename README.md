@@ -122,6 +122,9 @@ OS-input collision/shotgun/kill/exit/restart qualification was worker-reported
 at engine head `72c525746d705c80aaf76e1a014b0e04f97c3d9f`; its evidence remains
 worker-local, not a publicly accessible qualification packet. Neither report
 establishes physical input, audible playback or original-map full gameplay.
+Separate [synthetic fixture tooling](tools/e2e-fixtures/README.md) is now merged;
+its instructions and worker-reported outcomes are not the raw qualification
+packet or original-game compatibility proof.
 
 CI builds and publishes Native AOT separately on Linux, Windows and macOS and
 runs the isolated behavioral checks, headless demo and a bounded native desktop
