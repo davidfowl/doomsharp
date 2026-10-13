@@ -1,0 +1,50 @@
+name: Native AOT
+on:
+  push:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  native:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            rid: linux-x64
+          - os: windows-latest
+            rid: win-x64
+          - os: macos-latest
+            rid: osx-arm64
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+      - name: Build and behavioral tests
+        run: dotnet run -c Release -- --self-test
+      - name: Publish Native AOT
+        run: dotnet publish -c Release -r ${{ matrix.rid }} -o artifacts/${{ matrix.rid }}
+      - name: Test native executable
+        shell: bash
+        run: |
+          executable="artifacts/${{ matrix.rid }}/DoomSharp"
+          if [[ "${{ runner.os }}" == "Windows" ]]; then executable="${executable}.exe"; fi
+          "$executable" --self-test
+          "$executable" --demo --headless --frames 35 --output artifacts/demo.ppm
+      - name: Exercise native desktop backend
+        shell: bash
+        run: |
+          executable="artifacts/${{ matrix.rid }}/DoomSharp"
+          if [[ "${{ runner.os }}" == "Linux" ]]; then
+            xvfb-run -a "$executable" --demo --no-audio --frames 35 --output artifacts/desktop.ppm
+          elif [[ "${{ runner.os }}" == "Windows" ]]; then
+            "${executable}.exe" --demo --no-audio --frames 35 --output artifacts/desktop.ppm
+          else
+            "$executable" --demo --no-audio --frames 35 --output artifacts/desktop.ppm
+          fi
+      - uses: actions/upload-artifact@v4
+        with:
+          name: doomsharp-${{ matrix.rid }}
+          path: artifacts/
