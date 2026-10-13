@@ -81,6 +81,30 @@ game-state manipulation. Frames, diagnostics, input/executable hashes and
 outcomes remain worker-local, not a public raw packet or CI sector corpus.
 This closes one exit-path gap, **not** original E1M8/campaign qualification.
 
+The native lift step-off failure published in
+[PR #9](https://github.com/davidfowl/doomsharp/pull/9) was reproduced on integrated
+source `6302152c0b1c11ecba583b6d4053f1bab373fbd8`: all five lowering/wait/carry/
+stable-top/height gates passed, but prolonged backward input remained at X=-4;
+game exit0 was correctly runner exit1, not lift success.
+Player support now uses the radius-16 footprint across traversable portals;
+it remains at the upper floor until the body clears, instead of dropping at the
+center crossing and being mistaken for a new 64-unit upward step. Moving-floor
+headroom/occupancy use the same touched sectors; grounded secrets/damage require
+contact with the center sector's floor. Existing wall/24-unit-step/56-unit-body
+collision rules and instantaneous falling model are retained.
+
+The unchanged focused runner plus [full-cycle orchestration](scripts/native-lift-cycle.py)
+qualify lowering, boarding, stationary wait, automatic carry, stable height64
+(tolerance2), successful X<=-32 step-off, retrigger and second return/step-off.
+The latter compares the first cleared native frame with the same build's focused
+passing pose before issuing the second activation. This is a static original
+fixture oracle, not an original-game visual oracle or complete lift compatibility.
+Reproduction and output-directory rules are in [README](README.md).
+Two deliberately planned fresh native processes each completed both cycles;
+both returned to X=-111.14 with health100. Their cleared native frames matched
+the focused accepted pose exactly. These are local executable results; current
+CI remains the three-OS native demo/presentation scope, not a lift corpus.
+
 | Platform / architecture | Build evidence | Runtime evidence |
 | --- | --- | --- |
 | Linux x64 | Native AOT publish | Actual game: headless/X11 frames, OS-injected demo/live restart and ALSA null submission; physical input/audio unverified |

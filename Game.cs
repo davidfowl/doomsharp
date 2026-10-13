@@ -93,7 +93,7 @@ public sealed class Game
         Thing? start = Map.Things.Cast<Thing?>().FirstOrDefault(t => t!.Value.Type == 1);
         if (start == null) throw new InvalidDataException($"{Map.Name} has no player-one start.");
         Position = start.Value.Position; Angle = start.Value.Angle * Math.PI / 180;
-        Feet = Map.Sectors[Map.FindSector(Position)].Floor;
+        Feet = Map.FloorAt(Position, 16);
         Actors.Clear(); Projectiles.Clear(); foundSecrets.Clear();
         UnsupportedThings = 0;
         foreach (Thing thing in Map.Things)
@@ -226,16 +226,17 @@ public sealed class Game
                 CrossLines(old, Position);
             }
             Sector sector = Map.Sectors[Map.FindSector(Position)];
-            Feet = sector.Floor;
-            if (sector.Special == 9 && foundSecrets.Add(Map.FindSector(Position))) { Secrets++; Say("SECRET FOUND"); }
+            Feet = Map.FloorAt(Position, 16);
+            bool onSectorFloor = Feet == sector.Floor;
+            if (onSectorFloor && sector.Special == 9 && foundSecrets.Add(Map.FindSector(Position))) { Secrets++; Say("SECRET FOUND"); }
             damageTick += dt;
             if (damageTick >= 1)
             {
                 damageTick = 0;
-                if (sector.Special is 4 or 5 or 7 or 11 or 16)
+                if (onSectorFloor && sector.Special is 4 or 5 or 7 or 11 or 16)
                     Damage(sector.Special switch { 7 => 5, 11 => 20, _ => 10 });
             }
-            if (sector.Special == 11 && Health <= 10)
+            if (onSectorFloor && sector.Special == 11 && Health <= 10)
             {
                 FinishLevel(false);
                 input.MouseX = 0;
@@ -269,7 +270,7 @@ public sealed class Game
                 next = Position + new Vec(0, delta.Y);
                 if (CanMovePlayer(next)) Position = next;
             }
-            Feet = Map.Sectors[Map.FindSector(Position)].Floor;
+            Feet = Map.FloorAt(Position, 16);
         }
     }
 
@@ -317,7 +318,7 @@ public sealed class Game
                 Actors.Any(a => !a.Removed && a.Solid && a.Health > 0 &&
                     (a.Position - destination.Position).Length < a.Radius + 16))
             { Say("TELEPORT DESTINATION BLOCKED"); return true; }
-            Position = destination.Position; Feet = sector.Floor; Angle = destination.Angle * Math.PI / 180;
+            Position = destination.Position; Feet = Map.FloorAt(Position, 16); Angle = destination.Angle * Math.PI / 180;
             PickupFlash = .3; PlaySound?.Invoke("TELEPT");
             if (line.Special == 39) line.Special = 0;
             return true;
@@ -419,16 +420,18 @@ public sealed class Game
             }
             double next = sector.Floor + sector.FloorDirection * sector.FloorSpeed * dt;
             next = sector.FloorDirection > 0 ? Math.Min(next, sector.FloorTarget) : Math.Max(next, sector.FloorTarget);
-            bool playerOn = Map.FindSector(Position) == i;
-            bool occupied = playerOn && Health > 0 ||
-                Actors.Any(a => a.Solid && !a.Removed && a.Health > 0 && Map.FindSector(a.Position) == i);
-            if (next > sector.Floor && occupied && sector.Ceiling - next < 56) continue;
+            bool blocked = Health > 0 && Map.TouchingSectors(Position, 16).Contains(i) &&
+                Map.CeilingAt(Position, 16) - next < 56 ||
+                Actors.Any(a => a.Solid && !a.Removed && a.Health > 0 &&
+                    Map.TouchingSectors(a.Position, a.Radius).Contains(i) &&
+                    Map.CeilingAt(a.Position, a.Radius) - next < 56);
+            if (next > sector.Floor && blocked) continue;
             sector.Floor = next;
-            if (playerOn) Feet = next;
             if (next != sector.FloorTarget) continue;
             sector.FloorDirection = sector.Lift && next != sector.FloorOrigin ? 2 : 0;
             PlaySound?.Invoke("PSTOP");
         }
+        Feet = Map.FloorAt(Position, 16);
     }
 
     void UpdateDoors(double dt)

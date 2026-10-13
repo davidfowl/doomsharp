@@ -90,6 +90,10 @@ stack, Hexen/UDMF maps, extended BSP nodes, Boom/MBF/DEHACKED behavior or mods.
 Teleport destination blockers are rejected rather than telefragged. Moving
 floors are non-crushing and enemy/player behavior is approximate. Missing textures
 show an explicitly logged diagnostic pattern.
+Player grounding follows the highest floor touched by the radius-16 body, not
+only its center sector. This preserves support when stepping off a raised lift;
+moving-floor headroom checks also include the body's touched sectors. Falling
+still uses instantaneous grounding, not original gravity/timing.
 Damaging floors retain an approximate one-second cadence, not exact original
 tick timing. Sector-11 exits do not implement the boss actions needed to reach
 some original finale floors.
@@ -155,3 +159,20 @@ living/dead-player next-map rules, finale/missing-map stop, replay and an ordina
 floor control. It uses original classic-format fixture maps derived in scratch
 from the unchanged published fixture inputs. These are worker-local executable
 results, not a CI sector-special corpus or proof of completing original E1M8.
+
+Linux lift qualification uses the unchanged published
+[focused runner](tools/e2e-fixtures/LIFT.md), followed by two cycles in one actual
+game process. The cycle runner requires the focused runner's passing
+`X<=-32` step-off result for the same source/executable, matches that cleared
+native pose before retriggering, and retains the lowering/wait/carry/top-height
+gates (height64, tolerance2). Existing output directories are never overwritten.
+
+```sh
+dotnet run --project tools/e2e-fixtures/FixtureGenerator.csproj -c Release -- tools/e2e-fixtures/generated
+SOURCE=$(git rev-parse HEAD)
+python3 tools/e2e-fixtures/lift.py artifacts/linux-x64/DoomSharp --source-commit "$SOURCE" --output-dir artifacts/lift-focused
+python3 scripts/native-lift-cycle.py artifacts/linux-x64/DoomSharp --source-commit "$SOURCE" --step-off-reference artifacts/lift-focused/result.json --output-dir artifacts/lift-cycle
+```
+
+Run after publishing that exact source. These are fixture-specific virtual-X11
+observations, not exact original timing, every lift variant or campaign proof.

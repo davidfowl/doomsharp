@@ -268,6 +268,24 @@ public sealed class Map
         return destination.Ceiling - destination.Floor >= height && destination.Floor - feet <= 24;
     }
 
+    public IEnumerable<int> TouchingSectors(Vec position, double radius)
+    {
+        yield return FindSector(position);
+        foreach (Line line in Lines)
+        {
+            if (line.Left == 65535 || (line.Flags & 1) != 0 ||
+                DistanceToLine(position, Vertices[line.A], Vertices[line.B]) >= radius) continue;
+            yield return Sides[line.Right].Sector;
+            yield return Sides[line.Left].Sector;
+        }
+    }
+
+    public double FloorAt(Vec position, double radius) =>
+        TouchingSectors(position, radius).Max(i => Sectors[i].Floor);
+
+    public double CeilingAt(Vec position, double radius) =>
+        TouchingSectors(position, radius).Min(i => Sectors[i].Ceiling);
+
     public bool ClearSight(Vec from, Vec to, double z)
     {
         foreach (Line l in Lines)
