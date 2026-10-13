@@ -4,8 +4,11 @@ namespace DoomSharp;
 public enum Buttons
 {
     None = 0, Forward = 1, Back = 2, Left = 4, Right = 8, TurnLeft = 16, TurnRight = 32,
-    Fire = 64, Use = 128, Run = 256, Restart = 512, Pistol = 1024, Shotgun = 2048, Map = 4096
+    Fire = 64, Use = 128, Run = 256, Restart = 512, Pistol = 1024, Shotgun = 2048, Map = 4096,
+    Chaingun = 8192
 }
+
+public enum Weapon { Pistol, Shotgun, Chaingun }
 
 public sealed class Input
 {
@@ -27,7 +30,7 @@ public sealed class Actor
     public readonly double Radius;
     public int Health;
     public double Cooldown, HurtTime, DeathTime;
-    public bool Removed;
+    public bool Removed, Dropped;
     public char? FixedFrame;
     public bool Hanging;
     public Actor(Thing thing, string sprite, bool enemy, bool solid, double radius, int health)
@@ -57,7 +60,12 @@ public sealed class Game
     public int Bullets { get; private set; } = 50;
     public int Shells { get; private set; }
     public bool HasShotgun { get; private set; }
-    public bool ShotgunSelected { get; private set; }
+    public bool HasChaingun { get; private set; }
+    public Weapon SelectedWeapon { get; private set; }
+    public bool ShotgunSelected => SelectedWeapon == Weapon.Shotgun;
+    public int ChaingunFrame { get; private set; }
+    public int ChaingunFlashFrame { get; private set; }
+    public int ChaingunFlashTicks { get; private set; }
     public int Keys { get; private set; }
     public int Kills { get; private set; }
     public int TotalEnemies => Actors.Count(a => a.Enemy);
@@ -81,6 +89,9 @@ public sealed class Game
     double damageTick, messageTime;
     public int UnsupportedThings { get; private set; }
     bool secretExit;
+    int chaingunTicks;
+    bool chaingunFollowup, chaingunRefiring, chaingunAccuratePair;
+    Weapon? pendingWeapon;
 
     public Game(Wad wad, string map)
     {
@@ -128,6 +139,7 @@ public sealed class Game
         71 => new(t, "PAIN", true, true, 31, 400),
         64 => new(t, "VILE", true, true, 20, 700),
         2001 => new(t, "SHOT", false, false, 16, 1),
+        2002 => new(t, "MGUN", false, false, 16, 1),
         2007 => new(t, "CLIP", false, false, 16, 1),
         2048 => new(t, "AMMO", false, false, 16, 1),
         2008 => new(t, "SHEL", false, false, 16, 1),
@@ -192,6 +204,8 @@ public sealed class Game
     {
         dt = Math.Clamp(dt, 0, .05);
         Time += dt; FireTime = Math.Max(0, FireTime - dt);
+        if (chaingunTicks > 0) chaingunTicks--;
+        if (ChaingunFlashTicks > 0) ChaingunFlashTicks--;
         DamageFlash = Math.Max(0, DamageFlash - dt); PickupFlash = Math.Max(0, PickupFlash - dt);
         messageTime -= dt;
         if (messageTime <= 0) Message = "";
@@ -207,8 +221,9 @@ public sealed class Game
         if (Health > 0)
         {
             if ((pressed & Buttons.Map) != 0) Automap = !Automap;
-            if ((pressed & Buttons.Pistol) != 0) ShotgunSelected = false;
-            if ((pressed & Buttons.Shotgun) != 0 && HasShotgun) ShotgunSelected = true;
+            if ((pressed & Buttons.Pistol) != 0) SelectWeapon(Weapon.Pistol);
+            if ((pressed & Buttons.Shotgun) != 0) SelectWeapon(Weapon.Shotgun);
+            if ((pressed & Buttons.Chaingun) != 0) SelectWeapon(Weapon.Chaingun);
             Angle += (((input.Held & Buttons.TurnLeft) != 0 ? 1 : 0) -
                 ((input.Held & Buttons.TurnRight) != 0 ? 1 : 0)) * dt * 2.4 - input.MouseX * .003;
             Angle = Math.IEEERemainder(Angle, Math.Tau);
@@ -243,7 +258,7 @@ public sealed class Game
                 return;
             }
             if ((pressed & Buttons.Use) != 0) Use();
-            if ((input.Held & Buttons.Fire) != 0 && FireTime == 0) Shoot();
+            if (Health > 0) UpdateWeapon((input.Held & Buttons.Fire) != 0);
             foreach (Actor actor in Actors)
                 if (!actor.Removed && !actor.Solid && !actor.Enemy && (actor.Position - Position).Length < 28)
                     Pickup(actor);
@@ -481,6 +496,86 @@ public sealed class Game
         }
     }
 
+    void SelectWeapon(Weapon weapon)
+    {
+        if (weapon == Weapon.Shotgun && !HasShotgun || weapon == Weapon.Chaingun && !HasChaingun)
+        {
+            Say($"{weapon.ToString().ToUpperInvariant()} NOT OWNED");
+            return;
+        }
+        if (SelectedWeapon == Weapon.Chaingun && (chaingunTicks > 0 || chaingunFollowup))
+        {
+            pendingWeapon = weapon;
+            return;
+        }
+        SetWeapon(weapon);
+    }
+
+    void SetWeapon(Weapon weapon)
+    {
+        if (SelectedWeapon == weapon) return;
+        SelectedWeapon = weapon;
+        chaingunRefiring = false;
+        ChaingunFrame = 0;
+        ChaingunFlashTicks = 0;
+    }
+
+    void UpdateWeapon(bool fire)
+    {
+        if (SelectedWeapon == Weapon.Chaingun)
+        {
+            if (chaingunTicks > 0) return;
+            // A started pair finishes even when the trigger is released or selection changes.
+            if (chaingunFollowup)
+            {
+                chaingunFollowup = false;
+                if (FireChaingun(1)) chaingunTicks = 4;
+                return;
+            }
+        }
+        if (pendingWeapon is Weapon weapon)
+        {
+            pendingWeapon = null;
+            SetWeapon(weapon);
+        }
+        if (SelectedWeapon != Weapon.Chaingun)
+        {
+            if (fire && FireTime == 0) Shoot();
+            return;
+        }
+        if (!fire)
+        {
+            chaingunRefiring = false;
+            ChaingunFrame = 0;
+            return;
+        }
+        if (FireTime > 0) return;
+        chaingunAccuratePair = !chaingunRefiring;
+        if (FireChaingun(0))
+        {
+            chaingunTicks = 4;
+            chaingunFollowup = true;
+            chaingunRefiring = true;
+        }
+    }
+
+    bool FireChaingun(int frame)
+    {
+        if (Bullets == 0)
+        {
+            Say("OUT OF AMMO"); FireTime = .3; chaingunRefiring = false; ChaingunFrame = 0;
+            return false;
+        }
+        Bullets--;
+        ChaingunFrame = frame;
+        ChaingunFlashFrame = frame;
+        ChaingunFlashTicks = 5;
+        PlaySound?.Invoke("PISTOL");
+        double spread = chaingunAccuratePair ? 0 : (random.NextDouble() - random.NextDouble()) * Math.PI / 32;
+        Hitscan(Angle + spread);
+        return true;
+    }
+
     void Shoot()
     {
         bool shotgun = ShotgunSelected && HasShotgun;
@@ -491,20 +586,25 @@ public sealed class Game
         for (int pellet = 0; pellet < (shotgun ? 7 : 1); pellet++)
         {
             double angle = Angle + (random.NextDouble() - .5) * (shotgun ? .12 : .015);
-            Vec direction = new(Math.Cos(angle), Math.Sin(angle));
-            Actor? target = null; double nearest = 2048;
-            foreach (Actor actor in Actors)
-            {
-                if (actor.Removed || actor.Health <= 0 || (!actor.Enemy && actor.Type != 2035)) continue;
-                Vec relative = actor.Position - Position;
-                double distance = Vec.Dot(relative, direction), off = Math.Abs(Vec.Cross(relative, direction));
-                double floor = Map.Sectors[Map.FindSector(actor.Position)].Floor;
-                if (distance > 0 && distance < nearest && off < actor.Radius &&
-                    Eye > floor && Eye < floor + 64 && Map.ClearSight(Position, actor.Position, Eye))
-                { target = actor; nearest = distance; }
-            }
-            if (target != null) Hurt(target, random.Next(1, 4) * 5);
+            Hitscan(angle);
         }
+    }
+
+    void Hitscan(double angle)
+    {
+        Vec direction = new(Math.Cos(angle), Math.Sin(angle));
+        Actor? target = null; double nearest = 2048;
+        foreach (Actor actor in Actors)
+        {
+            if (actor.Removed || actor.Health <= 0 || (!actor.Enemy && actor.Type != 2035)) continue;
+            Vec relative = actor.Position - Position;
+            double distance = Vec.Dot(relative, direction), off = Math.Abs(Vec.Cross(relative, direction));
+            double floor = Map.Sectors[Map.FindSector(actor.Position)].Floor;
+            if (distance > 0 && distance < nearest && off < actor.Radius &&
+                Eye > floor && Eye < floor + 64 && Map.ClearSight(Position, actor.Position, Eye))
+            { target = actor; nearest = distance; }
+        }
+        if (target != null) Hurt(target, random.Next(1, 4) * 5);
     }
 
     void Hurt(Actor actor, int damage)
@@ -515,8 +615,14 @@ public sealed class Game
         if (actor.Enemy)
         {
             Kills++; PlaySound?.Invoke("PODTH1");
-            int drop = actor.Type is 9 ? 2001 : actor.Type is 3004 or 65 ? 2007 : 0;
-            if (drop != 0) Actors.Add(CreateActor(new(actor.Position, 0, drop, 2))!);
+            int drop = actor.Type == 9 ? 2001 : actor.Type == 65 ? 2002 : actor.Type == 3004 ? 2007 : 0;
+            if (drop != 0)
+            {
+                Actor item = CreateActor(new(actor.Position, 0, drop, 2)) ??
+                    throw new InvalidOperationException($"Unsupported enemy drop {drop}.");
+                item.Dropped = true;
+                Actors.Add(item);
+            }
         }
         if (actor.Type == 2035)
         {
@@ -597,7 +703,14 @@ public sealed class Game
         bool taken = true;
         switch (actor.Type)
         {
-            case 2001: HasShotgun = true; ShotgunSelected = true; Shells = Math.Min(50, Shells + 8); break;
+            case 2001: HasShotgun = true; SelectWeapon(Weapon.Shotgun); Shells = Math.Min(50, Shells + 8); break;
+            case 2002:
+                if (HasChaingun && Bullets >= 200) { taken = false; break; }
+                bool newChaingun = !HasChaingun;
+                HasChaingun = true;
+                Bullets = Math.Min(200, Bullets + (actor.Dropped ? 10 : 20));
+                if (newChaingun) SelectWeapon(Weapon.Chaingun);
+                break;
             case 2007: if (Bullets >= 200) taken = false; else Bullets = Math.Min(200, Bullets + 10); break;
             case 2048: if (Bullets >= 200) taken = false; else Bullets = Math.Min(200, Bullets + 50); break;
             case 2008: if (Shells >= 50) taken = false; else Shells = Math.Min(50, Shells + 4); break;
@@ -660,11 +773,14 @@ public sealed class Game
         Map = new(Wad, name); Assets = new(Wad, name);
         if (reset || Health <= 0)
         {
-            Health = 100; Armor = 0; Bullets = 50; Shells = 0; HasShotgun = false; ShotgunSelected = false;
+            Health = 100; Armor = 0; Bullets = 50; Shells = 0; HasShotgun = false; HasChaingun = false;
+            SelectedWeapon = Weapon.Pistol;
         }
         Keys = 0; Kills = 0; Secrets = 0; Time = 0; FireTime = 0; Finished = false; secretExit = false;
         CompletionPrompt = "";
         DamageFlash = 0; PickupFlash = 0; damageTick = 0; WalkTime = 0;
+        chaingunTicks = 0; chaingunFollowup = false; chaingunRefiring = false; pendingWeapon = null;
+        ChaingunFrame = 0; ChaingunFlashFrame = 0; ChaingunFlashTicks = 0;
         Spawn(); Say(name);
     }
 }

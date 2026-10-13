@@ -30,6 +30,7 @@ static class Platform
         'r' or 'R' => Buttons.Restart,
         '1' => Buttons.Pistol,
         '2' => Buttons.Shotgun,
+        '4' => Buttons.Chaingun,
         '\t' => Buttons.Map,
         _ => Buttons.None
     };

@@ -34,6 +34,7 @@ historical failures or independent downloaded-CI qualification.
 | Original generated demo | Working (limited scope) | Reproducible native Linux OS-input pickup/door/combat/exit and live restart via the published orchestration below; not a campaign |
 | Classic WAD loading and BSP textured geometry | Working (limited coverage) | CI renders the generated demo; engine PR #1 reports 68 Freedoom map-start renders, not campaign completion; no extended map formats |
 | Basic pistol/shotgun loop | Partial | Native demo observes shotgun pickup/kill/live restart; no current exact damage/RNG or complete pistol/all-weapon acceptance |
+| Chaingun pickup/fire/inventory | Partial | Type2002 and chaingunner drop, key4, shared bullets, four-tick shots/two-shot pairs and supplied body/flash patches; dedicated Linux executable scenarios below, not exact original timing/RNG/visual parity or broad platform gameplay |
 | Movement, collision and sector actions | Partial | Native door/lift paths and selected boundaries; tagged locked fast-door99/133-137 action scope has dedicated executable scenarios below, not every mover/trigger |
 | Map progression and damaging exits | Partial | Native Linux input observes E1M1 to E1M2 with inventory/health retained; local classic-map scenarios qualify sector-11 damage/exit, fresh dead-player next-map state and finale/missing-map stop; not original campaign completion |
 | Actors, sprites, pickups and barrels | Partial | Native demo observes pickup and one enemy kill; exact states/attacks, infighting, boss behavior and many item/visual cases remain unfinished or unverified |
@@ -153,6 +154,42 @@ WADs before startup; it never calls engine methods or injects live state.
 These are local Linux executable results, not existing CI's locked-door corpus,
 natural-map progression proof, switch-texture parity or every door family.
 Broad Windows/macOS gameplay, physical input and audible playback remain open.
+
+Chaingun type2002 was absent on main `cd921a8ef15d911df53676ad44dce098a1a28645`.
+A fresh main Native AOT process diagnosed the unsupported thing; ordinary W
+input over the pickup left visible ammo50 and pistol artwork (game exit0,
+collector exit1). A collector's earlier kill-HUD slash-delimiter error is
+separately retained, not misreported as a product failure.
+The bounded implementation shares pistol bullets (cap200), grants20 for a placed
+weapon/10 for a chaingunner drop, supports key4 alongside existing1/2, completes
+a two-shot pair on release and has four35Hz ticks between shots. New bursts have
+an accurate initial pair; held refire adds horizontal spread. Actual user-WAD
+`CHGG`/`CHGF` patches and `DSPISTOL` are used, with explicit missing-asset
+diagnostics. Empty/unowned inputs give visible feedback without damage or
+ammunition underflow. Alive map changes retain owned/selected weapon and ammo;
+restart/dead-player changes restore the pistol/default inventory.
+
+[Native weapon orchestration](scripts/native-chaingun.py) requires15 distinct
+fresh full-game processes with original pre-start fixture WADs, native OS input,
+visible HUD/weapon/flash frames and ordinary inventory output. The candidate's
+15 cases passed, including seven bullets observed over0.810s of held fire,
+70->68 on a tap, retained cap200 pickup then199->200 consumption, a dropped
+weapon's34->44 bullets, no-ammo/no-flash/no-kill rejection, and fresh/retained
+inventory on the documented lifecycle paths. Final reviewed-source qualification
+also requires public ownership/ammo to match the visible lifecycle observations
+and ordinary clip reload after depletion. README documents
+the exact commands and positive/negative gates, including cap/duplicates,
+pistol/shotgun preservation, first-pair versus held-spread combat, one/zero ammo,
+release/cadence and all carry/reset paths. Original color-coded assets distinguish
+weapon phases rather than standing in for original artwork verification.
+Audio cases exercise effects and ALSA null PCM submission/missing-sound feedback,
+not audible playback. Raw outcomes/frames/hashes remain worker-local; public tool
+source is not a public raw packet. Existing three-OS CI's native smoke/demo scope
+is unchanged, and the independent frozen natural-route qualifier is not repinned
+or duplicated. Automatic empty-weapon/fist fallback, raising/lowering, original
+autoaim/RNG/physics and full original visual/timing comparison remain unfinished.
+This increment does not establish a natural-map exit/campaign or all-weapon
+compatibility; those and physical/broad-OS acceptance remain open.
 
 | Platform / architecture | Build evidence | Runtime evidence |
 | --- | --- | --- |
