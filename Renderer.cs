@@ -219,20 +219,51 @@ public sealed class Renderer
         }
         foreach (Projectile projectile in game.Projectiles)
         {
-            Picture? picture = game.Assets.Patch("BAL1A0");
-            if (picture != null) Billboard(projectile.Position, projectile.Z - picture.Height / 2, picture, 255);
+            Picture? picture = ProjectileSprite(projectile);
+            if (picture != null)
+                Billboard(projectile.Position, projectile.Rocket ? projectile.Z + picture.Height / 2 -
+                    (picture.Top > 0 ? picture.Top : picture.Height) : projectile.Z - picture.Height / 2, picture, 255);
         }
+    }
+
+    Picture? ProjectileSprite(Projectile projectile)
+    {
+        if (!projectile.Rocket) return game.Assets.Patch("BAL1A0");
+        if (projectile.Exploded)
+        {
+            string name = projectile.ExplosionTicks > 10 ? "MISLB0" :
+                projectile.ExplosionTicks > 4 ? "MISLC0" : "MISLD0";
+            Picture? explosion = game.Assets.Patch(name);
+            if (explosion == null && missingSprites.Add(name))
+                Console.Error.WriteLine($"Missing projectile patch {name}; rocket explosion cannot be drawn.");
+            return explosion;
+        }
+        double heading = Math.Atan2(projectile.Velocity.Y, projectile.Velocity.X);
+        int rotation = 1 + ((int)Math.Round((Math.Atan2(position.Y - projectile.Position.Y,
+            position.X - projectile.Position.X) - heading) / Math.Tau * 8) + 8) % 8;
+        Picture? missile = RotatedSprite("MISL", 'A', rotation);
+        if (missile == null && missingSprites.Add("MISLA"))
+            Console.Error.WriteLine("Missing projectile sprite MISLA; flying rockets cannot be drawn.");
+        return missile;
     }
 
     Picture? Sprite(string prefix, char frame, Actor actor)
     {
-        Picture? zero = game.Assets.Patch($"{prefix}{frame}0");
-        if (zero != null) return zero;
         // Actors face their chase target; choose an appropriate classic eight-way patch.
         double direction = Math.Atan2(game.Position.Y - actor.Position.Y, game.Position.X - actor.Position.X);
         int rotation = 1 + ((int)Math.Round((Math.Atan2(position.Y - actor.Position.Y, position.X - actor.Position.X) -
             direction) / Math.Tau * 8) + 8) % 8;
-        Picture? patch = game.Assets.Patch($"{prefix}{frame}{rotation}");
+        Picture? patch = RotatedSprite(prefix, frame, rotation);
+        if (patch != null) return patch;
+        Picture? fallback = game.Assets.Patch($"{prefix}A0") ?? game.Assets.Patch($"{prefix}A1");
+        if (fallback == null && missingSprites.Add(prefix))
+            Console.Error.WriteLine($"Missing sprite family {prefix}; its actors cannot be drawn.");
+        return fallback;
+    }
+
+    Picture? RotatedSprite(string prefix, char frame, int rotation)
+    {
+        Picture? patch = game.Assets.Patch($"{prefix}{frame}0") ?? game.Assets.Patch($"{prefix}{frame}{rotation}");
         if (patch != null) return patch;
         foreach (Wad.Lump lump in game.Wad.Lumps)
             if (lump.Name.Length == 8 && lump.Name.StartsWith(prefix, StringComparison.Ordinal) &&
@@ -250,10 +281,7 @@ public sealed class Renderer
                 }
                 return patch;
             }
-        Picture? fallback = game.Assets.Patch($"{prefix}A0") ?? game.Assets.Patch($"{prefix}A1");
-        if (fallback == null && missingSprites.Add(prefix))
-            Console.Error.WriteLine($"Missing sprite family {prefix}; its actors cannot be drawn.");
-        return fallback;
+        return null;
     }
 
     void Billboard(Vec center, double floor, Picture p, int light)
@@ -270,6 +298,7 @@ public sealed class Renderer
         if (game.Health <= 0) return;
         string name = game.SelectedWeapon switch
         {
+            Weapon.RocketLauncher => game.RocketFireTicks > 12 ? "MISGB0" : "MISGA0",
             Weapon.Chaingun => game.ChaingunFrame == 0 ? "CHGGA0" : "CHGGB0",
             Weapon.Shotgun => game.FireTime > .65 ? "SHTGB0" : "SHTGA0",
             _ => game.FireTime > .15 ? "PISGB0" : "PISGA0"
@@ -277,6 +306,8 @@ public sealed class Renderer
         DrawWeaponPatch(name);
         if (game.SelectedWeapon == Weapon.Chaingun && game.ChaingunFlashTicks > 0)
             DrawWeaponPatch(game.ChaingunFlashFrame == 0 ? "CHGFA0" : "CHGFB0");
+        if (game.SelectedWeapon == Weapon.RocketLauncher && game.RocketFireTicks > 4)
+            DrawWeaponPatch($"MISF{(char)('A' + (20 - game.RocketFireTicks) / 4)}0");
     }
 
     void DrawWeaponPatch(string name)
@@ -337,7 +368,7 @@ public sealed class Renderer
         for (int y = viewHeight; y < Height; y++)
             for (int x = 0; x < Width; x++) Pixels[y * Width + x] = y == viewHeight ? 0x907050 : 0x28252a;
         int scale = Math.Max(1, Width / 320);
-        Text($"HEALTH {game.Health}  ARMOR {game.Armor}  AMMO {(game.ShotgunSelected ? game.Shells : game.Bullets)}  " +
+        Text($"HEALTH {game.Health}  ARMOR {game.Armor}  AMMO {game.Ammo}  " +
             game.SelectedWeapon.ToString().ToUpperInvariant(),
             8, viewHeight + 5, scale, 0xffdb8a);
         Text($"{game.Map.Name}  KILLS {game.Kills}/{game.TotalEnemies}  KEYS {game.Keys}  SECRETS {game.Secrets}",

@@ -29,7 +29,8 @@ static class Program
                   --validate-maps                          Load and render every map headlessly
                   --demo-wad path.wad                      Write the original demo WAD
                 Controls: WASD move, arrows turn, mouse aim, Ctrl/click fire, E/Space use,
-                          Shift run, 1 pistol, 2 shotgun, 4 chaingun, Tab automap, R restart, Esc quit.
+                          Shift run, 1 pistol, 2 shotgun, 4 chaingun, 5 rocket launcher,
+                          Tab automap, R restart, Esc quit.
                 Click the window once to capture the mouse. No proprietary assets included.
                 """);
             return 0;
@@ -107,6 +108,7 @@ static class Program
             $"position=({game.Position.X:F2},{game.Position.Y:F2}), shotgun={game.HasShotgun}, finished={game.Finished}, map={game.Map.Name}.");
         Console.WriteLine($"Inventory: weapon={game.SelectedWeapon}, bullets={game.Bullets}, shells={game.Shells}, " +
             $"chaingun={game.HasChaingun}.");
+        Console.WriteLine($"Missile inventory: rockets={game.Rockets}, launcher={game.HasRocketLauncher}.");
         return 0;
     }
 }

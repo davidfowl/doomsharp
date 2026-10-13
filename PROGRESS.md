@@ -35,6 +35,7 @@ historical failures or independent downloaded-CI qualification.
 | Classic WAD loading and BSP textured geometry | Working (limited coverage) | CI renders the generated demo; engine PR #1 reports 68 Freedoom map-start renders, not campaign completion; no extended map formats |
 | Basic pistol/shotgun loop | Partial | Native demo observes shotgun pickup/kill/live restart; no current exact damage/RNG or complete pistol/all-weapon acceptance |
 | Chaingun pickup/fire/inventory | Partial | Type2002 and chaingunner drop, key4, shared bullets, four-tick shots/two-shot pairs and supplied body/flash patches; dedicated Linux executable scenarios below, not exact original timing/RNG/visual parity or broad platform gameplay |
+| Rocket launcher/inventory/projectiles | Partial | Type2003/key5, separate2010/2046 ammo/cap50, real20-unit/tick swept missiles, direct/occluded radial damage and supplied weapon/flight/explosion patches; bounded native scenarios described below, not exact original autoaim/windup/RNG/visual or campaign parity |
 | Movement, collision and sector actions | Partial | Native door/lift paths and selected boundaries; tagged locked fast-door99/133-137 action scope has dedicated executable scenarios below, not every mover/trigger |
 | Map progression and damaging exits | Partial | Native Linux input observes E1M1 to E1M2 with inventory/health retained; local classic-map scenarios qualify sector-11 damage/exit, fresh dead-player next-map state and finale/missing-map stop; not original campaign completion |
 | Actors, sprites, pickups and barrels | Partial | Native demo observes pickup and one enemy kill; exact states/attacks, infighting, boss behavior and many item/visual cases remain unfinished or unverified |
@@ -197,6 +198,71 @@ The same-weapon collector now requires a visible centered target after ordinary
 strafing, two seconds of empty fire with no kill/flash, then ordinary clip pickup
 and two accurate pairs killing that target. This strengthens qualification
 without changing engine behavior or weakening existing gates.
+
+The rocket increment adds actual moving player missiles, not renamed bullets.
+At35Hz, travel is20 units/tick and shot spacing20 ticks; contact sweeps the
+radius11/height8 body against closed geometry and solid actors, chooses the
+first hit, and applies20-160 direct plus bounded128-unit occluded splash damage,
+including self-damage and barrel chains. Impact damage is applied once, followed
+by8/6/4-tick explosion frames and removal. Type2003/2010/2046 pickups provide
+2/1/5 rockets up to50, with separate ammo and living carry/reset semantics.
+Real `MISG`/`MISF`/rotated `MISLA`/`MISLB`-`MISLD` WAD patches and launch/blast
+sounds are used; missing assets are explicitly diagnosed. Existing monster
+projectiles retain their speed/damage/art and now also use swept player contacts.
+
+[Native rocket orchestration](scripts/native-rockets.py) defines21 fresh
+full-game cases using ordinary OS input and visible output. It includes a
+400-health direct target (three maximum128-point blasts alone cannot kill it),
+aligned dry-fire target then ordinary rocket reload, bullet-clip non-refill
+control, near/far and wall-shielded splash with surviving-target hitscan controls,
+closed thin-wall versus open-boundary movement, exactly-once self-damage/cleanup,
+all supplied firing/explosion phases, projected travel speed and held cadence,
+cap/duplicates, lifecycle, barrel and existing monster-projectile preservation.
+README has the normal build/generation/run commands and precise gates.
+These are local Linux virtual-X11 executable gates, not a natural-map campaign,
+physical input, audible audio or Windows/macOS gameplay qualification. ALSA null
+only establishes submitted PCM; CI's three-host AOT/demo/presentation scope is
+unchanged. Horizontal/no-autoaim fire, immediate launch rather than exact
+original windup, Euclidean blast distance, BCL RNG, absent backpack/skill
+multipliers and incomplete weapon raise/lower/visual timing remain limitations.
+The independent frozen navigation qualifier is not repinned or replayed.
+
+Baseline native input over the launcher left pistol/ammo50 and diagnosed all
+three unsupported rocket thing types. The first candidate's cleanup collector
+sampled a final explosion frame too early; that failure was retained and its
+bounded observation interval corrected. A second collector failure combined
+adjacent same-colored enemies into one target centroid; it was retained and
+corrected by selecting the crosshair-nearest separated pixel component, without
+lowering the100-pixel/eight-pixel alignment gates. Continuation qualified all21
+cases/220 gates on the reviewed engine. The final source additionally restores
+the pre-existing barrel player-damage rounding and explicitly gates the firing
+body patch. Its initial cadence collector held fire while decoding images,
+missed a short flash and allowed a second shot; that failure is retained too.
+The corrected collector releases an ordinary tap independently of analysis and
+captures short phases before decoding. Already-passed unchanged cases were not
+replayed after that collector-only fix.
+
+Final native-qualified C# source
+[`61cd076201bf94ec4329527cab35a4cffa1b70da`](https://github.com/davidfowl/doomsharp/commit/61cd076201bf94ec4329527cab35a4cffa1b70da)
+passed21 cases/222 gates with212 native captures on one pinned Linux AOT
+executable. The first11 use the earlier runner revision and the remaining10
+the corrected capture protocol; exact runner/input/binary identities and all
+failed attempts remain in the worker-local packet. Published follow-up changes
+are runner/documentation only, not new C# gameplay.
+The thin-wall case observes health100->30 and kills0; its open twin kills1.
+Near and unoccluded targets die while far/wall-shielded targets survive, then
+ordinary hitscan kills those survivors. The aligned empty target survives two
+seconds without ammo/projectile/flash, then ordinary rocket ammo and firing
+kill it. Projected flight gives a592.25-832.91-units/s interval including700;
+held fire consumes4 rockets over2.0004s, followed by stable release/cleanup.
+All four flash and three explosion patches and the firing body are observed.
+Native audio observes3 effects versus1 with missing launch/blast sounds, with
+ALSA-null PCM and one-time diagnostics, not audible playback.
+The unchanged final-artifact demo/startup/live-restart and five publisher
+key/door/combat/progression/restart regressions pass. Their headless corpus
+still accepts the pre-existing malformed `bad-blockmap-offset`; it is not
+reported as a successful rejection. Raw archives are local, not public downloads.
+These results are not campaign or exact-original timing proof.
 
 | Platform / architecture | Build evidence | Runtime evidence |
 | --- | --- | --- |
