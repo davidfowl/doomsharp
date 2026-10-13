@@ -17,6 +17,11 @@ is also merged. This page describes capabilities available on `main`, not
 unmerged branch claims. Working below means verified **within the stated scope**,
 not complete original-DOOM behavior.
 
+[Executable-only assurance PR #7](https://github.com/davidfowl/doomsharp/pull/7)
+removed the isolated harness and its invocation. Its
+[three-OS native executable CI](https://github.com/davidfowl/doomsharp/actions/runs/38369523543)
+passes; Linux includes OS-input demo/restart and startup-failure qualification.
+
 ## Feature status
 
 | Feature | Status | Verification and limits |
@@ -25,6 +30,7 @@ not complete original-DOOM behavior.
 | Classic WAD loading and BSP textured geometry | Working (limited coverage) | CI renders the generated demo; engine PR #1 reports 68 Freedoom map-start renders, not campaign completion; no extended map formats |
 | Basic pistol/shotgun loop | Partial | Native demo observes shotgun pickup/kill/live restart; no current exact damage/RNG or complete pistol/all-weapon acceptance |
 | Movement, collision and sector actions | Partial | Native demo walks through a door and raised-floor portal; optional fixture tooling qualifies selected boundaries, not every mover/trigger |
+| Map progression and damaging exits | Partial | Native Linux input observes E1M1 to E1M2 with inventory/health retained; local classic-map scenarios qualify sector-11 damage/exit, fresh dead-player next-map state and finale/missing-map stop; not original campaign completion |
 | Actors, sprites, pickups and barrels | Partial | Native demo observes pickup and one enemy kill; exact states/attacks, infighting, boss behavior and many item/visual cases remain unfinished or unverified |
 | HUD, weapon overlays and automap | Partial | Actual executable exports HUD/weapon frames; no original visual oracle or dedicated automap input qualification |
 | Native window presentation | Working | Bounded actual-engine desktop smoke runs pass on three OSes; interactive input coverage differs by platform below |
@@ -44,6 +50,8 @@ all vanilla map specials and switch textures, boss scripts, exact monster states
 and attacks/infighting, remaining weapons/powerups, telefragging, original physics,
 music/MUS playback, saves, menus and multiplayer. These gaps can block complete
 authentic WAD campaigns. Extended maps/mod formats are not implemented.
+Sector-11 exit handling is implemented, but the boss actions needed to reach
+some original finale floors remain absent. Damaging-floor timing is approximate.
 
 ## Built vs. runtime-tested
 
@@ -61,6 +69,17 @@ returned to the start with health 100 and no shotgun. Complete frames, logs and
 the executable hash are retained, including artifacts when CI fails.
 This is executable E2E through virtual OS facilities, not physical-device
 verification, a visual/timing oracle or original-map campaign acceptance.
+
+Separate local native-game qualification retained the pre-fix sector-11 failure:
+walking into the floor reduced health to zero but left `finished=False`.
+Nine actual executable scenarios now cover 20-point damage, completion exactly
+at health 10, living health/shotgun carryover, dead-player health/inventory reset
+at a fresh E1M2 spawn, natural exit, E1M8 stop despite other available maps,
+missing-next-map stop, replay and a harmless-floor control. Input is OS keyboard
+events; original fixture WAD variants are prepared before startup, not running
+game-state manipulation. Frames, diagnostics, input/executable hashes and
+outcomes remain worker-local, not a public raw packet or CI sector corpus.
+This closes one exit-path gap, **not** original E1M8/campaign qualification.
 
 | Platform / architecture | Build evidence | Runtime evidence |
 | --- | --- | --- |

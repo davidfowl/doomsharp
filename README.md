@@ -50,6 +50,10 @@ shotgun, Tab toggles the automap, R restarts, and Esc quits. Losing window focus
 releases mouse capture and held keys. After an exit, fire/use advances to the next
 map using classic episode/DOOM II normal and secret exit routes. Episode finales
 stop at the completion screen; start another episode with `--map E2M1`, etc.
+Sector-11 damaging exit floors finish at health 10 or lower. Living players keep
+health/inventory on the next map; dead players start it with fresh health and
+default inventory. A finale or missing next map shows the replay prompt instead
+of offering a nonexistent continuation.
 
 ## Implemented
 
@@ -86,6 +90,9 @@ stack, Hexen/UDMF maps, extended BSP nodes, Boom/MBF/DEHACKED behavior or mods.
 Teleport destination blockers are rejected rather than telefragged. Moving
 floors are non-crushing and enemy/player behavior is approximate. Missing textures
 show an explicitly logged diagnostic pattern.
+Damaging floors retain an approximate one-second cadence, not exact original
+tick timing. Sector-11 exits do not implement the boss actions needed to reach
+some original finale floors.
 These gaps can block authentic WAD progression; **full original-DOOM parity is
 unfinished**.
 
@@ -141,3 +148,10 @@ demo/restart qualification above; its logs and frames accompany the native
 artifacts. Windows/macOS remain bounded no-audio presentation smoke, **not**
 interactive gameplay qualification. No run proves complete original-DOOM
 campaign behavior or physical input/audible sound.
+
+Separate local native OS-input qualification reproduces the formerly missing
+sector-11 exit and covers its 20-point damage, exact 10-health exit threshold,
+living/dead-player next-map rules, finale/missing-map stop, replay and an ordinary
+floor control. It uses original classic-format fixture maps derived in scratch
+from the unchanged published fixture inputs. These are worker-local executable
+results, not a CI sector-special corpus or proof of completing original E1M8.
