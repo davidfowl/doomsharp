@@ -1,47 +1,63 @@
 # Progress
 
-Snapshot: 2026-10-13. This separates merged work from implementation claims and
-isolated platform probes; it is not a declaration of a working game.
+Snapshot: 2026-10-13, after the first engine merge. This distinguishes the
+verified playable increment from full DOOM compatibility and physical-device
+verification. **Full original-DOOM parity remains unfinished.**
 
 ## Merged
 
-At base commit `20cfe046b127712ae52e36dfb07be8704c139f39`, `main` contains
-README, LICENSE and `.gitignore` only. No engine, executable or build workflow is
-merged. This documentation increment adds a visible status page and README link.
+[Engine PR #1](https://github.com/davidfowl/doomsharp/pull/1) was squash-merged at
+[`3f900864194b6dfeb1fd9c998973050314022464`](https://github.com/davidfowl/doomsharp/commit/3f900864194b6dfeb1fd9c998973050314022464).
+`main` now contains a buildable clean-room C#/.NET 10 engine and Native AOT CI.
+It uses the .NET platform/BCL and OS APIs, not third-party managed libraries or
+game engines. Original DOOM source and proprietary WADs are not included.
+
+Implemented: classic WAD loading, BSP-based textured walls/floors/ceilings,
+transparent sprites, collision/steps, pistol/shotgun combat, simplified enemies,
+pickups/keys/barrels, common doors, tagged lifts/floor triggers, teleports,
+normal/secret exit routing, HUD/automap, weapon overlays and native PCM effects.
+The original generated `--demo` has a playable pickup/door/combat/exit loop.
+See [README](README.md) for build/run commands, controls and precise limitations.
 
 ## Work in progress
 
-[Engine PR #1](https://github.com/davidfowl/doomsharp/pull/1) is open, not merged.
-Its author reports WAD loading, BSP rendering, collision, basic combat, enemies,
-pickups, doors, exits, HUD, sound effects and native platform backends. These are
-in-flight implementation claims, not capabilities available on `main`.
-
-The PR author reports a Linux Native AOT publish and deterministic behavioral
-checks. Windows/Linux/macOS CI checks were pending when this snapshot was taken.
-Real-WAD corpus and native desktop integration verification remain in progress.
-Full original-DOOM parity is not claimed: moving floors/lifts/stairs, teleporters,
-all map specials, precise monster behavior, all weapons/powerups, music,
-savegames and episode routing remain unfinished in the PR description.
+Remaining compatibility work includes stairs/crushers, remaining mover variants,
+all vanilla map specials and switch textures, boss scripts, exact monster states
+and attacks/infighting, remaining weapons/powerups, telefragging, original physics,
+music/MUS playback, saves, menus and multiplayer. These gaps can block complete
+authentic WAD campaigns. Extended maps/mod formats are not implemented.
 
 ## Built vs. runtime-tested
 
-No merged engine build or game runtime has been verified on any platform.
+The [merged-main CI run](https://github.com/davidfowl/doomsharp/actions/runs/38365995731)
+passes on all three target operating systems and retains native binary and
+framebuffer artifacts. Each job runs 37 behavioral checks, a Native AOT publish,
+tests the native executable, renders a headless demo, and exercises bounded
+native desktop presentation.
 
 | Platform / architecture | Build evidence | Runtime evidence |
 | --- | --- | --- |
-| Linux x64 | Isolated .NET 10 Native AOT support probe reported successful; engine publish reported by PR #1 author, CI pending | Support probe only: X11 framebuffer readback under Xvfb, synthetic key input, ALSA null PCM buffer submission |
-| Windows x64 | Engine CI pending; no successful build verified here | Unverified |
-| macOS arm64 | Engine CI pending; no successful build verified here | Unverified |
+| Linux x64 | Native AOT and behavioral tests pass | Actual engine's X11 presentation under Xvfb; OS-injected keyboard demo playthrough, mouse capture and ALSA null PCM submission |
+| Windows x64 | Native AOT and behavioral tests pass | Bounded Win32/GDI desktop presentation in CI; interactive input and audio unverified |
+| macOS arm64 | Native AOT and behavioral tests pass | Bounded AppKit/CoreGraphics desktop presentation in CI; interactive input and audio unverified |
 | Other OS / architectures | Unverified | Unverified |
 
-The Linux probe is **not** actual-engine verification, a desktop playthrough,
-physical keyboard input verification or audible game audio verification. Xvfb,
-synthetic events and ALSA null output do not establish those outcomes.
+The Linux actual-engine integration run collected the shotgun, opened a door,
+crossed a raised-floor portal, killed the enemy and used the exit through OS
+keyboard events: health 88, one kill, shotgun acquired, level completed. The
+mixer submitted 13 effects to an ALSA null device. This supersedes the earlier
+isolated support probe, but does **not** establish physical keyboard/mouse or
+audible sound behavior. Other architectures remain unverified.
+
+All 36 Freedoom 0.13.0 Phase 1 and 32 Phase 2 maps load and render at their player
+starts with zero missing textures. The official asset license and archive
+checksum were checked; no downloaded assets are bundled. This is map
+parser/renderer evidence, **not** proof that every campaign is playable to completion.
 
 ## Next milestones
 
-- Land a reviewed, buildable engine increment with explicit supported limits.
-- Confirm platform builds with successful CI evidence.
-- Verify actual-engine desktop input, rendering and audible audio on each target.
-- Record real-WAD gameplay coverage and remaining compatibility gaps separately
-  from deterministic checks and platform support probes.
+- Complete vanilla map-special dispatch, mover variants, switches and boss actions.
+- Implement remaining combat/weapon/powerup behavior and original gameplay semantics.
+- Add music, saves and menus, then verify full campaigns with lawful user-supplied WADs.
+- Verify interactive input and audible audio on physical Windows/Linux/macOS systems,
+  and validate other CPU architectures separately.
