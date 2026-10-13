@@ -336,27 +336,39 @@ public sealed class Game
             PlaySound?.Invoke("SWTCHN"); return;
         }
         if (ActivateFloor(line, crossing)) return;
+        bool lockedSwitch = !crossing && special is 99 or 133 or 134 or 135 or 136 or 137;
         bool door = crossing ? special is 2 or 3 or 4 or 16 or 86 or 90 :
-            special is 1 or 26 or 27 or 28 or 31 or 32 or 33 or 34 or 29 or 63 or 103 or 111 or 112 or 113;
+            lockedSwitch || special is 1 or 26 or 27 or 28 or 31 or 32 or 33 or 34 or 29 or 63 or 103 or 111 or 112 or 113;
         if (!door)
         {
             if (!crossing && special != 0) Say($"UNSUPPORTED LINE SPECIAL {special}");
             return;
         }
-        int key = special is 26 or 32 ? 1 : special is 27 or 34 ? 2 : special is 28 or 33 ? 4 : 0;
+        if (lockedSwitch && Vec.Cross(Map.Vertices[line.B] - Map.Vertices[line.A],
+            Position - Map.Vertices[line.A]) > 0) { PlaySound?.Invoke("NOWAY"); return; }
+        int key = special is 26 or 32 or 99 or 133 ? 1 :
+            special is 27 or 34 or 136 or 137 ? 2 : special is 28 or 33 or 134 or 135 ? 4 : 0;
         if (key != 0 && (Keys & key) == 0) { Say("YOU NEED THE MATCHING KEY"); PlaySound?.Invoke("NOWAY"); return; }
         bool manual = special is 1 or 26 or 27 or 28 or 31 or 32 or 33 or 34;
         IEnumerable<int> targets = manual
             ? line.Left == 65535 ? [] : [Map.Sides[line.Left].Sector]
             : TaggedSectors(line);
+        bool targeted = false, activated = false;
         foreach (int s in targets)
         {
+            targeted = true;
             Sector sector = Map.Sectors[s];
+            if (lockedSwitch && sector.DoorDirection != 0) continue;
             sector.DoorDirection = crossing && special is 3 or 16 ? -1 : 1;
-            sector.DoorTime = special is 2 or 31 or 32 or 33 or 34 or 103 or 112 ? -1 : 4;
-            PlaySound?.Invoke(sector.DoorDirection > 0 ? "DOROPN" : "DORCLS");
+            sector.DoorTime = lockedSwitch || special is 2 or 31 or 32 or 33 or 34 or 103 or 112 ? -1 : 4;
+            sector.DoorSpeed = lockedSwitch ? 280 : 90;
+            activated = true;
+            PlaySound?.Invoke(lockedSwitch ? "BDOPN" : sector.DoorDirection > 0 ? "DOROPN" : "DORCLS");
         }
-        if (special is 2 or 3 or 4 or 16 or 29 or 31 or 32 or 33 or 34 or 103 or 111 or 112 or 113) line.Special = 0;
+        if (lockedSwitch && !targeted) { Say("DOOR HAS NO TAGGED SECTOR"); PlaySound?.Invoke("NOWAY"); }
+        if ((!lockedSwitch || activated) &&
+            special is 2 or 3 or 4 or 16 or 29 or 31 or 32 or 33 or 34 or 103 or 111 or 112 or 113 or 133 or 135 or 137)
+            line.Special = 0;
     }
 
     IEnumerable<int> TaggedSectors(Line line) => Enumerable.Range(0, Map.Sectors.Length)
@@ -447,7 +459,7 @@ public sealed class Game
                 foreach (int neighbor in Neighbors(i)) target = Math.Min(target, Map.Sectors[neighbor].Ceiling - 4);
                 if (target == double.MaxValue) target = Math.Max(sector.OriginalCeiling, sector.Floor + 124);
                 target = Math.Max(sector.Floor, target);
-                sector.Ceiling = Math.Min(target, sector.Ceiling + 90 * dt);
+                sector.Ceiling = Math.Min(target, sector.Ceiling + sector.DoorSpeed * dt);
                 if (sector.Ceiling >= target) sector.DoorDirection = sector.DoorTime < 0 ? 0 : 2;
             }
             else if (sector.DoorDirection == 2)
@@ -462,7 +474,7 @@ public sealed class Game
                 if (occupied) { sector.DoorDirection = 1; sector.DoorTime = 4; }
                 else
                 {
-                    sector.Ceiling = Math.Max(target, sector.Ceiling - 90 * dt);
+                    sector.Ceiling = Math.Max(target, sector.Ceiling - sector.DoorSpeed * dt);
                     if (sector.Ceiling <= target) sector.DoorDirection = 0;
                 }
             }

@@ -22,6 +22,11 @@ removed the isolated harness and its invocation. Its
 [three-OS native executable CI](https://github.com/davidfowl/doomsharp/actions/runs/38369523543)
 passes; Linux includes OS-input demo/restart and startup-failure qualification.
 
+[Lift PR #10](https://github.com/davidfowl/doomsharp/pull/10) and
+[X11 Tab PR #11](https://github.com/davidfowl/doomsharp/pull/11) are merged;
+their owner-local before/after evidence is described below, not confused with
+historical failures or independent downloaded-CI qualification.
+
 ## Feature status
 
 | Feature | Status | Verification and limits |
@@ -29,7 +34,7 @@ passes; Linux includes OS-input demo/restart and startup-failure qualification.
 | Original generated demo | Working (limited scope) | Reproducible native Linux OS-input pickup/door/combat/exit and live restart via the published orchestration below; not a campaign |
 | Classic WAD loading and BSP textured geometry | Working (limited coverage) | CI renders the generated demo; engine PR #1 reports 68 Freedoom map-start renders, not campaign completion; no extended map formats |
 | Basic pistol/shotgun loop | Partial | Native demo observes shotgun pickup/kill/live restart; no current exact damage/RNG or complete pistol/all-weapon acceptance |
-| Movement, collision and sector actions | Partial | Native demo walks through a door and raised-floor portal; optional fixture tooling qualifies selected boundaries, not every mover/trigger |
+| Movement, collision and sector actions | Partial | Native door/lift paths and selected boundaries; tagged locked fast-door99/133-137 action scope has dedicated executable scenarios below, not every mover/trigger |
 | Map progression and damaging exits | Partial | Native Linux input observes E1M1 to E1M2 with inventory/health retained; local classic-map scenarios qualify sector-11 damage/exit, fresh dead-player next-map state and finale/missing-map stop; not original campaign completion |
 | Actors, sprites, pickups and barrels | Partial | Native demo observes pickup and one enemy kill; exact states/attacks, infighting, boss behavior and many item/visual cases remain unfinished or unverified |
 | HUD, weapon overlays and automap | Partial | Actual executable exports HUD/weapon frames; local Linux native Tab on/off plus W/Ctrl controls qualify automap input, not original visuals or other-platform interactive behavior |
@@ -118,6 +123,36 @@ thresholds and commands in README. Two planned fresh processes qualify this
 path; raw evidence is worker-local, not public downloadable media or CI coverage.
 The integrated native lift, demo and boundary/progression regressions remain
 separate checks rather than being inferred from Tab success.
+
+Independent qualification was coordinator-reported against frozen main
+`7c6e3ce687693f0478e67a3efa13a51b4c9c49e2`, using downloaded Linux CI
+[artifact11803281901](https://github.com/davidfowl/doomsharp/actions/runs/38379934406/artifacts/11803281901)
+from [run38379934406](https://github.com/davidfowl/doomsharp/actions/runs/38379934406).
+Its ELF SHA256 is
+`c612a195dccd3eeda337f37c8a88f5e41c1164cddd655111c9871ea81a659f53`,
+distinct from owner-local binaries. One focused6 prerequisite and one full13
+lift run passed (both cycles, step-off X=-111.14); one genuine Tab0xff09/keycode23
+five-gate run passed (on99.8831%, off0%, W X8.86, ammo50->48). This is independently
+reported virtual-Xvfb/XTest/framebuffer evidence; its raw worker-local packet was
+not inspected here, and it does not establish physical input. The same frozen
+qualifier's natural licensed real-map exit/next-map route remains separate and
+is not inferred to have passed from silence or these synthetic observations.
+
+Tagged key-locked fast-opening switch types99/133-137 were missing from the
+activation dispatch. A fresh native baseline on the above main, with a matching
+blue card and type133, remained at X45.14 against a closed remote door (required
+X>=192); game exit0 was collector exit1. The implementation reuses key inventory,
+tag selection, neighboring-ceiling target and door movers. It requires front-side
+use and a matching-color card/skull, leaves SR actions repeatable, consumes S1
+only after activation, does not restart an active mover, and retains existing
+normal-door speeds. An unmatched tag has an explicit gameplay diagnostic.
+[Native orchestration](scripts/native-locked-doors.py) and README publish the
+22 distinct positive/negative scenarios, unchanged measurable thresholds, exact
+input schedules and frame/process/hash retention. Generation prepares original
+WADs before startup; it never calls engine methods or injects live state.
+These are local Linux executable results, not existing CI's locked-door corpus,
+natural-map progression proof, switch-texture parity or every door family.
+Broad Windows/macOS gameplay, physical input and audible playback remain open.
 
 | Platform / architecture | Build evidence | Runtime evidence |
 | --- | --- | --- |

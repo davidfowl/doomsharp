@@ -59,6 +59,7 @@ public sealed class Sector
     public readonly string FloorTexture, CeilingTexture;
     public readonly int Light, Special, Tag;
     public double DoorTime;
+    public double DoorSpeed = 90;
     public int DoorDirection;
     public double FloorTarget, FloorOrigin, LiftWait, FloorSpeed;
     public int FloorDirection;

@@ -67,6 +67,8 @@ of offering a nonexistent continuation.
 - Common manual/tagged doors, key checks, door obstruction reopening, use/walk
   exits, tagged lower/wait/raise lifts, lower-to-lowest and raise-to-next/24 floors,
   tagged walk teleports, damaging floors, secrets, death/restart and map progression.
+- Tagged key-locked fast-opening door switches99/133-137: matching-color card or
+  skull, front-side use, permanent opening, and repeatable versus one-use actions.
 - WAD DMX sound decoding/resampling and a 16-voice native PCM effects mixer.
 - HUD, weapon overlays, automap, headless framebuffer export and original demo.
 
@@ -195,3 +197,29 @@ native input mappings, public output and hashes are retained even on failure.
 This is Linux virtual-input/framebuffer evidence, not physical keyboard or
 Windows/macOS interactive qualification; current CI remains the documented demo
 scope.
+
+Tagged locked-door qualification generates separate original four-sector maps
+from the published fixture's original assets; it does not change publisher inputs
+or assertions. The switch is on an open portal, while a **remote tagged sector**
+blocks the route, so using the adjacent sector instead cannot pass. Run one fresh
+native process per distinct scenario; the collector stops at the first failure
+and never retries or overwrites an evidence directory:
+
+```sh
+python3 scripts/native-locked-doors.py generate --output-dir artifacts/locked-door-inputs
+python3 scripts/native-locked-doors.py qualify artifacts/linux-x64/DoomSharp --source-commit "$SOURCE" --input-dir artifacts/locked-door-inputs --output-dir artifacts/locked-door-evidence
+```
+
+The22 scenarios cover all six matching-card specials, all three matching skulls,
+wrong-color/no-key/tag/backside denial, recovery after a denied one-use action,
+front use exactly on the line, unactivated controls, a short fast-opening run, and SR99 versus consumed S1133
+after a natural W1 close. Positive traversal requires X>=192; blocked routes
+require X in[32,48]. The fast case presses use then holds W+Shift for0.4s and
+requires X in[56,90]. Repeat qualification first matches independently accepted
+open and closed native poses for the same source/executable/input; maximum
+changed-pixel fraction0.001. Image comparisons exclude top messages and bottom
+HUD, not changing-world pixels. These are Linux virtual-X11 original-fixture
+observations, not natural real-map/campaign completion or an exact timing oracle.
+Normal doors retain their existing90-units/s approximation; these new fast
+actions use280 units/s and the existing neighboring-ceiling-minus4 destination.
+Switch texture changes and other fast-door families remain incomplete.
