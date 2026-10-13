@@ -147,7 +147,7 @@ use and a matching-color card/skull, leaves SR actions repeatable, consumes S1
 only after activation, does not restart an active mover, and retains existing
 normal-door speeds. An unmatched tag has an explicit gameplay diagnostic.
 [Native orchestration](scripts/native-locked-doors.py) and README publish the
-21 distinct positive/negative scenarios, unchanged measurable thresholds, exact
+22 distinct positive/negative scenarios, unchanged measurable thresholds, exact
 input schedules and frame/process/hash retention. Generation prepares original
 WADs before startup; it never calls engine methods or injects live state.
 These are local Linux executable results, not existing CI's locked-door corpus,

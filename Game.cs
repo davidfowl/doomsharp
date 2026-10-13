@@ -345,7 +345,7 @@ public sealed class Game
             return;
         }
         if (lockedSwitch && Vec.Cross(Map.Vertices[line.B] - Map.Vertices[line.A],
-            Position - Map.Vertices[line.A]) >= 0) { PlaySound?.Invoke("NOWAY"); return; }
+            Position - Map.Vertices[line.A]) > 0) { PlaySound?.Invoke("NOWAY"); return; }
         int key = special is 26 or 32 or 99 or 133 ? 1 :
             special is 27 or 34 or 136 or 137 ? 2 : special is 28 or 33 or 134 or 135 ? 4 : 0;
         if (key != 0 && (Keys & key) == 0) { Say("YOU NEED THE MATCHING KEY"); PlaySound?.Invoke("NOWAY"); return; }

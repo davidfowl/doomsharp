@@ -61,7 +61,7 @@ def fixture(assets, special, key, variant):
             (2 * i + 2, 2 * i, bottoms[i], 0),
         ]:
             segs.append(shorts(a, b, 0, index, direction, 0))
-    x = 32 if variant == "backside" else -32
+    x = 32 if variant == "backside" else 0 if variant == "on-line" else -32
     things = shorts(x, 0, 180 if variant == "backside" else 0, 1, 7)
     if KEYS[key]:
         things += shorts(-96 if variant == "retry" else x, 0, 0, KEYS[key], 7)
@@ -109,7 +109,8 @@ def generate(output):
               if special in (99, 134, 136)]
     cases += [(99, "red-card", "normal"), (134, "yellow-card", "normal"), (136, "blue-card", "normal"),
               (99, "none", "normal"), (99, "blue-card", "wrong-tag"),
-              (99, "blue-card", "backside"), (133, "blue-card", "retry")]
+              (99, "blue-card", "backside"), (99, "blue-card", "on-line"),
+              (133, "blue-card", "retry")]
     for special, key, variant in cases:
         label = f"{special}-{key}-{variant}.wad"
         data = fixture(assets, special, key, variant)
@@ -249,6 +250,7 @@ def qualify(args):
               ("no-key", 99, "none", "normal", "denied"),
               ("wrong-tag", 99, "blue-card", "wrong-tag", "denied"),
               ("backside", 99, "blue-card", "backside", "denied"),
+              ("on-line-front", 99, "blue-card", "on-line", "open"),
               ("denial-recovery", 133, "blue-card", "retry", "recover")]
     packet = {"sourceCommit": args.source_commit, "executableSha256": sha(args.executable.read_bytes()),
               "runnerSha256": sha(Path(__file__).read_bytes()), "plannedScenarios": len(cases),
@@ -284,7 +286,7 @@ play.add_argument("--input-dir", type=Path, required=True)
 play.add_argument("--output-dir", type=Path, required=True)
 play.add_argument("--special", type=int, choices=LOCKS, required=True)
 play.add_argument("--key", choices=KEYS, required=True)
-play.add_argument("--variant", choices=("normal", "wrong-tag", "backside", "retry"), default="normal")
+play.add_argument("--variant", choices=("normal", "wrong-tag", "backside", "on-line", "retry"), default="normal")
 play.add_argument("--mode", choices=("open", "unactivated", "repeat", "fast", "denied", "recover"), required=True)
 play.add_argument("--open-reference", type=Path)
 play.add_argument("--closed-reference", type=Path)

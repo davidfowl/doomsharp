@@ -210,9 +210,9 @@ python3 scripts/native-locked-doors.py generate --output-dir artifacts/locked-do
 python3 scripts/native-locked-doors.py qualify artifacts/linux-x64/DoomSharp --source-commit "$SOURCE" --input-dir artifacts/locked-door-inputs --output-dir artifacts/locked-door-evidence
 ```
 
-The21 scenarios cover all six matching-card specials, all three matching skulls,
+The22 scenarios cover all six matching-card specials, all three matching skulls,
 wrong-color/no-key/tag/backside denial, recovery after a denied one-use action,
-unactivated controls, a short fast-opening run, and SR99 versus consumed S1133
+front use exactly on the line, unactivated controls, a short fast-opening run, and SR99 versus consumed S1133
 after a natural W1 close. Positive traversal requires X>=192; blocked routes
 require X in[32,48]. The fast case presses use then holds W+Shift for0.4s and
 requires X in[56,90]. Repeat qualification first matches independently accepted
