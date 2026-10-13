@@ -72,6 +72,8 @@ of offering a nonexistent continuation.
   tagged walk teleports, damaging floors, secrets, death/restart and map progression.
 - Tagged key-locked fast-opening door switches99/133-137: matching-color card or
   skull, front-side use, permanent opening, and repeatable versus one-use actions.
+- E1M8 last-Baron action: a living player's final type3003 death lowers all
+  eligible tag666 floors to their lowest neighboring floor; no instant exit.
 - WAD DMX sound decoding/resampling and a 16-voice native PCM effects mixer.
 - HUD, weapon overlays, automap, headless framebuffer export and original demo.
 
@@ -109,6 +111,17 @@ Horizontal firing/no autoaim, immediate launch rather than exact original windup
 Euclidean blast falloff, BCL RNG, absent backpack/skill multipliers and incomplete
 raise/lower/visual parity remain limitations.
 
+E1M8's boss action distinguishes Barons (3003) from Hell Knights (69), waits for
+all living Barons to die, and runs once per spawned map. It uses the shared normal
+35-units/s floor mover, retaining collision, player grounding/carry, floor textures
+and damaging specials; busy movers are not overwritten. Restart/map loading reset
+the latch and actors. A missing tag666 target is diagnosed once. The kill itself
+does not finish, teleport or change maps: ordinary movement must still reach the
+finale, where existing sector11 damage/exit rules apply. This is hooked to the
+current simplified fatal-damage event, not the original delayed death-state
+callback. Exact boss state/attack/death timing and other maps' boss actions remain
+unfinished.
+
 ## Compatibility limits
 
 Supply your own **lawfully obtained** classic DOOM-format WAD. Owning a WAD does
@@ -120,7 +133,7 @@ The renderer uses our own triangle rasterizer rather than ported DOOM code.
 Map loading/rendering does **not** prove a whole campaign is completable. The
 engine does not yet implement stairs/crushers, every lift/moving-floor variant,
 all switch/trigger specials, switch-texture changes, exact monster state tables,
-monster infighting, boss scripts, all weapons/powerups, original physics/RNG,
+monster infighting, other boss actions, all weapons/powerups, original physics/RNG,
 animated textures/flats, music/MUS playback, savegames, menus or multiplayer.
 Some original decorations and item types are omitted with explicit diagnostics.
 DOOM II enemies use approximate behaviors; rotations/animation are preliminary.
@@ -134,8 +147,8 @@ only its center sector. This preserves support when stepping off a raised lift;
 moving-floor headroom checks also include the body's touched sectors. Falling
 still uses instantaneous grounding, not original gravity/timing.
 Damaging floors retain an approximate one-second cadence, not exact original
-tick timing. Sector-11 exits do not implement the boss actions needed to reach
-some original finale floors.
+tick timing. Only E1M8's Baron/tag666 boss floor action is implemented; other
+original finale boss actions are absent.
 These gaps can block authentic WAD progression; **full original-DOOM parity is
 unfinished**.
 
@@ -339,3 +352,50 @@ events, summaries, exit codes and source/executable/input/runner hashes; no
 unchanged retry is performed. Local raw packets remain worker-local unless
 explicitly published. The unchanged three-host CI covers AOT/demo/presentation,
 not this dedicated rocket corpus or the independent frozen navigation route.
+
+### Native E1M8 boss-floor qualification
+
+[Boss-floor orchestration](scripts/native-boss-floors.py) prepares original BSP
+maps, distinct genuine Baron/Hell Knight/Cyberdemon thing types, supplied original
+patches and two tagged barriers. Publish a clean source and generate the unchanged
+publisher assets first. Python stdlib, Xvfb and XTest are development facilities,
+not production dependencies. Each output directory must be new; the runner owns
+its display and must not be wrapped in `xvfb-run`.
+
+```sh
+dotnet publish -c Release -r linux-x64 -o artifacts/linux-x64
+dotnet run --project tools/e2e-fixtures/FixtureGenerator.csproj -c Release \
+  -- tools/e2e-fixtures/generated
+python3 scripts/native-boss-floors.py generate --output-dir artifacts/boss-inputs
+SOURCE="$(git rev-parse HEAD)"
+for case in first-only last-baron lowest-first lowest-second knight-only mixed \
+  wrong-episode wrong-map-number no-tag carry restart transition dead-control dead-player
+do
+  python3 scripts/native-boss-floors.py run \
+    --executable artifacts/linux-x64/DoomSharp --source-commit "$SOURCE" \
+    --input-dir artifacts/boss-inputs --output-dir "artifacts/boss-native/$case" \
+    --case "$case" --dead-control artifacts/boss-native/dead-control || exit 1
+done
+```
+
+The14 cases require aligned, visibly hittable targets before ordinary rocket
+input. The first Baron alone must leave access blocked; both deaths must open
+both barriers without immediately exiting. Forward/backward contacts distinguish
+the lowest neighboring targets (-32/-64) from zero or the first neighbor.
+Knights-only, wrong episode/map and wrong tag remain blocked; a surviving Knight
+must not delay a lone Baron's action. The final positive walks into sector11
+and waits for normal damage/completion. Restart restores the original native
+raised-floor scene and permits a second activation; normal E1M7 use/advance loads
+fresh E1M8 actors/floors and then permits access. A tagged player-supporting arena
+lowers gradually while a fixed neighbor-decoration's projected top moves.
+
+The dead-player negative uses ordinary damaging-floor health loss and eight
+delayed rockets: a live Baron is still visible when the player dies, then the
+in-flight missiles kill it. Its stable dead-player scene outside the actor strip
+must match the same binary's non-boss control, proving the barriers did not lower.
+No game APIs, health/state manipulation, teleport, forced exit, cheat or isolated
+test framework is involved. Captures/events/public output and exact binary,
+source/fixture/runner hashes remain worker-local. This is synthetic action/finale
+acceptance, **not original E1M8 or campaign completion**, physical input/audio,
+original monster/death-state timing or other-platform interactive gameplay proof.
+The existing three-host CI scope remains AOT/native demo/presentation.

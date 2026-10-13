@@ -38,11 +38,12 @@ historical failures or independent downloaded-CI qualification.
 | Rocket launcher/inventory/projectiles | Partial | Type2003/key5, separate2010/2046 ammo/cap50, real20-unit/tick swept missiles, direct/occluded radial damage and supplied weapon/flight/explosion patches; bounded native scenarios described below, not exact original autoaim/windup/RNG/visual or campaign parity |
 | Movement, collision and sector actions | Partial | Native door/lift paths and selected boundaries; tagged locked fast-door99/133-137 action scope has dedicated executable scenarios below, not every mover/trigger |
 | Map progression and damaging exits | Partial | Native Linux input observes E1M1 to E1M2 with inventory/health retained; local classic-map scenarios qualify sector-11 damage/exit, fresh dead-player next-map state and finale/missing-map stop; not original campaign completion |
+| E1M8 Baron/tag666 floor action | Partial | Last living type3003 with a live player, all eligible tagged floors lower to lowest neighbors through shared movers;14 synthetic native cases below, not original E1M8/campaign or exact death-state timing |
 | Actors, sprites, pickups and barrels | Partial | Native demo observes pickup and one enemy kill; exact states/attacks, infighting, boss behavior and many item/visual cases remain unfinished or unverified |
 | HUD, weapon overlays and automap | Partial | Actual executable exports HUD/weapon frames; local Linux native Tab on/off plus W/Ctrl controls qualify automap input, not original visuals or other-platform interactive behavior |
 | Native window presentation | Working | Bounded actual-engine desktop smoke runs pass on three OSes; interactive input coverage differs by platform below |
 | DMX decoding and sound-effects mixer | Partial | Native Linux playthrough submits effects to ALSA null; exact resampling/audio comparison, audible playback and Windows/macOS audio unverified |
-| Remaining weapons/powerups, stairs/crushers, switch textures and boss scripts | Not implemented | Required for original gameplay/campaign parity |
+| Remaining weapons/powerups, stairs/crushers, switch textures and other boss actions | Not implemented | Required for original gameplay/campaign parity |
 | Music/MUS, saves, menus, multiplayer and extended maps/mods | Not implemented | No end-to-end capability claimed |
 | Complete authentic WAD campaigns | Unverified | Map rendering alone is not campaign completion; missing behaviors can block progression |
 
@@ -53,12 +54,12 @@ must update this page with their verification scope and evidence links, and keep
 branch-only work separate from merged-main status.
 
 Remaining compatibility work includes stairs/crushers, remaining mover variants,
-all vanilla map specials and switch textures, boss scripts, exact monster states
+all vanilla map specials and switch textures, other boss actions, exact monster states
 and attacks/infighting, remaining weapons/powerups, telefragging, original physics,
 music/MUS playback, saves, menus and multiplayer. These gaps can block complete
 authentic WAD campaigns. Extended maps/mod formats are not implemented.
-Sector-11 exit handling is implemented, but the boss actions needed to reach
-some original finale floors remain absent. Damaging-floor timing is approximate.
+Sector-11 exit handling and E1M8's last-Baron/tag666 floor action are implemented;
+other original finale boss actions remain absent. Damaging-floor timing is approximate.
 
 ## Built vs. runtime-tested
 
@@ -263,6 +264,58 @@ key/door/combat/progression/restart regressions pass. Their headless corpus
 still accepts the pre-existing malformed `bad-blockmap-offset`; it is not
 reported as a successful rejection. Raw archives are local, not public downloads.
 These results are not campaign or exact-original timing proof.
+
+### E1M8 last-Baron floor action
+
+The action is limited to exact E1M8 and Baron type3003, not Hell Knight69.
+All relevant living Barons must be dead and the player alive. An event latch
+runs once per spawned map, reset by restart/loading. Every eligible tag666
+sector uses the shared normal35-units/s floor mover toward its lowest adjacent
+floor; active movers are not overwritten. Existing contact/carry, textures and
+damaging specials are retained. Missing tag666 produces one explicit diagnostic.
+The kill does not exit/teleport/change maps. This uses the current simplified
+fatal-damage event, **not** exact original delayed death-state timing/monster parity.
+Gameplay/map-editing references establish the E1M8/Baron/tag contract; source
+implementations were not copied. Search summaries incorrectly called the action
+instantaneous and contradicted their own eighth-unit speed quotation; those
+numeric summaries were rejected, not treated as an original timing oracle.
+
+Native-qualified production source
+[`022d31c29db7578731472640c2e0e6ee046606b8`](https://github.com/davidfowl/doomsharp/commit/022d31c29db7578731472640c2e0e6ee046606b8)
+passed **14 cases/145 gates/771 native captures** on one pinned Linux AOT ELF.
+Subsequent edits are collector/fixture/docs only; C# remains identical.
+The first6 cases use the initial runner, next6 the corrected variable-map HUD
+collector and last2 corrected far-target fixtures. Already-passed unchanged
+cases were not replayed. The baseline killed both Barons but remained blocked at
+X1260, health100, `finished=False`; the new final positive ordinarily reaches
+X1555.71 and sector11 naturally finishes at health0/kills2. First death, Knights,
+wrong episode/map/tag remain blocked. Mixed identity opens with kills1/2.
+Native retreat contacts X1298.57/1427.14 distinguish both lowest targets.
+Carry moves the fixed green reference top255->254->234 while the player remains
+near spawn. Restart restores the raised native scene exactly (0/220880 changed
+pixels) and a second ordinary kill cycle opens it again. Ordinary E1M7 exit/advance
+loads fresh E1M8 bosses/floors and subsequent deaths open access.
+
+The player-dead negative genuinely launches eight missiles before floor damage
+kills the player: native HUD first shows health0/kills0/ammo42, then delayed
+impacts produce kills1. Outside the actor strip, its closed-floor scene exactly
+matches the same ELF's surviving4000-health Cyberdemon control (0/391600 changed
+pixels); no health/state injection was used. All14 accepted game/collector exits
+are0. The unchanged native demo/startup/live-restart regression also passes.
+
+Retained failures distinguish product from collector: the baseline absence;
+MAP08's five-character label shifted KILLS one column; and the far target was
+visible but distance shading yielded RGB30,0,30 outside the strict marker
+predicate. The latter two were corrected without lowering the >100-pixel/eight-
+pixel alignment gates or changing production. Only the delayed-death fixtures
+move the target from2400 to2096; at most three pre-death impacts cannot kill the
+1000-health Baron. The wrong-episode fixture also supplies original SKY2 artwork
+instead of its initially logged fallback. Failed processes/frames remain in
+the worker-local packet, alongside sources, exact ELF/input/tool hashes and
+all native events/results. Public reproduction is in [README](README.md).
+These original synthetic maps are not original E1M8, real-map navigation or
+campaign completion. No physical/audible or Windows/macOS boss-gameplay result
+is claimed; existing CI remains three-host AOT/demo/presentation.
 
 | Platform / architecture | Build evidence | Runtime evidence |
 | --- | --- | --- |

@@ -98,6 +98,7 @@ public sealed class Game
     double damageTick, messageTime;
     public int UnsupportedThings { get; private set; }
     bool secretExit;
+    bool bossDeathActivated;
     int chaingunTicks;
     bool chaingunFollowup, chaingunRefiring, chaingunAccuratePair;
     Weapon? pendingWeapon;
@@ -115,6 +116,7 @@ public sealed class Game
         Position = start.Value.Position; Angle = start.Value.Angle * Math.PI / 180;
         Feet = Map.FloorAt(Position, 16);
         Actors.Clear(); Projectiles.Clear(); foundSecrets.Clear();
+        bossDeathActivated = false;
         UnsupportedThings = 0;
         foreach (Thing thing in Map.Things)
         {
@@ -432,12 +434,8 @@ public sealed class Game
             double target = raise24 ? sector.Floor + 24 : raiseNext
                 ? heights.Where(h => h > sector.Floor).DefaultIfEmpty(sector.Floor).Min()
                 : heights.Append(sector.Floor).Min();
-            if (target == sector.Floor) continue;
-            sector.FloorOrigin = sector.Floor; sector.FloorTarget = target;
-            sector.FloorDirection = target > sector.Floor ? 1 : -1;
-            sector.Lift = lift; sector.LiftWait = 3;
-            sector.FloorSpeed = special is 120 or 121 or 122 or 123 ? 140 : lift ? 70 : 35;
-            activated = true;
+            activated |= StartFloor(sector, target, lift,
+                special is 120 or 121 or 122 or 123 ? 140 : lift ? 70 : 35);
         }
         if (activated)
         {
@@ -445,6 +443,37 @@ public sealed class Game
             if (special is 10 or 21 or 120 or 122 or 38 or 23 or 119 or 18 or 58) line.Special = 0;
         }
         return true;
+    }
+
+    static bool StartFloor(Sector sector, double target, bool lift, double speed)
+    {
+        if (sector.FloorDirection != 0 || target == sector.Floor) return false;
+        sector.FloorOrigin = sector.Floor; sector.FloorTarget = target;
+        sector.FloorDirection = target > sector.Floor ? 1 : -1;
+        sector.Lift = lift; sector.LiftWait = 3; sector.FloorSpeed = speed;
+        return true;
+    }
+
+    void BossDeath(Actor actor)
+    {
+        if (bossDeathActivated || Map.Name != "E1M8" || actor.Type != 3003 || Health <= 0 ||
+            Actors.Any(a => a.Type == 3003 && !a.Removed && a.Health > 0)) return;
+        bossDeathActivated = true;
+        bool targeted = false, activated = false;
+        for (int i = 0; i < Map.Sectors.Length; i++)
+        {
+            Sector sector = Map.Sectors[i];
+            if (sector.Tag != 666) continue;
+            targeted = true;
+            double target = Neighbors(i).Select(n => Map.Sectors[n].Floor).Append(sector.Floor).Min();
+            activated |= StartFloor(sector, target, false, 35);
+        }
+        if (activated) PlaySound?.Invoke("PSTART");
+        if (!targeted)
+        {
+            Say("BOSS ACTION HAS NO TAGGED SECTOR");
+            Console.Error.WriteLine($"{Map.Name} boss action: no sectors tagged666.");
+        }
     }
 
     void UpdateFloors(double dt)
@@ -651,6 +680,7 @@ public sealed class Game
         if (actor.Enemy)
         {
             Kills++; PlaySound?.Invoke("PODTH1");
+            BossDeath(actor);
             int drop = actor.Type == 9 ? 2001 : actor.Type == 65 ? 2002 : actor.Type == 3004 ? 2007 : 0;
             if (drop != 0)
             {
