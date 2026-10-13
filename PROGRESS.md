@@ -21,14 +21,14 @@ not complete original-DOOM behavior.
 
 | Feature | Status | Verification and limits |
 | --- | --- | --- |
-| Original generated demo | Working | Actual Linux engine completed pickup, door, raised-floor crossing, combat and exit through OS-injected keyboard events |
-| Classic WAD loading and BSP textured geometry | Working | All 68 Freedoom 0.13.0 maps load/render at player starts; walls, floors, ceilings and sky depth tested; no extended map formats |
-| Basic pistol/shotgun loop | Working | Demo kill/ammo/pickup/restart checks pass; not a claim of exact damage/RNG or every weapon |
-| Movement, collision and sector actions | Partial | Wall/step/door/lift/teleport/exit checks pass for selected cases; original physics and all mover/trigger variants unfinished |
+| Original generated demo | Working (worker-reported gameplay) | Linux OS-injected pickup/door/combat/exit reported in engine PR #1; independent synthetic qualification is worker-local, not a public packet |
+| Classic WAD loading and BSP textured geometry | Working (limited coverage) | CI renders the generated demo; engine PR #1 reports 68 Freedoom map-start renders, not campaign completion; no extended map formats |
+| Basic pistol/shotgun loop | Working (limited coverage) | Isolated demo kill/ammo/pickup/restart checks pass; OS-input gameplay worker-reported; not exact damage/RNG or every weapon |
+| Movement, collision and sector actions | Partial | Isolated wall/step/door/lift/teleport/exit checks pass for selected cases, not game E2E; original physics and all mover/trigger variants unfinished |
 | Actors, sprites, pickups and barrels | Partial | Transparency, drops and basic combat verified; monster states/attacks, infighting, boss behavior and some items/animations incomplete |
 | HUD, weapon overlays and automap | Partial | HUD/weapon pixels rendered and patch offsets tested; automap code exists but has no dedicated end-to-end input verification |
 | Native window presentation | Working | Bounded actual-engine desktop smoke runs pass on three OSes; interactive input coverage differs by platform below |
-| DMX decoding and sound-effects mixer | Partial | Resampling checked and Linux mixed PCM submitted to ALSA null; physical audible playback and Windows/macOS audio unverified |
+| DMX decoding and sound-effects mixer | Partial | Isolated resampling check passes; Linux ALSA null PCM submission worker-reported; physical audible playback and Windows/macOS audio unverified |
 | Remaining weapons/powerups, stairs/crushers, switch textures and boss scripts | Not implemented | Required for original gameplay/campaign parity |
 | Music/MUS, saves, menus, multiplayer and extended maps/mods | Not implemented | No end-to-end capability claimed |
 | Complete authentic WAD campaigns | Unverified | Map rendering alone is not campaign completion; missing behaviors can block progression |
@@ -47,35 +47,53 @@ authentic WAD campaigns. Extended maps/mod formats are not implemented.
 
 ## Built vs. runtime-tested
 
-The [merged-main CI run](https://github.com/davidfowl/doomsharp/actions/runs/38366537493)
+The [confirmed merged-main CI run](https://github.com/davidfowl/doomsharp/actions/runs/38367324903)
 passes on all three target operating systems and retains native binary and
-framebuffer artifacts. Each job runs 37 behavioral checks, a Native AOT publish,
-tests the native executable, renders a headless demo, and exercises bounded
-native desktop presentation.
+framebuffer artifacts. It ran at docs commit
+[`6f7a7ed807814de9bcbe0c08ad90ee12b0f0ca75`](https://github.com/davidfowl/doomsharp/commit/6f7a7ed807814de9bcbe0c08ad90ee12b0f0ca75).
+Each job runs `--self-test` before and after Native AOT publishing, renders a
+35-frame headless demo, and exercises 35-frame native desktop presentation with
+`--no-audio` (Linux under Xvfb). The 37 self-test checks call engine methods
+directly, bypassing native input/window/audio. **These isolated checks and
+presentation smoke are not actual-game E2E.** CI does not inject gameplay input,
+exercise audio or validate the Freedoom corpus.
 
 | Platform / architecture | Build evidence | Runtime evidence |
 | --- | --- | --- |
-| Linux x64 | Native AOT and behavioral tests pass | Actual engine's X11 presentation under Xvfb; OS-injected keyboard demo playthrough, mouse capture and ALSA null PCM submission |
+| Linux x64 | Native AOT and isolated behavioral checks pass | CI: bounded X11 presentation under Xvfb, no audio/input automation; separate OS-injected demo, mouse capture and ALSA null output worker-reported |
 | Windows x64 | Native AOT and behavioral tests pass | Bounded Win32/GDI desktop presentation in CI; interactive input and audio unverified |
 | macOS arm64 | Native AOT and behavioral tests pass | Bounded AppKit/CoreGraphics desktop presentation in CI; interactive input and audio unverified |
 | Other OS / architectures | Unverified | Unverified |
 
-The Linux actual-engine integration run collected the shotgun, opened a door,
-crossed a raised-floor portal, killed the enemy and used the exit through OS
-keyboard events: health 88, one kill, shotgun acquired, level completed. The
-mixer submitted 13 effects to an ALSA null device. This supersedes the earlier
-isolated support probe, but does **not** establish physical keyboard/mouse or
-audible sound behavior. Other architectures remain unverified.
+The [engine PR #1 report](https://github.com/davidfowl/doomsharp/pull/1) describes
+a separate Linux actual-engine integration run using OS keyboard events:
+shotgun pickup, door, combat and exit; health 88, one kill and level completed.
+The engine worker also reported 13 effects submitted to ALSA null. These are
+worker-reported results, not outcomes of the linked CI presentation smoke.
+Independent synthetic OS-input collision/shotgun/kill/exit/restart qualification
+was worker-reported at engine head
+[`72c525746d705c80aaf76e1a014b0e04f97c3d9f`](https://github.com/davidfowl/doomsharp/commit/72c525746d705c80aaf76e1a014b0e04f97c3d9f).
+Its qualification document/archive are worker-local and were not independently
+inspected for this docs update; no public evidence packet is linked here.
+Separate [synthetic fixture tooling](tools/e2e-fixtures/README.md) is now merged
+in [PR #5](https://github.com/davidfowl/doomsharp/pull/5), with reproduction
+instructions and worker-reported outcomes; generated evidence is not committed.
+Accessible raw qualification evidence remains an integration gap.
+These synthetic runs do **not** establish physical keyboard/mouse, audible
+sound or original-map full gameplay. Other architectures remain unverified.
 
-All 36 Freedoom 0.13.0 Phase 1 and 32 Phase 2 maps load and render at their player
-starts with zero missing textures. The official asset license and archive
-checksum were checked; no downloaded assets are bundled. This is map
-parser/renderer evidence, **not** proof that every campaign is playable to completion.
+Engine PR #1 reports all 36 Freedoom 0.13.0 Phase 1 and 32 Phase 2 maps loaded
+and rendered at their player starts with zero missing textures, with the asset
+license and archive checksum checked. This worker-reported corpus result is
+not reproduced by CI; no downloaded assets are bundled. Map parser/renderer
+coverage is **not** proof of original-map gameplay or campaign completion.
 
 ## Reproduce
 
 Run from the repository with the .NET 10 SDK. The demo and tests generate their
-own original assets; no WAD download is required.
+own original assets; no WAD download is required. The existing `--self-test`
+commands below reproduce isolated checks, not game E2E or the separate
+worker-reported OS-input/corpus qualifications.
 
 ```sh
 dotnet run -c Release -- --demo --no-audio
