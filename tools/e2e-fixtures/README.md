@@ -57,6 +57,12 @@ not converted into a successful rejection. This tooling is not a required CI gat
 No audio devices are opened; physical keyboard/audible audio are not verified.
 Native key holds are wall-clock schedules, not exact tic-indexed commands.
 
+The separate [native lift reproduction](LIFT.md) publishes the complete input
+schedule and `lift.py` for a known baseline step-off failure. It observes carry
+through native-window frames and asserts retreat into the lower room. Baseline
+exit1 is intentional evidence of failed product behavior, not a green lift-cycle
+result; the original boarding-only scenario below remains observation-only.
+
 ## Scenarios and expected product observations
 
 Fresh process per scenario. W moves, E uses, Ctrl fires, R restarts, Esc stops.
