@@ -301,7 +301,8 @@ unchanged publisher assets first, then use new output directories:
 
 ```sh
 dotnet publish -c Release -r linux-x64 -o artifacts/linux-x64
-dotnet run --project tools/e2e-fixtures/FixtureGenerator.csproj -c Release
+dotnet run --project tools/e2e-fixtures/FixtureGenerator.csproj -c Release \
+  -- tools/e2e-fixtures/generated
 python3 scripts/native-rockets.py generate --output-dir artifacts/rocket-inputs
 python3 scripts/native-rockets.py qualify artifacts/linux-x64/DoomSharp \
   --source-commit "$(git rev-parse HEAD)" --input-dir artifacts/rocket-inputs \
@@ -328,6 +329,8 @@ single impact/despawn, living carry, live/dead restart, dead-player next-map
 defaults, barrel chains, existing monster projectiles and explicit missing
 patch/sound diagnostics have separate gates. Two cases count launch/explosion
 effects and PCM submitted to ALSA null, **not audible output**.
+Short weapon phases are captured before HUD/pixel analysis, with tap release
+timed independently of decoding; analysis must not turn a tap into held refire.
 
 These original sparse-BSP synthetic fixtures are bounded weapon oracles, not
 original campaign maps/artwork, exact original timing/RNG/visual parity or

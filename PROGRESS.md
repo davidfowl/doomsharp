@@ -236,8 +236,33 @@ corrected by selecting the crosshair-nearest separated pixel component, without
 lowering the100-pixel/eight-pixel alignment gates. Continuation qualified all21
 cases/220 gates on the reviewed engine. The final source additionally restores
 the pre-existing barrel player-damage rounding and explicitly gates the firing
-body patch; its own full native qualification is recorded separately. These
-corrections are not campaign or exact-original timing proof.
+body patch. Its initial cadence collector held fire while decoding images,
+missed a short flash and allowed a second shot; that failure is retained too.
+The corrected collector releases an ordinary tap independently of analysis and
+captures short phases before decoding. Already-passed unchanged cases were not
+replayed after that collector-only fix.
+
+Final native-qualified C# source
+[`61cd076201bf94ec4329527cab35a4cffa1b70da`](https://github.com/davidfowl/doomsharp/commit/61cd076201bf94ec4329527cab35a4cffa1b70da)
+passed21 cases/222 gates with212 native captures on one pinned Linux AOT
+executable. The first11 use the earlier runner revision and the remaining10
+the corrected capture protocol; exact runner/input/binary identities and all
+failed attempts remain in the worker-local packet. Published follow-up changes
+are runner/documentation only, not new C# gameplay.
+The thin-wall case observes health100->30 and kills0; its open twin kills1.
+Near and unoccluded targets die while far/wall-shielded targets survive, then
+ordinary hitscan kills those survivors. The aligned empty target survives two
+seconds without ammo/projectile/flash, then ordinary rocket ammo and firing
+kill it. Projected flight gives a592.25-832.91-units/s interval including700;
+held fire consumes4 rockets over2.0004s, followed by stable release/cleanup.
+All four flash and three explosion patches and the firing body are observed.
+Native audio observes3 effects versus1 with missing launch/blast sounds, with
+ALSA-null PCM and one-time diagnostics, not audible playback.
+The unchanged final-artifact demo/startup/live-restart and five publisher
+key/door/combat/progression/restart regressions pass. Their headless corpus
+still accepts the pre-existing malformed `bad-blockmap-offset`; it is not
+reported as a successful rejection. Raw archives are local, not public downloads.
+These results are not campaign or exact-original timing proof.
 
 | Platform / architecture | Build evidence | Runtime evidence |
 | --- | --- | --- |

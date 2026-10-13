@@ -409,23 +409,33 @@ def run(args):
                   colors(frame)["123"] > 1000, **values)
         elif case in ("cadence", "missing"):
             game.key("Control_L", True)
+            pressed = time.monotonic()
+            released = False
+            captured = []
+            for index in range(28):
+                time.sleep(.01)
+                frame = game.capture(f"02-weapon-phase-{index:02}")
+                captured.append((frame, game.metadata["frames"][-1]))
+                if not released and time.monotonic() - pressed >= .12:
+                    game.key("Control_L", False)
+                    released = True
+            if not released:
+                game.key("Control_L", False)
             phases = {}
             travel_samples = []
             firing_body = False
-            for index in range(12):
-                time.sleep(.035)
-                frame, values = observe(f"02-weapon-phase-{index:02}")
+            # Decode after capture, so analysis cannot extend the tap or skip a short flash.
+            for frame, record in captured:
+                values = fixture.hud(frame)
                 rendered = colors(frame)
+                record.update(hud=values, weaponColors=rendered)
                 firing_body |= rendered["131"] > 1000
                 missile = marker(frame, "missile")
                 if missile["pixels"] > 8 and 20 <= missile["width"] <= 200:
-                    travel_samples.append((game.metadata["frames"][-1]["seconds"], missile))
+                    travel_samples.append((record["seconds"], missile))
                 for color in (203, 211, 227, 243):
                     if rendered[str(color)] > 100:
                         phases[str(color)] = True
-                if len(phases) == (3 if case == "missing" else 4):
-                    break
-            game.key("Control_L", False)
             check("supplied-four-flash-phases" if case == "cadence" else "other-real-flashes-with-missing-first",
                   len(phases) == (3 if case == "missing" else 4), phases=phases)
             check("supplied-firing-body" if case == "cadence" else "missing-firing-body-not-invented",
