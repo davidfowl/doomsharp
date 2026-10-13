@@ -70,6 +70,7 @@ public sealed class Game
     public double Bob { get; private set; }
     public bool Automap { get; private set; }
     public bool Finished { get; private set; }
+    public string CompletionPrompt { get; private set; } = "";
     public string Message { get; private set; } = "";
     public List<Actor> Actors { get; } = [];
     public List<Projectile> Projectiles { get; } = [];
@@ -231,7 +232,14 @@ public sealed class Game
             if (damageTick >= 1)
             {
                 damageTick = 0;
-                if (sector.Special is 4 or 5 or 7 or 11 or 16) Damage(sector.Special == 7 ? 5 : 10);
+                if (sector.Special is 4 or 5 or 7 or 11 or 16)
+                    Damage(sector.Special switch { 7 => 5, 11 => 20, _ => 10 });
+            }
+            if (sector.Special == 11 && Health <= 10)
+            {
+                FinishLevel(false);
+                input.MouseX = 0;
+                return;
             }
             if ((pressed & Buttons.Use) != 0) Use();
             if ((input.Held & Buttons.Fire) != 0 && FireTime == 0) Shoot();
@@ -323,8 +331,8 @@ public sealed class Game
         int special = line.Special;
         if ((!crossing && special is 11 or 51) || (crossing && special is 52 or 124))
         {
-            Finished = true; secretExit = special is 51 or 124;
-            Say("LEVEL COMPLETE - FIRE TO CONTINUE"); PlaySound?.Invoke("SWTCHN"); return;
+            FinishLevel(special is 51 or 124);
+            PlaySound?.Invoke("SWTCHN"); return;
         }
         if (ActivateFloor(line, crossing)) return;
         bool door = crossing ? special is 2 or 3 or 4 or 16 or 86 or 90 :
@@ -600,6 +608,15 @@ public sealed class Game
 
     void Say(string text) { Message = text; messageTime = 4; }
 
+    void FinishLevel(bool secret)
+    {
+        Finished = true; secretExit = secret;
+        string? next = NextMapName(Map.Name, secretExit);
+        CompletionPrompt = next != null && Wad.Maps.Contains(next) ?
+            "LEVEL COMPLETE - FIRE TO CONTINUE" : "END OF AVAILABLE MAPS - R TO REPLAY";
+        Say(CompletionPrompt);
+    }
+
     void NextMap()
     {
         string? next = NextMapName(Map.Name, secretExit);
@@ -626,11 +643,12 @@ public sealed class Game
     void Load(string name, bool reset)
     {
         Map = new(Wad, name); Assets = new(Wad, name);
-        if (reset)
+        if (reset || Health <= 0)
         {
             Health = 100; Armor = 0; Bullets = 50; Shells = 0; HasShotgun = false; ShotgunSelected = false;
         }
         Keys = 0; Kills = 0; Secrets = 0; Time = 0; FireTime = 0; Finished = false; secretExit = false;
+        CompletionPrompt = "";
         DamageFlash = 0; PickupFlash = 0; damageTick = 0; WalkTime = 0;
         Spawn(); Say(name);
     }

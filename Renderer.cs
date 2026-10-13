@@ -331,7 +331,7 @@ public sealed class Renderer
         Text($"{game.Map.Name}  KILLS {game.Kills}/{game.TotalEnemies}  KEYS {game.Keys}  SECRETS {game.Secrets}",
             8, viewHeight + 5 + 9 * scale, scale, 0xc0c0c0);
         if (game.Message.Length > 0) Text(game.Message, 8, 8, scale, 0xffee90);
-        if (game.Finished) Text("LEVEL COMPLETE - FIRE TO CONTINUE", 30, viewHeight / 2, scale, 0xffffff);
+        if (game.Finished) Text(game.CompletionPrompt, 30, viewHeight / 2, scale, 0xffffff);
         if (!game.Automap && game.Health > 0)
         {
             int x = Width / 2, y = viewHeight / 2;
