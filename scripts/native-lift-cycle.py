@@ -17,7 +17,16 @@ root = Path(__file__).resolve().parent.parent
 wad = root / "tools/e2e-fixtures/generated/lift-use-repeat.wad"
 reference = json.loads(args.step_off_reference.read_text())
 expected_fixture = "e86d622806c6bf68ad3ba1facfeecd312fe04d27ea1b0dfdd4fff288b6297525"
+expected_gates = {
+    "activation-lowers-visible-platform", "stationary-bottom-wait",
+    "automatic-rise-changes-ceiling-not-floor-relative-to-camera",
+    "destination-stable-across-native-frames",
+    "destination-height-from-native-ceiling-floor-geometry",
+    "step-off-clears-portal-radius-after-prolonged-backward-input",
+}
 if (reference["sourceCommit"] != args.source_commit or
+        reference["runnerSha256"] != "21eaf1720e97e46e5dd2a598ad1d89e431f436cbbd2234ecc46e0c0cfbad106c" or
+        not reference["completed"] or {check["name"] for check in reference["assertions"]} != expected_gates or
         reference["executableSha256"] != hashlib.sha256(args.executable.read_bytes()).hexdigest() or
         reference["fixtureSha256"] != expected_fixture or reference["returncode"] != 0 or
         reference["finalPosition"][0] > -32 or not all(c["passed"] for c in reference["assertions"])):

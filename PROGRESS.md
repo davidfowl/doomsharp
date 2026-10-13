@@ -100,6 +100,10 @@ The latter compares the first cleared native frame with the same build's focused
 passing pose before issuing the second activation. This is a static original
 fixture oracle, not an original-game visual oracle or complete lift compatibility.
 Reproduction and output-directory rules are in [README](README.md).
+Two deliberately planned fresh native processes each completed both cycles;
+both returned to X=-111.14 with health100. Their cleared native frames matched
+the focused accepted pose exactly. These are local executable results; current
+CI remains the three-OS native demo/presentation scope, not a lift corpus.
 
 | Platform / architecture | Build evidence | Runtime evidence |
 | --- | --- | --- |
