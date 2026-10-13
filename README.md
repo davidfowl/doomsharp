@@ -1,6 +1,6 @@
 # DoomSharp
 
-**Current status: [progress and platform verification](PROGRESS.md).**
+**Current status: [what works and platform verification](PROGRESS.md).**
 
 A clean-room, dependency-free C# experiment in building a DOOM-compatible engine
 with .NET Native AOT. This repository does not contain or derive from the original
