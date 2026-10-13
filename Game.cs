@@ -678,7 +678,7 @@ public sealed class Game
             }
         double playerDistance = Math.Max(0, (Position - origin).Length - (rocket ? 16 : 0));
         if (playerDistance < 128 && Map.ClearSight(origin, Position, rocket ? z : Eye))
-            Damage(Math.Max(1, (int)(128 - playerDistance)));
+            Damage(rocket ? Math.Max(1, (int)(128 - playerDistance)) : (int)(128 - playerDistance));
     }
 
     void UpdateActor(Actor actor, double dt)

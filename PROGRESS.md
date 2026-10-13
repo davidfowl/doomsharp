@@ -227,6 +227,18 @@ original windup, Euclidean blast distance, BCL RNG, absent backpack/skill
 multipliers and incomplete weapon raise/lower/visual timing remain limitations.
 The independent frozen navigation qualifier is not repinned or replayed.
 
+Baseline native input over the launcher left pistol/ammo50 and diagnosed all
+three unsupported rocket thing types. The first candidate's cleanup collector
+sampled a final explosion frame too early; that failure was retained and its
+bounded observation interval corrected. A second collector failure combined
+adjacent same-colored enemies into one target centroid; it was retained and
+corrected by selecting the crosshair-nearest separated pixel component, without
+lowering the100-pixel/eight-pixel alignment gates. Continuation qualified all21
+cases/220 gates on the reviewed engine. The final source additionally restores
+the pre-existing barrel player-damage rounding and explicitly gates the firing
+body patch; its own full native qualification is recorded separately. These
+corrections are not campaign or exact-original timing proof.
+
 | Platform / architecture | Build evidence | Runtime evidence |
 | --- | --- | --- |
 | Linux x64 | Native AOT publish | Actual game: headless/X11 frames, OS-injected demo/live restart and ALSA null submission; physical input/audio unverified |

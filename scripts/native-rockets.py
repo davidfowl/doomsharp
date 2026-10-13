@@ -197,6 +197,15 @@ def marker(frame, kind):
             if predicate(r, g, b):
                 x = left + column
                 points.append((x, y))
+    if kind == "target" and points:
+        columns = sorted({x for x, _ in points})
+        groups = [[columns[0]]]
+        for x in columns[1:]:
+            if x != groups[-1][-1] + 1:
+                groups.append([])
+            groups[-1].append(x)
+        selected = min(groups, key=lambda group: abs((group[0] + group[-1]) / 2 - 480))
+        points = [(x, y) for x, y in points if selected[0] <= x <= selected[-1]]
     return {"pixels": len(points),
             "centerX": sum(x for x, _ in points) / len(points) if points else None,
             "width": max(x for x, _ in points) - min(x for x, _ in points) + 1 if points else 0}
@@ -402,10 +411,12 @@ def run(args):
             game.key("Control_L", True)
             phases = {}
             travel_samples = []
+            firing_body = False
             for index in range(12):
                 time.sleep(.035)
                 frame, values = observe(f"02-weapon-phase-{index:02}")
                 rendered = colors(frame)
+                firing_body |= rendered["131"] > 1000
                 missile = marker(frame, "missile")
                 if missile["pixels"] > 8 and 20 <= missile["width"] <= 200:
                     travel_samples.append((game.metadata["frames"][-1]["seconds"], missile))
@@ -417,6 +428,8 @@ def run(args):
             game.key("Control_L", False)
             check("supplied-four-flash-phases" if case == "cadence" else "other-real-flashes-with-missing-first",
                   len(phases) == (3 if case == "missing" else 4), phases=phases)
+            check("supplied-firing-body" if case == "cadence" else "missing-firing-body-not-invented",
+                  firing_body if case == "cadence" else not firing_body)
             check("one-tap-one-missile", values["ammo"] == (11 if case == "cadence" else 1), **values)
             if case == "missing":
                 check("missing-body-no-pistol-substitution", all(colors(frame)[str(c)] == 0 for c in (133, 141)))
