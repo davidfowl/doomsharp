@@ -1,0 +1,270 @@
+using System.Buffers.Binary;
+using System.Security.Cryptography;
+using System.Text;
+
+var output = Path.GetFullPath(args.Length == 0 ? "generated" : args[0]);
+Directory.CreateDirectory(output);
+var cases = new Scenario[]
+{
+    new("portal-equal", 0, 128),
+    new("step-24", 24, 128),
+    new("step-25", 25, 128),
+    new("clearance-56", 0, 56),
+    new("clearance-55", 0, 55),
+    new("overlap-55", 24, 79),
+    new("closed-portal", 0, 0),
+    new("flag-blocked", 0, 128, Flags: 5),
+    new("masked-passable", 0, 128, Masked: true),
+    new("masked-blocked", 0, 128, Flags: 5, Masked: true),
+    new("sky-portal", 0, 96, Sky: true),
+    new("blue-door", 0, 0, Special: 26),
+    new("lift-use-repeat", 64, 128, Special: 62, Tag: 7),
+    new("e2e-key-door-combat-exit", 0, 0, Special: 26, Encounter: true),
+    new("e2e-wrong-key", 0, 0, Special: 26, Encounter: true, EncounterKey: 13)
+};
+var artifacts = new List<string>();
+foreach (var scenario in cases)
+{
+    var bytes = Build(scenario);
+    Write($"{scenario.Name}.wad", bytes);
+}
+
+var baseline = Build(cases[0]);
+var malformed = new (string Name, Action<byte[]> Mutate)[]
+{
+    ("bad-directory-count", b => Put32(b, 4, int.MaxValue)),
+    ("bad-lump-extent", b => Put32(b, DirectoryOffset(b) + 4, int.MaxValue)),
+    ("bad-map-order", b => NameBytes("BOGUS").CopyTo(b, Entry(b, "SEGS") + 8)),
+    ("bad-sidedef-index", b => Put16(b, LumpOffset(b, "LINEDEFS") + 10, 65534)),
+    ("bad-node-child", b => Put16(b, LumpOffset(b, "NODES") + 24, 0x8002)),
+    ("cyclic-node", b => Put16(b, LumpOffset(b, "NODES") + 24, 0)),
+    ("bad-subsector-range", b => Put16(b, LumpOffset(b, "SSECTORS") + 2, 9)),
+    ("bad-blockmap-offset", b => Put16(b, LumpOffset(b, "BLOCKMAP") + 8, 65535)),
+    ("bad-patch-column", b => Put32(b, LumpOffset(b, "QLMASK") + 8, int.MaxValue)),
+    ("bad-pnames-count", b => Put32(b, LumpOffset(b, "PNAMES"), 65536))
+};
+foreach (var test in malformed)
+{
+    var bytes = (byte[])baseline.Clone();
+    test.Mutate(bytes);
+    Write($"{test.Name}.wad", bytes);
+}
+
+Console.WriteLine($"Generated {cases.Length} gameplay scenarios and {malformed.Length} malformed PWADs. Acceptance is through the real game executable, not generator checks.");
+File.WriteAllLines(Path.Combine(output, "SHA256SUMS"), artifacts.Order(StringComparer.Ordinal)
+    .Select(name => $"{Convert.ToHexStringLower(SHA256.HashData(File.ReadAllBytes(Path.Combine(output, name))))}  {name}"));
+
+void Write(string name, byte[] data)
+{
+    File.WriteAllBytes(Path.Combine(output, name), data);
+    artifacts.Add(name);
+}
+
+static byte[] Build(Scenario s)
+{
+    var lumps = new List<Lump>
+    {
+        new("PLAYPAL", Enumerable.Range(0, 14 * 768).Select(i => (byte)((i / 3) % 256)).ToArray()),
+        new("COLORMAP", Enumerable.Range(0, 34 * 256).Select(i => (byte)(i % 256)).ToArray()),
+        new("PNAMES", Pack(w => { w.Write(2); Name(w, "QLSOLID"); Name(w, "QLMASK"); })),
+        new("TEXTURE1", Textures()),
+        new("P_START", []),
+        new("QLSOLID", SolidPatch()),
+        new("QLMASK", MaskPatch()),
+        new("P_END", []),
+        new("F_START", []),
+        new("QLFLOOR", Enumerable.Range(0, 4096).Select(i => (byte)(32 + ((i / 64 / 8 + i % 64 / 8) % 2) * 32)).ToArray()),
+        new("QLCEIL", Enumerable.Repeat((byte)100, 4096).ToArray()),
+        new("F_SKY1", Enumerable.Repeat((byte)120, 4096).ToArray()),
+        new("F_END", []),
+        new("S_START", []),
+        new("BKEYA0", MaskPatch()),
+        new("QLSPA2A8", MaskPatch()),
+        new("S_END", []),
+        new("E1M1", []),
+        new("THINGS", s.Encounter
+            ? Shorts(-96, 0, 0, 1, 7, -72, 0, 0, s.EncounterKey, 7, -48, 0, 0, 2001, 7, 64, 0, 180, 3001, 7)
+            : Shorts(-64, 0, 0, 1, 7)),
+        new("LINEDEFS", Pack(w =>
+        {
+            Line(w, 0, 1, 1, 0, 0, 0, 65535);
+            Line(w, 1, 2, 1, 0, 0, 1, 65535);
+            Line(w, 2, 3, s.Flags, s.Special, s.Tag, 2, 3);
+            Line(w, 3, 0, 1, 0, 0, 4, 65535);
+            Line(w, 2, 4, 1, 0, 0, 5, 65535);
+            Line(w, 4, 5, 1, s.Encounter ? 11 : 0, 0, 6, 65535);
+            Line(w, 5, 3, 1, 0, 0, 7, 65535);
+        })),
+        new("SIDEDEFS", Pack(w =>
+        {
+            Side(w, 0, false, false); Side(w, 0, false, false);
+            Side(w, 0, true, s.Masked); Side(w, 1, true, s.Masked);
+            Side(w, 0, false, false);
+            for (var i = 0; i < 3; i++) Side(w, 1, false, false);
+        })),
+        new("VERTEXES", Shorts(-128, -64, -128, 64, 0, 64, 0, -64, 128, 64, 128, -64, -64, 64)),
+        new("SEGS", Pack(w =>
+        {
+            Seg(w, 0, 1, 0x4000, 0, 0, 0);
+            Seg(w, 1, 6, 0, 1, 0, 0);
+            Seg(w, 6, 2, 0, 1, 0, 64);
+            Seg(w, 2, 3, 0xc000, 2, 0, 0);
+            Seg(w, 3, 0, 0x8000, 3, 0, 0);
+            Seg(w, 3, 2, 0x4000, 2, 1, 0);
+            Seg(w, 2, 4, 0, 4, 0, 0);
+            Seg(w, 4, 5, 0xc000, 5, 0, 0);
+            Seg(w, 5, 3, 0x8000, 6, 0, 0);
+        })),
+        new("SSECTORS", Shorts(5, 0, 4, 5)),
+        new("NODES", Shorts(0, 64, 0, -128, 64, -64, -128, 0, 64, -64, 0, 128, 0x8000, 0x8001)),
+        new("SECTORS", Pack(w =>
+        {
+            Sector(w, 0, 128, 0, s.Sky);
+            Sector(w, s.Floor, s.Ceiling, s.Tag, s.Sky);
+        })),
+        new("REJECT", [0]),
+        // Shared conservative candidate list; extra candidates are harmless.
+        new("BLOCKMAP", Shorts(-128, -64, 3, 2, 10, 10, 10, 10, 10, 10, 0, 0, 1, 2, 3, 4, 5, 6, 65535))
+    };
+    if (s.Encounter)
+    {
+        var spriteEnd = lumps.FindIndex(l => l.Name == "S_END");
+        lumps.Insert(spriteEnd++, new("RKEYA0", MaskPatch()));
+        lumps.Insert(spriteEnd++, new("SHOTA0", SpritePatch(180)));
+        for (var frame = 'A'; frame <= 'U'; frame++)
+            lumps.Insert(spriteEnd++, new($"TROO{frame}0", SpritePatch(80)));
+        var next = ReadLumps(Build(new("next-map", 0, 128)));
+        var marker = next.FindIndex(l => l.Name == "E1M1");
+        lumps.Add(new("E1M2", []));
+        lumps.AddRange(next.Skip(marker + 1).Take(10));
+    }
+    return Pack(w =>
+    {
+        w.Write(Encoding.ASCII.GetBytes("PWAD")); w.Write(lumps.Count); w.Write(0);
+        var positions = new List<int>();
+        foreach (var lump in lumps) { positions.Add(checked((int)w.BaseStream.Position)); w.Write(lump.Data); }
+        var directory = checked((int)w.BaseStream.Position);
+        for (var i = 0; i < lumps.Count; i++)
+        {
+            w.Write(positions[i]); w.Write(lumps[i].Data.Length); Name(w, lumps[i].Name);
+        }
+        w.BaseStream.Position = 8; w.Write(directory);
+    });
+}
+
+static byte[] Textures() => Pack(w =>
+{
+    w.Write(3); w.Write(16); w.Write(48); w.Write(80);
+    Texture(w, "QLWALL", 64, 128, 0);
+    Texture(w, "QLFENCE", 4, 4, 1);
+    Texture(w, "SKY1", 64, 128, 0);
+});
+
+static byte[] SpritePatch(byte color) => Pack(w =>
+{
+    w.Write((short)32); w.Write((short)56); w.Write((short)16); w.Write((short)56);
+    for (var x = 0; x < 32; x++) w.Write(136 + x * 61);
+    for (var x = 0; x < 32; x++)
+    {
+        w.Write((byte)0); w.Write((byte)56); w.Write((byte)0);
+        for (var y = 0; y < 56; y++) w.Write((byte)(color + (x / 8 + y / 8) % 2 * 16));
+        w.Write((byte)0); w.Write((byte)255);
+    }
+});
+
+static void Texture(BinaryWriter w, string name, int width, int height, int patch)
+{
+    Name(w, name); w.Write(0); w.Write((short)width); w.Write((short)height);
+    w.Write(0); w.Write((short)1);
+    w.Write((short)0); w.Write((short)0); w.Write((short)patch);
+    w.Write((short)1); w.Write((short)0);
+}
+
+static byte[] SolidPatch() => Pack(w =>
+{
+    w.Write((short)64); w.Write((short)128); w.Write((short)32); w.Write((short)128);
+    for (var x = 0; x < 64; x++) w.Write(264 + x * 133);
+    for (var x = 0; x < 64; x++)
+    {
+        w.Write((byte)0); w.Write((byte)128); w.Write((byte)0);
+        for (var y = 0; y < 128; y++) w.Write((byte)(64 + (x / 8 + y / 8) % 2 * 64));
+        w.Write((byte)0); w.Write((byte)255);
+    }
+});
+
+static byte[] MaskPatch() => Pack(w =>
+{
+    w.Write((short)4); w.Write((short)4); w.Write((short)-2); w.Write((short)4);
+    w.Write(24); w.Write(36); w.Write(37); w.Write(46);
+    w.Write(new byte[] { 0, 2, 0, 0, 255, 0, 3, 1, 0, 17, 0, 255 });
+    w.Write((byte)255);
+    w.Write(new byte[] { 0, 4, 0, 32, 33, 34, 35, 0, 255 });
+    w.Write(new byte[] { 1, 1, 0, 99, 0, 255 });
+});
+
+static void Side(BinaryWriter w, int sector, bool portal, bool masked)
+{
+    w.Write((short)8); w.Write((short)-4);
+    Name(w, portal ? "QLWALL" : "-"); Name(w, portal ? "QLWALL" : "-");
+    Name(w, portal ? masked ? "QLFENCE" : "-" : "QLWALL");
+    w.Write((ushort)sector);
+}
+
+static void Sector(BinaryWriter w, int floor, int ceiling, int tag, bool sky)
+{
+    w.Write((short)floor); w.Write((short)ceiling);
+    Name(w, "QLFLOOR"); Name(w, sky ? "F_SKY1" : "QLCEIL");
+    w.Write((short)192); w.Write((short)0); w.Write((short)tag);
+}
+
+static void Line(BinaryWriter w, params int[] values) { foreach (var v in values) w.Write(unchecked((ushort)v)); }
+static void Seg(BinaryWriter w, params int[] values) => Line(w, values);
+static byte[] Shorts(params int[] values) => Pack(w => Line(w, values));
+static void Name(BinaryWriter w, string name) => w.Write(NameBytes(name));
+static byte[] NameBytes(string name)
+{
+    if (name.Length > 8) throw new ArgumentException("Lump name exceeds eight characters");
+    var bytes = new byte[8]; Encoding.ASCII.GetBytes(name).CopyTo(bytes, 0); return bytes;
+}
+
+static byte[] Pack(Action<BinaryWriter> write)
+{
+    using var stream = new MemoryStream();
+    using var writer = new BinaryWriter(stream, Encoding.ASCII, leaveOpen: true);
+    write(writer); writer.Flush(); return stream.ToArray();
+}
+
+static List<Lump> ReadLumps(byte[] bytes)
+{
+    Require(bytes.Length >= 12, "header truncated");
+    Require(Encoding.ASCII.GetString(bytes, 0, 4) is "PWAD" or "IWAD", "WAD signature");
+    var count = I32(bytes, 4); var directory = DirectoryOffset(bytes);
+    Require(count >= 0 && directory >= 12 && (long)directory + (long)count * 16 <= bytes.Length, "directory outside file");
+    var result = new List<Lump>();
+    for (var i = 0; i < count; i++)
+    {
+        var entry = directory + i * 16; var offset = I32(bytes, entry); var size = I32(bytes, entry + 4);
+        Require(size >= 0 && (size == 0 || offset >= 0 && (long)offset + size <= bytes.Length), "lump extent outside file");
+        result.Add(new(Encoding.ASCII.GetString(bytes, entry + 8, 8).TrimEnd('\0'), size == 0 ? [] : bytes.AsSpan(offset, size).ToArray()));
+    }
+    return result;
+}
+
+static void Require(bool condition, string message) { if (!condition) throw new InvalidDataException(message); }
+static int DirectoryOffset(byte[] bytes) => I32(bytes, 8);
+static int Entry(byte[] bytes, string name)
+{
+    for (var i = 0; i < I32(bytes, 4); i++)
+    {
+        var entry = DirectoryOffset(bytes) + i * 16;
+        if (Encoding.ASCII.GetString(bytes, entry + 8, 8).TrimEnd('\0') == name) return entry;
+    }
+    throw new InvalidOperationException($"Missing {name}");
+}
+static int LumpOffset(byte[] bytes, string name) => I32(bytes, Entry(bytes, name));
+static int I32(byte[] b, int i) => BinaryPrimitives.ReadInt32LittleEndian(b.AsSpan(i, 4));
+static void Put32(byte[] b, int i, int v) => BinaryPrimitives.WriteInt32LittleEndian(b.AsSpan(i, 4), v);
+static void Put16(byte[] b, int i, int v) => BinaryPrimitives.WriteUInt16LittleEndian(b.AsSpan(i, 2), (ushort)v);
+
+record Scenario(string Name, int Floor, int Ceiling, int Flags = 4, bool Masked = false, bool Sky = false, int Special = 0, int Tag = 0, bool Encounter = false, int EncounterKey = 5);
+record Lump(string Name, byte[] Data);
