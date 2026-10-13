@@ -32,7 +32,7 @@ passes; Linux includes OS-input demo/restart and startup-failure qualification.
 | Movement, collision and sector actions | Partial | Native demo walks through a door and raised-floor portal; optional fixture tooling qualifies selected boundaries, not every mover/trigger |
 | Map progression and damaging exits | Partial | Native Linux input observes E1M1 to E1M2 with inventory/health retained; local classic-map scenarios qualify sector-11 damage/exit, fresh dead-player next-map state and finale/missing-map stop; not original campaign completion |
 | Actors, sprites, pickups and barrels | Partial | Native demo observes pickup and one enemy kill; exact states/attacks, infighting, boss behavior and many item/visual cases remain unfinished or unverified |
-| HUD, weapon overlays and automap | Partial | Actual executable exports HUD/weapon frames; no original visual oracle or dedicated automap input qualification |
+| HUD, weapon overlays and automap | Partial | Actual executable exports HUD/weapon frames; local Linux native Tab on/off plus W/Ctrl controls qualify automap input, not original visuals or other-platform interactive behavior |
 | Native window presentation | Working | Bounded actual-engine desktop smoke runs pass on three OSes; interactive input coverage differs by platform below |
 | DMX decoding and sound-effects mixer | Partial | Native Linux playthrough submits effects to ALSA null; exact resampling/audio comparison, audible playback and Windows/macOS audio unverified |
 | Remaining weapons/powerups, stairs/crushers, switch textures and boss scripts | Not implemented | Required for original gameplay/campaign parity |
@@ -104,6 +104,20 @@ Two deliberately planned fresh native processes each completed both cycles;
 both returned to X=-111.14 with health100. Their cleared native frames matched
 the focused accepted pose exactly. These are local executable results; current
 CI remains the three-OS native demo/presentation scope, not a lift corpus.
+
+Linux Tab failure was reproduced again after the lift merge on
+`ab7fab8ead6dcfb3f171942e312e30d189a81296`. The actual X server mapped keycode23
+to `XK_Tab`0xff09 for press/release, but all three captures remained 3D (automap
+background fraction0). Native W moved X=-64 to13.14 and Ctrl changed rendered
+ammo50 to48. Game exit0 was runner exit1, not automap success.
+The X11 backend now normalizes Tab/ISO_Left_Tab to the shared ASCII Tab key
+before both press and release dispatch; adjacent keys and Windows/macOS mappings
+are unchanged. [Native orchestration](scripts/native-tab.py) observes ordinary
+Tab on/off and W/Ctrl controls through the actual game, with the five unchanged
+thresholds and commands in README. Two planned fresh processes qualify this
+path; raw evidence is worker-local, not public downloadable media or CI coverage.
+The integrated native lift, demo and boundary/progression regressions remain
+separate checks rather than being inferred from Tab success.
 
 | Platform / architecture | Build evidence | Runtime evidence |
 | --- | --- | --- |
