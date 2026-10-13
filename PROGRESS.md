@@ -21,14 +21,14 @@ not complete original-DOOM behavior.
 
 | Feature | Status | Verification and limits |
 | --- | --- | --- |
-| Original generated demo | Working (worker-reported gameplay) | Linux OS-injected pickup/door/combat/exit reported in engine PR #1; independent synthetic qualification is worker-local, not a public packet |
+| Original generated demo | Working (limited scope) | Reproducible native Linux OS-input pickup/door/combat/exit and live restart via the published orchestration below; not a campaign |
 | Classic WAD loading and BSP textured geometry | Working (limited coverage) | CI renders the generated demo; engine PR #1 reports 68 Freedoom map-start renders, not campaign completion; no extended map formats |
-| Basic pistol/shotgun loop | Working (limited coverage) | Isolated demo kill/ammo/pickup/restart checks pass; OS-input gameplay worker-reported; not exact damage/RNG or every weapon |
-| Movement, collision and sector actions | Partial | Isolated wall/step/door/lift/teleport/exit checks pass for selected cases, not game E2E; original physics and all mover/trigger variants unfinished |
-| Actors, sprites, pickups and barrels | Partial | Transparency, drops and basic combat verified; monster states/attacks, infighting, boss behavior and some items/animations incomplete |
-| HUD, weapon overlays and automap | Partial | HUD/weapon pixels rendered and patch offsets tested; automap code exists but has no dedicated end-to-end input verification |
+| Basic pistol/shotgun loop | Partial | Native demo observes shotgun pickup/kill/live restart; no current exact damage/RNG or complete pistol/all-weapon acceptance |
+| Movement, collision and sector actions | Partial | Native demo walks through a door and raised-floor portal; optional fixture tooling qualifies selected boundaries, not every mover/trigger |
+| Actors, sprites, pickups and barrels | Partial | Native demo observes pickup and one enemy kill; exact states/attacks, infighting, boss behavior and many item/visual cases remain unfinished or unverified |
+| HUD, weapon overlays and automap | Partial | Actual executable exports HUD/weapon frames; no original visual oracle or dedicated automap input qualification |
 | Native window presentation | Working | Bounded actual-engine desktop smoke runs pass on three OSes; interactive input coverage differs by platform below |
-| DMX decoding and sound-effects mixer | Partial | Isolated resampling check passes; Linux ALSA null PCM submission worker-reported; physical audible playback and Windows/macOS audio unverified |
+| DMX decoding and sound-effects mixer | Partial | Native Linux playthrough submits effects to ALSA null; exact resampling/audio comparison, audible playback and Windows/macOS audio unverified |
 | Remaining weapons/powerups, stairs/crushers, switch textures and boss scripts | Not implemented | Required for original gameplay/campaign parity |
 | Music/MUS, saves, menus, multiplayer and extended maps/mods | Not implemented | No end-to-end capability claimed |
 | Complete authentic WAD campaigns | Unverified | Map rendering alone is not campaign completion; missing behaviors can block progression |
@@ -47,22 +47,26 @@ authentic WAD campaigns. Extended maps/mod formats are not implemented.
 
 ## Built vs. runtime-tested
 
-The [confirmed merged-main CI run](https://github.com/davidfowl/doomsharp/actions/runs/38367324903)
-passes on all three target operating systems and retains native binary and
-framebuffer artifacts. It ran at docs commit
-[`6f7a7ed807814de9bcbe0c08ad90ee12b0f0ca75`](https://github.com/davidfowl/doomsharp/commit/6f7a7ed807814de9bcbe0c08ad90ee12b0f0ca75).
-Each job runs `--self-test` before and after Native AOT publishing, renders a
-35-frame headless demo, and exercises 35-frame native desktop presentation with
-`--no-audio` (Linux under Xvfb). The 37 self-test checks call engine methods
-directly, bypassing native input/window/audio. **These isolated checks and
-presentation smoke are not actual-game E2E.** CI does not inject gameplay input,
-exercise audio or validate the Freedoom corpus.
+The [earlier merged-main CI](https://github.com/davidfowl/doomsharp/actions/runs/38367324903)
+established three-OS AOT builds and bounded no-audio presentation, not gameplay.
+The former isolated 37-check harness and startup shortcut are now removed.
+**No unit tests or direct engine-method qualification remain.**
+
+The [current workflow](.github/workflows/build.yml) publishes and runs the
+native game for headless and bounded desktop scenarios. Linux also launches
+the real game with [OS-input orchestration](scripts/native-demo.py): two genuine
+startup rejections, completed demo and live restart. Local native qualification
+observed health 88, one kill, shotgun acquired and exit completed; restart
+returned to the start with health 100 and no shotgun. Complete frames, logs and
+the executable hash are retained, including artifacts when CI fails.
+This is executable E2E through virtual OS facilities, not physical-device
+verification, a visual/timing oracle or original-map campaign acceptance.
 
 | Platform / architecture | Build evidence | Runtime evidence |
 | --- | --- | --- |
-| Linux x64 | Native AOT and isolated behavioral checks pass | CI: bounded X11 presentation under Xvfb, no audio/input automation; separate OS-injected demo, mouse capture and ALSA null output worker-reported |
-| Windows x64 | Native AOT and behavioral tests pass | Bounded Win32/GDI desktop presentation in CI; interactive input and audio unverified |
-| macOS arm64 | Native AOT and behavioral tests pass | Bounded AppKit/CoreGraphics desktop presentation in CI; interactive input and audio unverified |
+| Linux x64 | Native AOT publish | Actual game: headless/X11 frames, OS-injected demo/live restart and ALSA null submission; physical input/audio unverified |
+| Windows x64 | Native AOT publish | Bounded Win32/GDI desktop presentation; interactive input and audio unverified |
+| macOS arm64 | Native AOT publish | Bounded AppKit/CoreGraphics desktop presentation; interactive input and audio unverified |
 | Other OS / architectures | Unverified | Unverified |
 
 The [engine PR #1 report](https://github.com/davidfowl/doomsharp/pull/1) describes
@@ -78,7 +82,8 @@ inspected for this docs update; no public evidence packet is linked here.
 Separate [synthetic fixture tooling](tools/e2e-fixtures/README.md) is now merged
 in [PR #5](https://github.com/davidfowl/doomsharp/pull/5), with reproduction
 instructions and worker-reported outcomes; generated evidence is not committed.
-Accessible raw qualification evidence remains an integration gap.
+Those older raw packets remain worker-local; current demo orchestration and CI
+artifact retention make its narrower qualification reproducible.
 These synthetic runs do **not** establish physical keyboard/mouse, audible
 sound or original-map full gameplay. Other architectures remain unverified.
 
@@ -90,14 +95,12 @@ coverage is **not** proof of original-map gameplay or campaign completion.
 
 ## Reproduce
 
-Run from the repository with the .NET 10 SDK. The demo and tests generate their
-own original assets; no WAD download is required. The existing `--self-test`
-commands below reproduce isolated checks, not game E2E or the separate
-worker-reported OS-input/corpus qualifications.
+Run from the repository with the .NET 10 SDK. The demo contains original assets;
+no WAD download is required. Native qualification operates on the published
+executable, not engine methods.
 
 ```sh
 dotnet run -c Release -- --demo --no-audio
-dotnet run -c Release -- --self-test
 dotnet run -c Release -- --demo --headless --frames 35 --output demo.ppm
 dotnet run -c Release -- --wad /path/to/game.wad --map E1M1 --no-audio
 dotnet run -c Release -- --wad /path/to/freedoom1.wad --validate-maps
@@ -106,11 +109,17 @@ dotnet run -c Release -- --wad /path/to/freedoom1.wad --validate-maps
 Publish on the matching host OS, not across OSes. Native compiler prerequisites
 and controls are in [README](README.md).
 
-| Host | Native AOT publish | Test and run the published executable |
+| Host | Native AOT publish | Run the published executable |
 | --- | --- | --- |
-| Linux x64 | `dotnet publish -c Release -r linux-x64 -o artifacts/linux-x64` | `./artifacts/linux-x64/DoomSharp --self-test` then `./artifacts/linux-x64/DoomSharp --demo --no-audio` |
-| Windows x64 (PowerShell) | `dotnet publish -c Release -r win-x64 -o artifacts/win-x64` | `.\artifacts\win-x64\DoomSharp.exe --self-test` then `.\artifacts\win-x64\DoomSharp.exe --demo --no-audio` |
-| macOS ARM64 | `dotnet publish -c Release -r osx-arm64 -o artifacts/osx-arm64` | `./artifacts/osx-arm64/DoomSharp --self-test` then `./artifacts/osx-arm64/DoomSharp --demo --no-audio` |
+| Linux x64 | `dotnet publish -c Release -r linux-x64 -o artifacts/linux-x64` | `./artifacts/linux-x64/DoomSharp --demo --no-audio` |
+| Windows x64 (PowerShell) | `dotnet publish -c Release -r win-x64 -o artifacts/win-x64` | `.\artifacts\win-x64\DoomSharp.exe --demo --no-audio` |
+| macOS ARM64 | `dotnet publish -c Release -r osx-arm64 -o artifacts/osx-arm64` | `./artifacts/osx-arm64/DoomSharp --demo --no-audio` |
+
+Linux OS-input qualification (development-only Python stdlib, Xvfb and XTest):
+
+```sh
+xvfb-run -a python3 scripts/native-demo.py artifacts/linux-x64/DoomSharp
+```
 
 Linux desktop runs need a 24/32-bit X11 display (XWayland on Wayland); sound needs
 ALSA. Windows uses built-in GDI/waveOut, and macOS uses AppKit/CoreGraphics/
