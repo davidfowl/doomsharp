@@ -3,5 +3,6 @@ obj/
 artifacts/
 *.wad
 *.WAD
+!assets/freedoom/freedoom1.wad
 *.ppm
 __pycache__/

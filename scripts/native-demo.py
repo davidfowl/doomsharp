@@ -83,7 +83,7 @@ def play(name, restart):
     frame, log_path = output / (name + ".ppm"), output / (name + ".log")
     frame.unlink(missing_ok=True)
     with log_path.open("w") as log:
-        process = subprocess.Popen([str(executable), "--demo", "--frames", "100000",
+        process = subprocess.Popen([str(executable), "--fixture-demo", "--frames", "100000",
                                     "--output", str(frame)], stdout=log, stderr=log, env=environment)
         try:
             deadline, window = time.monotonic() + 15, None
@@ -135,7 +135,7 @@ try:
     with tempfile.TemporaryDirectory(dir=output) as scratch:
         for name, arguments, diagnostic in [
             ("missing-wad", ["--wad", str(Path(scratch) / "missing.wad"), "--headless"], "DoomSharp:"),
-            ("invalid-frame-count", ["--demo", "--headless", "--frames", "0"], "--frames must be positive"),
+            ("invalid-frame-count", ["--fixture-demo", "--headless", "--frames", "0"], "--frames must be positive"),
         ]:
             run = subprocess.run([str(executable), *arguments], capture_output=True, text=True, timeout=15)
             text = run.stdout + run.stderr

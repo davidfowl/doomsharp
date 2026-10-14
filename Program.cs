@@ -24,6 +24,8 @@ static class Program
                 Usage: DoomSharp --wad /path/to/game.wad [--map E1M1] [--no-audio]
                        DoomSharp --demo [--no-audio]
                 Options:
+                  --demo                                  Play bundled Freedoom Phase 1 (E1M1)
+                  --fixture-demo                          Play the original two-room test level
                   --headless --frames N --output frame.ppm  Render without native devices
                   --frames N                               Stop after N frames (desktop too)
                   --validate-maps                          Load and render every map headlessly
@@ -44,7 +46,7 @@ static class Program
             return args[i + 1];
         }
         HashSet<string> valued = ["--wad", "--map", "--frames", "--output", "--demo-wad"];
-        HashSet<string> flags = ["--demo", "--headless", "--no-audio", "--validate-maps"];
+        HashSet<string> flags = ["--demo", "--fixture-demo", "--headless", "--no-audio", "--validate-maps"];
         for (int i = 0; i < args.Length; i++)
         {
             if (valued.Contains(args[i])) { _ = Value(args[i]); i++; }
@@ -52,10 +54,18 @@ static class Program
         }
         if (Value("--demo-wad") is string demoPath) { File.WriteAllBytes(demoPath, Demo.Create()); Console.WriteLine($"Wrote original demo WAD: {demoPath}"); return 0; }
         bool demo = args.Contains("--demo");
+        bool fixtureDemo = args.Contains("--fixture-demo");
         string? path = Value("--wad");
-        if (demo && path != null) throw new ArgumentException("Use either --demo or --wad, not both.");
-        Wad wad = demo ? new(Demo.Create()) : new(path ?? throw new ArgumentException("Provide --wad path or --demo."));
-        string map = Value("--map") ?? wad.Maps.FirstOrDefault() ?? throw new InvalidDataException("WAD contains no classic maps.");
+        if ((demo ? 1 : 0) + (fixtureDemo ? 1 : 0) + (path != null ? 1 : 0) > 1)
+            throw new ArgumentException("Use only one of --demo, --fixture-demo or --wad.");
+        if (demo)
+        {
+            path = Path.Combine(AppContext.BaseDirectory, "assets", "freedoom", "freedoom1.wad");
+            if (!File.Exists(path))
+                throw new FileNotFoundException("Bundled Freedoom WAD is missing. Rebuild or republish with assets/freedoom/freedoom1.wad included.", path);
+        }
+        Wad wad = fixtureDemo ? new(Demo.Create()) : new(path ?? throw new ArgumentException("Provide --wad path, --demo or --fixture-demo."));
+        string map = Value("--map") ?? (demo ? "E1M1" : wad.Maps.FirstOrDefault()) ?? throw new InvalidDataException("WAD contains no classic maps.");
         bool headless = args.Contains("--headless"), validate = args.Contains("--validate-maps");
         int frames = Value("--frames") is string count ? int.Parse(count, CultureInfo.InvariantCulture) : headless ? 1 : int.MaxValue;
         if (frames <= 0) throw new ArgumentException("--frames must be positive.");

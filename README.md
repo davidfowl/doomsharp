@@ -8,9 +8,10 @@ DOOM source code and does not distribute proprietary game assets.
 
 **This is a playable first increment, not a complete DOOM replacement.** It can
 load classic binary WAD maps, render textured sector geometry and actors, and run
-a single-player combat loop. The bundled `--demo` is an original generated
-two-room encounter: collect a shotgun, open the door, defeat the enemy and use
-the far wall to exit. No downloaded assets are needed for the demo.
+a single-player combat loop. `--demo` launches E1M1 of the bundled, freely licensed
+Freedoom Phase 1 WAD. No separate download is needed. The original generated
+two-room encounter remains available through `--fixture-demo`: collect a shotgun,
+open the door, defeat the enemy and use the far wall to exit.
 
 ## Build and run
 
@@ -29,6 +30,20 @@ Use `win-x64`, `win-arm64`, `linux-arm64`, `osx-x64` or `osx-arm64` as appropria
 Publish on the target OS; .NET Native AOT does not support cross-OS compilation.
 Windows requires the Visual Studio C++ build tools; Linux requires a C compiler
 and zlib development headers; macOS requires Xcode command-line tools.
+
+On Windows, start the bundled Freedoom map with `dotnet run -c Release -- --demo`.
+Build and publish copy `assets/freedoom` beside the executable; keep that directory
+with the executable when distributing it. Asset lookup is relative to the executable,
+not the current working directory. `--map E1M2` (or another Phase 1 map) overrides
+the demo's E1M1 start. Freedoom is not the original DOOM artwork, and engine
+compatibility limitations below still apply.
+
+The bundled WAD is unmodified Freedoom 0.13.0 Phase 1 from the
+[official release](https://github.com/freedoom/freedoom/releases/tag/v0.13.0).
+Its source archive `freedoom-0.13.0.zip` has SHA-256
+`3f9b264f3e3ce503b4fb7f6bdcb1f419d93c7b546f4df3e874dd878db9688f59`.
+Freedoom's BSD license and contributor/music credits are included in
+`assets/freedoom/COPYING.txt`, `CREDITS.txt` and `CREDITS-MUSIC.txt`.
 
 | Platform | Native facilities | Status |
 |---|---|---|
@@ -125,8 +140,8 @@ unfinished.
 ## Compatibility limits
 
 Supply your own **lawfully obtained** classic DOOM-format WAD. Owning a WAD does
-not grant permission to redistribute it. Alternatively obtain
-[Freedoom](https://freedoom.github.io/) separately under its BSD license. No
+not grant permission to redistribute it. [Freedoom](https://freedoom.github.io/)
+Phase 1 is bundled under its BSD license for `--demo`. No
 proprietary WAD, original DOOM source, or third-party engine is included here.
 The renderer uses our own triangle rasterizer rather than ported DOOM code.
 
@@ -176,8 +191,11 @@ Linux needs Xvfb/XTest for this automation, not for ordinary gameplay.
 Logs, frames, the executable hash and outcomes are written to
 `artifacts/native-demo`; failed scenarios remain failures and CI retains artifacts.
 
-The demo assets are procedurally generated original content; `--demo-wad path.wad`
-can write that encounter for inspection. `--validate-maps` loads and renders each
+The `--fixture-demo` assets are procedurally generated original content;
+`--demo-wad path.wad` writes that two-room encounter, not the bundled Freedoom WAD,
+for inspection. Native OS-input demo/restart orchestration uses `--fixture-demo`;
+CI's `--demo` headless/desktop smoke runs use Freedoom.
+`--validate-maps` loads and renders each
 map at its player start, reporting unsupported things and missing textures.
 `--headless` opens neither a window nor an audio device. `--frames N` also bounds
 desktop runs. PPM exports contain only the assets from the WAD you supply.
