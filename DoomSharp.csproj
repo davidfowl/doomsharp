@@ -9,4 +9,8 @@
     <InvariantGlobalization>true</InvariantGlobalization>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
   </PropertyGroup>
+  <ItemGroup>
+    <None Update="assets\freedoom\freedoom1.wad;assets\freedoom\COPYING.txt;assets\freedoom\CREDITS.txt;assets\freedoom\CREDITS-MUSIC.txt"
+          CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+  </ItemGroup>
 </Project>

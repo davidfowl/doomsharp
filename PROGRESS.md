@@ -29,6 +29,12 @@ historical failures or independent downloaded-CI qualification.
 
 ## Feature status
 
+`--demo` now selects bundled Freedoom 0.13.0 Phase 1, starting at E1M1.
+The original generated encounter is retained as `--fixture-demo` and remains
+the target of the scripted OS-input demo/restart scenarios. Historical generated
+demo evidence below does not establish Freedoom campaign completion.
+Build/publish output includes the Phase 1 WAD, BSD license and credits.
+
 | Feature | Status | Verification and limits |
 | --- | --- | --- |
 | Original generated demo | Working (limited scope) | Reproducible native Linux OS-input pickup/door/combat/exit and live restart via the published orchestration below; not a campaign |
