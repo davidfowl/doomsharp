@@ -89,7 +89,7 @@ jobs:
       - name: Exercise published browser application
         shell: bash
         run: |
-          dotnet run --project tools/Serve -c Release -- artifacts/browser/wwwroot --urls http://127.0.0.1:5187 > artifacts/browser-host.log 2>&1 &
+          dotnet run --project tools/Serve -c Release -- artifacts/browser/wwwroot --urls http://127.0.0.1:5187 --path-base /doomsharp > artifacts/browser-host.log 2>&1 &
           host=$!
           pulse_socket="$RUNNER_TEMP/doomsharp-pulse.sock"
           pulseaudio --daemonize=no --exit-idle-time=-1 --use-pid-file=no -n \
@@ -99,18 +99,74 @@ jobs:
           export PULSE_SERVER="unix:$pulse_socket"
           trap 'kill "$host" "$pulse" 2>/dev/null || true' EXIT
           for attempt in {1..60}; do
-            if curl --silent --fail http://127.0.0.1:5187/ > /dev/null; then break; fi
+            if curl --silent --fail http://127.0.0.1:5187/doomsharp/ > /dev/null; then break; fi
             sleep 1
           done
-          curl --silent --fail http://127.0.0.1:5187/ > /dev/null
+          curl --silent --fail http://127.0.0.1:5187/doomsharp/ > /dev/null
           for attempt in {1..30}; do
             if pactl info > /dev/null 2>&1; then break; fi
             sleep 1
           done
           pactl info > artifacts/browser-audio-device.log
-          dotnet run --project tools/BrowserChecks -c Release -- http://127.0.0.1:5187 tools/e2e-fixtures/generated artifacts/browser-checks ${{ matrix.browser }}
+          dotnet run --project tools/BrowserChecks -c Release -- http://127.0.0.1:5187/doomsharp/ tools/e2e-fixtures/generated artifacts/browser-checks ${{ matrix.browser }}
+      - uses: actions/upload-pages-artifact@v3
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && matrix.browser == 'chromium'
+        with:
+          path: artifacts/browser/wwwroot
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: doomsharp-browser-${{ matrix.browser }}
+          path: artifacts/
+  pages:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: browser
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    concurrency:
+      group: github-pages
+      cancel-in-progress: false
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy tested browser application
+        id: deployment
+        uses: actions/deploy-pages@v4
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+      - run: dotnet run --project tools/e2e-fixtures/FixtureGenerator.csproj -c Release -- tools/e2e-fixtures/generated
+      - name: Install live browser check dependencies
+        run: |
+          dotnet run --project tools/BrowserChecks -c Release -- install --with-deps chromium
+          sudo apt-get install -y pulseaudio
+      - name: Verify live Pages gameplay
+        env:
+          PAGES_URL: ${{ steps.deployment.outputs.page_url }}
+        shell: bash
+        run: |
+          mkdir -p artifacts
+          pulse_socket="$RUNNER_TEMP/doomsharp-pages-pulse.sock"
+          pulseaudio --daemonize=no --exit-idle-time=-1 --use-pid-file=no -n \
+            -L "module-native-protocol-unix socket=$pulse_socket auth-anonymous=1" \
+            -L "module-null-sink sink_name=doomsharp_pages_test" > artifacts/pages-audio.log 2>&1 &
+          pulse=$!
+          export PULSE_SERVER="unix:$pulse_socket"
+          trap 'kill "$pulse" 2>/dev/null || true' EXIT
+          for attempt in {1..30}; do
+            if pactl info > /dev/null 2>&1; then break; fi
+            sleep 1
+          done
+          pactl info > artifacts/pages-audio-device.log
+          curl --fail --silent --show-error --retry 8 --retry-all-errors --retry-delay 5 "$PAGES_URL" > /dev/null
+          dotnet run --project tools/BrowserChecks -c Release -- "$PAGES_URL" tools/e2e-fixtures/generated artifacts/live-browser-checks chromium
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: doomsharp-live-pages
           path: artifacts/

@@ -91,9 +91,34 @@ Deploy the **contents** of `artifacts/browser/wwwroot` to any static HTTP host t
 serves `.wasm` as `application/wasm` and `.dat`/`.wad` as binary data. Do not open
 `index.html` as `file://`. Pointer lock/audio require browser permission and a
 user gesture; use HTTPS in deployment (localhost is suitable for development).
-For hosting under a subpath, change the `<base href="/">` in
-`Browser/wwwroot/index.html` to that path before publishing. Keep the bundled
-Freedoom license and credits with the site.
+The relative `<base href="./">` supports both root hosting and subpaths such as
+`/doomsharp/`; use the URL with its trailing slash. Keep the published MIT license
+and bundled Freedoom license and credits with the site. Uncompressed runtime
+files must remain available; `.br`/`.gz` sidecars are optional and require correct
+content-encoding headers if served.
+
+### GitHub Pages
+
+Set repository **Settings > Pages > Source** to **GitHub Actions**. On a push to
+`main`, `.github/workflows/build.yml` publishes the browser site and exercises it
+under `/doomsharp/` in Chromium, Firefox and WebKit. After all three browser jobs
+succeed, it deploys only the published `wwwroot` contents to the `github-pages`
+environment. Pull requests and other branches test without deploying.
+The deployment job then runs Chromium against the public Pages URL, exercising
+WAD loading, rendering, input and gameplay. Its `doomsharp-live-pages` artifact
+retains the results and screenshots; a successful upload alone is not a
+successful live gameplay check.
+The site is available at <https://davidfowl.github.io/doomsharp/> after a successful
+Pages deployment. This build does not require cross-origin-isolation headers.
+
+To reproduce the subpath check locally, serve the published output with:
+
+```sh
+dotnet run --project tools/Serve -c Release -- artifacts/browser/wwwroot --urls http://localhost:5187 --path-base /doomsharp
+```
+
+Open `http://localhost:5187/doomsharp/`, or pass that URL to the browser checks
+documented below.
 
 ## Controls
 

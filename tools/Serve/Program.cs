@@ -3,7 +3,7 @@ using Microsoft.Extensions.FileProviders;
 
 if (args.Length == 0)
 {
-    Console.Error.WriteLine("Usage: DoomSharp.Serve <published-wwwroot> [--urls http://127.0.0.1:5187]");
+    Console.Error.WriteLine("Usage: DoomSharp.Serve <published-wwwroot> [--urls http://127.0.0.1:5187] [--path-base /doomsharp]");
     return 2;
 }
 string root = Path.GetFullPath(args[0]);
@@ -15,6 +15,7 @@ if (!File.Exists(Path.Combine(root, "index.html")))
 var builder = WebApplication.CreateBuilder(args.Skip(1).ToArray());
 if (!args.Contains("--urls")) builder.WebHost.UseUrls("http://127.0.0.1:5187");
 var app = builder.Build();
+if (builder.Configuration["path-base"] is string pathBase) app.UsePathBase(pathBase);
 FileExtensionContentTypeProvider types = new();
 types.Mappings[".wasm"] = "application/wasm";
 types.Mappings[".dat"] = "application/octet-stream";

@@ -21,6 +21,7 @@ IBrowserType type = (args.Length == 4 ? args[3] : "chromium") switch
 List<object> results = [];
 List<string> errors = [];
 List<string> diagnostics = [];
+List<string> outsideBase = [];
 int failed = 0;
 void Check(string name, bool passed, object? observation = null)
 {
@@ -36,6 +37,13 @@ try
     page.PageError += (_, error) => errors.Add(error);
     page.Console += (_, message) => diagnostics.Add($"{message.Type}: {message.Text}");
     page.RequestFailed += (_, request) => diagnostics.Add($"Request failed: {request.Url}: {request.Failure}");
+    Uri baseUri = new(args[0].TrimEnd('/') + "/");
+    page.Request += (_, request) =>
+    {
+        Uri uri = new(request.Url);
+        if (uri.GetLeftPart(UriPartial.Authority) == baseUri.GetLeftPart(UriPartial.Authority)
+            && !baseUri.IsBaseOf(uri)) outsideBase.Add(request.Url);
+    };
     await page.AddInitScriptAsync("""
         window.soundStarts = 0;
         window.audioContexts = [];
@@ -241,6 +249,7 @@ try
     await page.GetByRole(AriaRole.Status).Filter(new() { HasText = "Cannot load WAD:" }).WaitForAsync();
     Check("missing-map-reported", (await page.GetByRole(AriaRole.Status).InnerTextAsync()).Contains("E9M9", StringComparison.Ordinal));
     Check("no-unhandled-browser-errors", errors.Count == 0, errors);
+    Check("resources-stay-under-base-path", outsideBase.Count == 0, outsideBase);
     Check("no-false-fatal-error-banner", !await page.Locator("#blazor-error-ui").IsVisibleAsync());
 }
 catch (Exception ex) when (ex is PlaywrightException or IOException or InvalidOperationException or TimeoutException)
