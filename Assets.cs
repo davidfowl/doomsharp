@@ -21,6 +21,7 @@ public sealed class Picture
 
 public sealed class Assets
 {
+    public const int SoundSampleRate = 22050;
     readonly Wad wad;
     readonly Dictionary<string, Picture> pictures = new(StringComparer.Ordinal);
     readonly Dictionary<string, Picture> textures = new(StringComparer.Ordinal);
@@ -150,8 +151,8 @@ public sealed class Assets
         if (rate == 0 || count < 0 || count > b.Length - 8) throw new InvalidDataException($"Invalid sound DS{name}.");
         // DMX sound lumps conventionally have 16 guard samples at either end.
         int start = count > 32 ? 24 : 8, length = count > 32 ? count - 32 : count;
-        short[] pcm = new short[(int)((long)length * Audio.SampleRate / rate)];
-        for (int i = 0; i < pcm.Length; i++) pcm[i] = (short)((b[start + (int)((long)i * rate / Audio.SampleRate)] - 128) * 128);
+        short[] pcm = new short[(int)((long)length * SoundSampleRate / rate)];
+        for (int i = 0; i < pcm.Length; i++) pcm[i] = (short)((b[start + (int)((long)i * rate / SoundSampleRate)] - 128) * 128);
         return pcm;
     }
 }
