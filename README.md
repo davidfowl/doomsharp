@@ -202,7 +202,9 @@ the application itself does not depend on Playwright.
 The Windows Edge job runs the browser checks with the installed `msedge` channel.
 It also records headed Edge scrolling over real Freedoom on the current public
 site and the candidate build, retaining video, snapshots, browser/graphics
-details and frame timing in `doomsharp-windows-edge`. The `scroll` diagnostic
+details and frame timing in `doomsharp-windows-edge`. The diagnostic verifies that
+no `getImageData` reads occur, avoiding readback-driven changes to canvas
+acceleration while collecting recordings. The `scroll` diagnostic
 compares paused/native/scaled/composited canvases and animated rendering;
 keyboard-fallback scenarios explicitly disable pointer lock so the document can
 scroll during play. These recordings are not physical-display scanout and do not

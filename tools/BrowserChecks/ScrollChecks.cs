@@ -17,6 +17,7 @@ static class ScrollChecks
         List<object> observations = [];
         List<string> errors = [], diagnostics = [];
         JsonElement environment = default;
+        JsonElement? graphics = null;
         string? version = null;
         int failed = 0;
         using IPlaywright playwright = await Playwright.CreateAsync();
@@ -27,6 +28,10 @@ static class ScrollChecks
                 Headless = args.Length != 4, Channel = args[2] == "msedge" ? "msedge" : null
             });
             version = browser.Version;
+            ICDPSession session = await browser.NewBrowserCDPSessionAsync();
+            JsonElement? systemInfo = await session.SendAsync("SystemInfo.getInfo");
+            if (systemInfo is { } info) graphics = info.GetProperty("gpu").Clone();
+            await session.DetachAsync();
             await using IBrowserContext context = await browser.NewContextAsync(new()
             {
                 ViewportSize = new() { Width = 1200, Height = 600 },
@@ -38,7 +43,12 @@ static class ScrollChecks
             page.PageError += (_, error) => errors.Add(error);
             page.Console += (_, message) => diagnostics.Add($"{message.Type}: {message.Text}");
             await page.AddInitScriptAsync("""
-                window.scrollProbe={presents:0,gaps:[],scrolls:0};
+                window.scrollProbe={presents:0,gaps:[],scrolls:0,readbacks:0};
+                const read=CanvasRenderingContext2D.prototype.getImageData;
+                CanvasRenderingContext2D.prototype.getImageData=function(...args) {
+                    scrollProbe.readbacks++;
+                    return read.apply(this,args);
+                };
                 const present=CanvasRenderingContext2D.prototype.putImageData;
                 CanvasRenderingContext2D.prototype.putImageData=function(...args) {
                     scrollProbe.presents++;
@@ -52,12 +62,6 @@ static class ScrollChecks
                 }
                 requestAnimationFrame(sample);
                 window.addEventListener('scroll',()=>scrollProbe.scrolls++);
-                window.canvasHash=()=>{
-                    const pixels=document.querySelector('#game').getContext('2d').getImageData(0,0,640,400).data;
-                    let hash=2166136261;
-                    for(let i=0;i<pixels.length;i++) hash=Math.imul(hash^pixels[i],16777619);
-                    return hash>>>0;
-                };
                 """);
             await page.GotoAsync(args[0]);
             await page.Locator("#game").WaitForAsync();
@@ -115,7 +119,7 @@ static class ScrollChecks
                     () => {
                         scrollProbe.gaps=[];
                         scrollProbe.scrolls=0;
-                        return {presents:scrollProbe.presents,hash:canvasHash(),scrollY,locked:!!document.pointerLockElement};
+                        return {presents:scrollProbe.presents,scrollY,locked:!!document.pointerLockElement};
                     }
                     """);
                 for (int i = 0; i < 80; i++)
@@ -127,7 +131,8 @@ static class ScrollChecks
                     () => {
                         const gaps=scrollProbe.gaps.slice().sort((a,b)=>a-b);
                         const rect=document.querySelector('#game').getBoundingClientRect();
-                        return {presents:scrollProbe.presents,hash:canvasHash(),scrollY,scrolls:scrollProbe.scrolls,
+                        return {presents:scrollProbe.presents,scrollY,scrolls:scrollProbe.scrolls,
+                            readbacks:scrollProbe.readbacks,
                             locked:!!document.pointerLockElement,count:gaps.length,
                             median:gaps[Math.floor(gaps.length*.5)],p95:gaps[Math.floor(gaps.length*.95)],
                             max:gaps.at(-1),over50:gaps.filter(g=>g>50).length,
@@ -142,6 +147,11 @@ static class ScrollChecks
                         await page.ScreenshotAsync(new() { Path = Path.Combine(output, $"{scenario}-{i}.png") });
                 }
                 observations.Add(new { scenario, before, after });
+                if (after.GetProperty("readbacks").GetInt32() != 0)
+                {
+                    diagnostics.Add($"{scenario}: pixel readback could alter the browser's canvas acceleration heuristic.");
+                    failed++;
+                }
                 if (scenario.Contains("fallback", StringComparison.Ordinal)
                     && (after.GetProperty("scrolls").GetInt32() == 0
                         || after.GetProperty("presents").GetInt32() <= before.GetProperty("presents").GetInt32()))
@@ -167,6 +177,7 @@ static class ScrollChecks
                 url = args[0], browser = args[2], version,
                 os = System.Runtime.InteropServices.RuntimeInformation.OSDescription,
                 environment = environment.ValueKind == JsonValueKind.Undefined ? (JsonElement?)null : environment,
+                graphics,
                 observations, errors, diagnostics, failed,
                 limits = "Recorded browser compositor output, not physical display scanout. Hosted graphics may be software-rendered. Active fallback scenarios deliberately reject pointer lock to allow real document scrolling during animated rendering. Timing excludes screenshots but includes video recording. These observations alone do not prove the reported visual tear is fixed."
             }, new JsonSerializerOptions { WriteIndented = true }));
