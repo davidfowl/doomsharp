@@ -1,5 +1,11 @@
 # Progress
 
+**Current tooling:** the repository now uses C# fixture/regression tools and a
+shared-engine browser WebAssembly host. See [README.md](README.md) for current
+commands and verification boundaries. Entries below are historical: Python
+commands and old runner hashes refer to their recorded revisions, not current
+tooling. Historical platform results do not qualify a newer local revision.
+
 Last verified: **2026-10-13**, against merged `main` and its linked CI run. This distinguishes the
 verified playable increment from full DOOM compatibility and physical-device
 verification. **Full original-DOOM parity remains unfinished.**

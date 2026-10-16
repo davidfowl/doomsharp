@@ -50,7 +50,10 @@ foreach (var test in malformed)
     Write($"{test.Name}.wad", bytes);
 }
 
-Console.WriteLine($"Generated {cases.Length} gameplay scenarios and {malformed.Length} malformed PWADs. Acceptance is through the real game executable, not generator checks.");
+foreach (var (name, bytes) in DoomSharp.Tools.ScenarioFixtures.Generate(baseline))
+    Write(name + ".wad", bytes);
+
+Console.WriteLine($"Generated {artifacts.Count} PWADs, including the original {cases.Length} gameplay and {malformed.Length} malformed scenarios.");
 File.WriteAllLines(Path.Combine(output, "SHA256SUMS"), artifacts.Order(StringComparer.Ordinal)
     .Select(name => $"{Convert.ToHexStringLower(SHA256.HashData(File.ReadAllBytes(Path.Combine(output, name))))}  {name}"));
 
