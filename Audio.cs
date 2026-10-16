@@ -4,7 +4,7 @@ namespace DoomSharp;
 
 public sealed class Audio : IDisposable
 {
-    public const int SampleRate = 22050;
+    public const int SampleRate = Assets.SoundSampleRate;
     readonly Assets assets;
     readonly Dictionary<string, short[]?> sounds = new(StringComparer.Ordinal);
     readonly List<(short[] Samples, int Position)> voices = [];

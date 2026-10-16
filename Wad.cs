@@ -135,6 +135,7 @@ public sealed class Map
         Things = Read("THINGS", 10, (b, p) => new Thing(new(Wad.I16(b, p), Wad.I16(b, p + 2)),
             Wad.I16(b, p + 4), Wad.U16(b, p + 6), Wad.U16(b, p + 8)));
         Validate();
+        ValidateBlockmap(Get("BLOCKMAP"));
         SectorLines = Enumerable.Range(0, Sectors.Length).Select(s =>
             Enumerable.Range(0, Lines.Length).Where(i => Sides[Lines[i].Right].Sector == s ||
             (Lines[i].Left != 65535 && Sides[Lines[i].Left].Sector == s)).ToArray()).ToArray();
@@ -216,6 +217,33 @@ public sealed class Map
         {
             if ((child & 32768) != 0 ? (child & 32767) >= Subsectors.Length : child >= parent)
                 throw new InvalidDataException("Invalid or cyclic BSP child.");
+        }
+    }
+
+    void ValidateBlockmap(byte[] bytes)
+    {
+        // Collision scans linedefs directly; empty blockmaps are intentionally supported.
+        if (bytes.Length == 0) return;
+        if (bytes.Length < 8 || bytes.Length % 2 != 0) throw new InvalidDataException("Invalid BLOCKMAP header.");
+        int width = Wad.U16(bytes, 4), height = Wad.U16(bytes, 6), words = bytes.Length / 2;
+        long cells = (long)width * height;
+        if (width == 0 || height == 0 || cells > words - 4) throw new InvalidDataException("Invalid BLOCKMAP dimensions.");
+        bool[] validated = new bool[words];
+        for (int i = 0; i < cells; i++)
+        {
+            int offset = Wad.U16(bytes, 8 + i * 2);
+            if (offset < 4 + cells || offset >= words) throw new InvalidDataException("BLOCKMAP list offset is outside its data.");
+            if (Wad.U16(bytes, offset * 2) != 0) throw new InvalidDataException("Invalid BLOCKMAP list header.");
+            int end = offset + 1;
+            while (end < words && !validated[end])
+            {
+                int line = Wad.U16(bytes, end * 2);
+                validated[end] = true;
+                if (line == 65535) break;
+                if (line >= Lines.Length) throw new InvalidDataException("Invalid BLOCKMAP linedef reference.");
+                end++;
+            }
+            if (end == words) throw new InvalidDataException("Unterminated BLOCKMAP list.");
         }
     }
 
