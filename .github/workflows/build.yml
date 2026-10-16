@@ -1,4 +1,4 @@
-name: Native AOT
+name: Desktop and WebAssembly
 on:
   push:
   pull_request:
@@ -12,18 +12,36 @@ jobs:
         include:
           - os: ubuntu-latest
             rid: linux-x64
+          - os: ubuntu-24.04-arm
+            rid: linux-arm64
           - os: windows-latest
             rid: win-x64
+          - os: windows-11-arm
+            rid: win-arm64
           - os: macos-latest
             rid: osx-arm64
+          - os: macos-15-intel
+            rid: osx-x64
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: 10.0.x
+      - name: Install Linux desktop and qualification dependencies
+        if: runner.os == 'Linux'
+        run: sudo apt-get update -qq && sudo apt-get install -y clang zlib1g-dev xvfb libx11-6 libxtst6 libasound2t64
       - name: Publish Native AOT
         run: dotnet publish -c Release -r ${{ matrix.rid }} -o artifacts/${{ matrix.rid }}
+      - name: Generate original regression WADs in C#
+        run: dotnet run --project tools/e2e-fixtures/FixtureGenerator.csproj -c Release -- tools/e2e-fixtures/generated
+      - name: Run executable and engine regression checks
+        shell: bash
+        run: |
+          executable="artifacts/${{ matrix.rid }}/DoomSharp"
+          if [[ "${{ runner.os }}" == "Windows" ]]; then executable="${executable}.exe"; fi
+          dotnet run --project tools/Checks -c Release -- headless "$executable" tools/e2e-fixtures/generated artifacts/headless "${{ github.sha }}"
+          dotnet run --project tools/Checks -c Release -- engine "$executable" tools/e2e-fixtures/generated artifacts/engine "${{ github.sha }}"
       - name: Run native headless scenario
         shell: bash
         run: |
@@ -43,9 +61,56 @@ jobs:
           fi
       - name: Play native demo through OS input
         if: runner.os == 'Linux'
-        run: xvfb-run -a python3 scripts/native-demo.py artifacts/linux-x64/DoomSharp --output-dir artifacts/native-demo
+        run: dotnet run --project tools/Checks -c Release -- native artifacts/${{ matrix.rid }}/DoomSharp tools/e2e-fixtures/generated artifacts/native "${{ github.sha }}"
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: doomsharp-${{ matrix.rid }}
+          path: artifacts/
+  browser:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        browser: [chromium, firefox, webkit]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+      - run: dotnet workload install wasm-tools
+      - run: dotnet publish Browser/DoomSharp.Browser.csproj -c Release -o artifacts/browser
+      - run: dotnet run --project tools/e2e-fixtures/FixtureGenerator.csproj -c Release -- tools/e2e-fixtures/generated
+      - run: dotnet build tools/BrowserChecks -c Release
+      - name: Install browser
+        run: dotnet run --project tools/BrowserChecks -c Release -- install --with-deps ${{ matrix.browser }}
+      - name: Install virtual browser audio backend
+        run: sudo apt-get install -y pulseaudio
+      - name: Exercise published browser application
+        shell: bash
+        run: |
+          dotnet run --project tools/Serve -c Release -- artifacts/browser/wwwroot --urls http://127.0.0.1:5187 > artifacts/browser-host.log 2>&1 &
+          host=$!
+          pulse_socket="$RUNNER_TEMP/doomsharp-pulse.sock"
+          pulseaudio --daemonize=no --exit-idle-time=-1 --use-pid-file=no -n \
+            -L "module-native-protocol-unix socket=$pulse_socket auth-anonymous=1" \
+            -L "module-null-sink sink_name=doomsharp_test" > artifacts/browser-audio.log 2>&1 &
+          pulse=$!
+          export PULSE_SERVER="unix:$pulse_socket"
+          trap 'kill "$host" "$pulse" 2>/dev/null || true' EXIT
+          for attempt in {1..60}; do
+            if curl --silent --fail http://127.0.0.1:5187/ > /dev/null; then break; fi
+            sleep 1
+          done
+          curl --silent --fail http://127.0.0.1:5187/ > /dev/null
+          for attempt in {1..30}; do
+            if pactl info > /dev/null 2>&1; then break; fi
+            sleep 1
+          done
+          pactl info > artifacts/browser-audio-device.log
+          dotnet run --project tools/BrowserChecks -c Release -- http://127.0.0.1:5187 tools/e2e-fixtures/generated artifacts/browser-checks ${{ matrix.browser }}
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: doomsharp-browser-${{ matrix.browser }}
           path: artifacts/

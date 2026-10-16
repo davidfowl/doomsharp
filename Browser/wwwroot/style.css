@@ -1,0 +1,9 @@
+:root { color-scheme: dark; font-family: system-ui, sans-serif; }
+body { margin: 1.5rem auto; padding: 0 1rem; max-width: 70rem; }
+.controls { display: flex; gap: 1rem; flex-wrap: wrap; align-items: center; }
+button, input { font: inherit; }
+canvas { display: block; width: min(100%, 960px); height: auto; background: black; image-rendering: pixelated; }
+canvas:focus { outline: 2px solid #9cf; }
+#status { min-height: 1.5em; }
+a { color: #9cf; }
+#blazor-error-ui { display: none; background: #600; padding: 1rem; }

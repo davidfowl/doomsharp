@@ -1,0 +1,208 @@
+@using DoomSharp
+@using Microsoft.AspNetCore.Components
+@using Microsoft.AspNetCore.Components.Forms
+@using Microsoft.JSInterop
+@implements IAsyncDisposable
+@inject HttpClient Http
+@inject IJSRuntime JS
+
+<h1>DoomSharp</h1>
+<p>The same C# engine, running locally in WebAssembly. Incomplete DOOM compatibility.</p>
+<div class="controls">
+    <button @onclick="() => Load(false)" disabled="@loading">Play Freedoom</button>
+    <button @onclick="() => Load(true)" disabled="@loading">Test level</button>
+    <label>Local WAD <InputFile OnChange="LoadFile" accept=".wad" disabled="@loading" /></label>
+    <label>Map <input @bind="map" aria-label="Map" size="8" /></label>
+    <label><input type="checkbox" @bind="muted" /> Mute</label>
+</div>
+<p id="status" role="status">@status</p>
+<canvas id="game" width="640" height="400" tabindex="0" aria-label="DoomSharp game"></canvas>
+<p>Click the game to focus and capture the mouse. WASD moves, arrows turn,
+Ctrl/click fires, E/Space uses, Shift runs, 1/2/4/5 selects weapons, Tab maps,
+R restarts. Esc releases the pointer and pauses. Click to resume.</p>
+<p>Local WADs stay on your device (64 MiB limit). Map defaults to the first map.
+No proprietary assets included. <a href="assets/freedoom/COPYING.txt">Freedoom license</a>,
+<a href="assets/freedoom/CREDITS.txt">credits</a>,
+<a href="assets/freedoom/CREDITS-MUSIC.txt">music credits</a>.</p>
+
+@code {
+    readonly Renderer renderer = new();
+    readonly Input input = new();
+    readonly Queue<(Buttons Button, bool Down)> inputEvents = new();
+    readonly byte[] rgba = new byte[640 * 400 * 4];
+    readonly List<byte[]> sounds = [];
+    readonly Dictionary<string, byte[]?> soundCache = new(StringComparer.Ordinal);
+    Game? game;
+    IJSObjectReference? host;
+    DotNetObjectReference<App>? reference;
+    string status = "Choose a WAD to start.", map = "";
+    bool loading;
+    bool muted { get; set; }
+    double previous = -1, accumulator;
+    string? audioError;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+        host = await JS.InvokeAsync<IJSObjectReference>("import", "./host.js");
+        reference = DotNetObjectReference.Create(this);
+        await host.InvokeVoidAsync("initialize", reference);
+    }
+
+    async Task Load(bool fixture)
+    {
+        await LoadWad(async () => fixture ? Demo.Create() :
+            await Http.GetByteArrayAsync("assets/freedoom/freedoom1.wad"));
+    }
+
+    async Task LoadFile(InputFileChangeEventArgs e)
+    {
+        await LoadWad(async () =>
+        {
+            using var source = e.File.OpenReadStream(64 * 1024 * 1024);
+            using var destination = new MemoryStream();
+            await source.CopyToAsync(destination);
+            return destination.ToArray();
+        });
+    }
+
+    async Task LoadWad(Func<Task<byte[]>> read)
+    {
+        loading = true;
+        status = "Loading WAD...";
+        game = null;
+        Array.Clear(rgba);
+        sounds.Clear(); soundCache.Clear();
+        ResetInput();
+        try
+        {
+            Wad wad = new(await read());
+            string selected = string.IsNullOrWhiteSpace(map) ?
+                wad.Maps.FirstOrDefault() ?? throw new InvalidDataException("WAD contains no classic maps.") :
+                map.Trim().ToUpperInvariant();
+            game = new(wad, selected);
+            game.PlaySound = QueueSound;
+            status = $"Playing {selected}. Click the game to begin.";
+        }
+        catch (Exception ex) when (ex is IOException or InvalidDataException or ArgumentException or
+            InvalidOperationException or HttpRequestException)
+        {
+            status = $"Cannot load WAD: {ex.Message}";
+            Console.Error.WriteLine(status);
+        }
+        finally { loading = false; }
+    }
+
+    void QueueSound(string name)
+    {
+        if (muted) return;
+        if (!soundCache.TryGetValue(name, out byte[]? bytes))
+        {
+            short[]? samples = game!.Assets.Sound(name);
+            bytes = samples == null ? null : new byte[samples.Length * 2];
+            if (samples == null) Console.Error.WriteLine($"Missing sound DS{name}; this effect cannot be played.");
+            else for (int i = 0; i < samples.Length; i++)
+                System.Buffers.Binary.BinaryPrimitives.WriteInt16LittleEndian(bytes!.AsSpan(i * 2), samples[i]);
+            soundCache[name] = bytes;
+        }
+        if (bytes != null) sounds.Add(bytes);
+    }
+
+    [JSInvokable]
+    public async Task<byte[]> Frame(double milliseconds, double mouseX, bool active)
+    {
+        if (game != null)
+        {
+            if (active)
+            {
+                if (previous >= 0) accumulator += Math.Clamp((milliseconds - previous) / 1000, 0, .25);
+                input.MouseX += mouseX;
+                while (accumulator >= 1.0 / 35)
+                {
+                    HashSet<Buttons> changed = [];
+                    while (inputEvents.TryPeek(out var next) && changed.Add(next.Button))
+                    {
+                        inputEvents.Dequeue();
+                        input.Set(next.Button, next.Down);
+                    }
+                    game.Tick(input, 1.0 / 35);
+                    accumulator -= 1.0 / 35;
+                }
+                previous = milliseconds;
+            }
+            else ResetInput();
+            renderer.Render(game);
+            for (int i = 0; i < renderer.Pixels.Length; i++)
+            {
+                int color = renderer.Pixels[i];
+                rgba[i * 4] = (byte)(color >> 16);
+                rgba[i * 4 + 1] = (byte)(color >> 8);
+                rgba[i * 4 + 2] = (byte)color;
+                rgba[i * 4 + 3] = 255;
+            }
+            try
+            {
+                foreach (byte[] sound in sounds) await host!.InvokeVoidAsync("playSound", sound, DoomSharp.Assets.SoundSampleRate);
+            }
+            catch (JSException ex)
+            {
+                if (audioError != ex.Message)
+                {
+                    audioError = ex.Message;
+                    status = $"Audio failed: {ex.Message.Split('\n')[0]}. Select Mute to continue without effects.";
+                    Console.Error.WriteLine(status);
+                    StateHasChanged();
+                }
+            }
+            finally { sounds.Clear(); }
+        }
+        return rgba;
+    }
+
+    [JSInvokable]
+    public void Key(string code, bool down)
+    {
+        Buttons button = code switch
+        {
+            "KeyW" or "ArrowUp" => Buttons.Forward,
+            "KeyS" or "ArrowDown" => Buttons.Back,
+            "KeyA" => Buttons.Left, "KeyD" => Buttons.Right,
+            "ArrowLeft" => Buttons.TurnLeft, "ArrowRight" => Buttons.TurnRight,
+            "KeyE" or "Space" => Buttons.Use,
+            "ShiftLeft" or "ShiftRight" => Buttons.Run,
+            "ControlLeft" or "ControlRight" or "Mouse0" => Buttons.Fire,
+            "Digit1" => Buttons.Pistol, "Digit2" => Buttons.Shotgun,
+            "Digit4" => Buttons.Chaingun, "Digit5" => Buttons.RocketLauncher,
+            "Tab" => Buttons.Map, "KeyR" => Buttons.Restart,
+            _ => Buttons.None
+        };
+        if (button != Buttons.None) inputEvents.Enqueue((button, down));
+    }
+
+    [JSInvokable]
+    public void HostError(string message)
+    {
+        status = message;
+        StateHasChanged();
+    }
+
+    [JSInvokable]
+    public void ResetInput()
+    {
+        input.Held = Buttons.None;
+        inputEvents.Clear();
+        input.MouseX = 0;
+        previous = -1;
+        accumulator = 0;
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (host != null)
+        {
+            await host.InvokeVoidAsync("dispose");
+            await host.DisposeAsync();
+        }
+        reference?.Dispose();
+    }
+}
