@@ -4,9 +4,9 @@ let awaitingMouse = true;
 const listeners = [];
 const voices = new Set();
 
-function listen(target, name, callback) {
-    target.addEventListener(name, callback);
-    listeners.push(() => target.removeEventListener(name, callback));
+function listen(target, name, callback, options) {
+    target.addEventListener(name, callback, options);
+    listeners.push(() => target.removeEventListener(name, callback, options));
 }
 
 export function initialize(reference) {
@@ -41,6 +41,9 @@ export function initialize(reference) {
         event.preventDefault();
         dotnet.invokeMethodAsync("Key", event.code, false).catch(fail);
     });
+    listen(canvas, "wheel", event => {
+        if (active) event.preventDefault();
+    }, { passive: false });
     listen(canvas, "mousedown", event => {
         if (event.button === 0 && active && document.pointerLockElement === canvas)
             dotnet.invokeMethodAsync("Key", "Mouse0", true).catch(fail);
