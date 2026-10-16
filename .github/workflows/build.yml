@@ -1,4 +1,4 @@
-name: Native AOT
+name: Desktop
 on:
   push:
   pull_request:
@@ -12,18 +12,36 @@ jobs:
         include:
           - os: ubuntu-latest
             rid: linux-x64
+          - os: ubuntu-24.04-arm
+            rid: linux-arm64
           - os: windows-latest
             rid: win-x64
+          - os: windows-11-arm
+            rid: win-arm64
           - os: macos-latest
             rid: osx-arm64
+          - os: macos-15-intel
+            rid: osx-x64
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: 10.0.x
+      - name: Install Linux desktop and qualification dependencies
+        if: runner.os == 'Linux'
+        run: sudo apt-get update -qq && sudo apt-get install -y clang zlib1g-dev xvfb libx11-6 libxtst6 libasound2t64
       - name: Publish Native AOT
         run: dotnet publish -c Release -r ${{ matrix.rid }} -o artifacts/${{ matrix.rid }}
+      - name: Generate original regression WADs in C#
+        run: dotnet run --project tools/e2e-fixtures/FixtureGenerator.csproj -c Release -- tools/e2e-fixtures/generated
+      - name: Run executable and engine regression checks
+        shell: bash
+        run: |
+          executable="artifacts/${{ matrix.rid }}/DoomSharp"
+          if [[ "${{ runner.os }}" == "Windows" ]]; then executable="${executable}.exe"; fi
+          dotnet run --project tools/Checks -c Release -- headless "$executable" tools/e2e-fixtures/generated artifacts/headless "${{ github.sha }}"
+          dotnet run --project tools/Checks -c Release -- engine "$executable" tools/e2e-fixtures/generated artifacts/engine "${{ github.sha }}"
       - name: Run native headless scenario
         shell: bash
         run: |
@@ -43,7 +61,7 @@ jobs:
           fi
       - name: Play native demo through OS input
         if: runner.os == 'Linux'
-        run: xvfb-run -a python3 scripts/native-demo.py artifacts/linux-x64/DoomSharp --output-dir artifacts/native-demo
+        run: dotnet run --project tools/Checks -c Release -- native artifacts/${{ matrix.rid }}/DoomSharp tools/e2e-fixtures/generated artifacts/native "${{ github.sha }}"
       - uses: actions/upload-artifact@v4
         if: always()
         with:
