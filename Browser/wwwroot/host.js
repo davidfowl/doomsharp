@@ -90,7 +90,8 @@ async function frame(time) {
         const delta = mouseX;
         mouseX = 0;
         const pixels = await dotnet.invokeMethodAsync("Frame", time, delta, active);
-        context.putImageData(new ImageData(new Uint8ClampedArray(pixels), 640, 400), 0, 0);
+        if (pixels !== null)
+            context.putImageData(new ImageData(new Uint8ClampedArray(pixels), 640, 400), 0, 0);
         if (!stopped) animation = requestAnimationFrame(frame);
     } catch (error) { fail(error); }
 }

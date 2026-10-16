@@ -80,6 +80,8 @@ when pointer lock is unavailable. Esc, loss of focus or a hidden tab pauses the
 game and clears held input; click to resume. **Mute** suppresses new sound effects.
 Wheel input over the active game does not scroll the page. Press Esc to pause
 and scroll normally; scrolling is also available before starting a game.
+The browser retains the last canvas image while paused instead of repeatedly
+rendering and transferring an unchanged framebuffer during page navigation.
 Mobile/touch controls, music, gamepads and persistent saves are not implemented.
 
 Publish a static site:

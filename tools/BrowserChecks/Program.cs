@@ -46,6 +46,12 @@ try
     };
     await page.AddInitScriptAsync("""
         window.soundStarts = 0;
+        window.canvasPresents = 0;
+        const present = CanvasRenderingContext2D.prototype.putImageData;
+        CanvasRenderingContext2D.prototype.putImageData = function (...args) {
+            window.canvasPresents++;
+            return present.apply(this, args);
+        };
         window.audioContexts = [];
         window.inputTrace = [];
         for (const name of ['keydown','keyup','blur','focus','pointerlockchange'])
@@ -87,6 +93,15 @@ try
     }
     await CheckPageScroll("initial-wheel-over-canvas-scrolls-page", true);
     await CheckPageScroll("initial-wheel-outside-canvas-scrolls-page", false);
+    async Task CheckIdlePresents(string name)
+    {
+        await page.WaitForTimeoutAsync(150);
+        int before = await page.EvaluateAsync<int>("window.canvasPresents");
+        await page.WaitForTimeoutAsync(400);
+        int after = await page.EvaluateAsync<int>("window.canvasPresents");
+        Check(name, after == before, new { before, after });
+    }
+    await CheckIdlePresents("initial-canvas-does-not-repaint-unchanged-frames");
     async Task<JsonElement> Pixels() => await canvas.EvaluateAsync<JsonElement>("""
         c => {
             const p = c.getContext('2d').getImageData(0, 0, 640, 400).data;
@@ -218,6 +233,7 @@ try
     Check("pause-releases-pointer", await page.EvaluateAsync<bool>("document.pointerLockElement === null"));
     await CheckPageScroll("paused-wheel-over-canvas-scrolls-page", true);
     await CheckPageScroll("paused-wheel-outside-canvas-scrolls-page", false);
+    await CheckIdlePresents("paused-canvas-does-not-repaint-unchanged-frames");
     await page.SetViewportSizeAsync(1200, 1000);
     await page.ScreenshotAsync(new() { Path = Path.Combine(output, "fixture.png") });
     await page.GetByRole(AriaRole.Checkbox, new() { Name = "Mute" }).CheckAsync();
@@ -265,6 +281,14 @@ try
     await page.Locator("input[type=file]").SetInputFilesAsync(Path.Combine(fixtures, "bad-directory-count.wad"));
     await page.GetByRole(AriaRole.Status).Filter(new() { HasText = "Cannot load WAD:" }).WaitForAsync();
     Check("invalid-WAD-reported", (await page.GetByRole(AriaRole.Status).InnerTextAsync()).Contains("directory", StringComparison.Ordinal));
+    await page.WaitForFunctionAsync("""
+        () => {
+            const p=document.querySelector('#game').getContext('2d').getImageData(0,0,640,400).data;
+            for(let i=0;i<p.length;i+=4) if(p[i]||p[i+1]||p[i+2]) return false;
+            return true;
+        }
+        """);
+    Check("failed-load-clears-retained-frame", (await Pixels()).GetProperty("nonblack").GetInt32() == 0);
     await page.GetByRole(AriaRole.Textbox, new() { Name = "Map", Exact = true }).FillAsync("E9M9");
     await page.GetByRole(AriaRole.Button, new() { Name = "Test level", Exact = true }).ClickAsync();
     await page.GetByRole(AriaRole.Status).Filter(new() { HasText = "Cannot load WAD:" }).WaitForAsync();

@@ -37,6 +37,7 @@ No proprietary assets included. <a href="assets/freedoom/COPYING.txt">Freedoom l
     DotNetObjectReference<App>? reference;
     string status = "Choose a WAD to start.", map = "";
     bool loading;
+    bool frameDirty = true;
     bool muted { get; set; }
     double previous = -1, accumulator;
     string? audioError;
@@ -72,6 +73,7 @@ No proprietary assets included. <a href="assets/freedoom/COPYING.txt">Freedoom l
         status = "Loading WAD...";
         game = null;
         Array.Clear(rgba);
+        frameDirty = true;
         sounds.Clear(); soundCache.Clear();
         ResetInput();
         try
@@ -81,6 +83,7 @@ No proprietary assets included. <a href="assets/freedoom/COPYING.txt">Freedoom l
                 wad.Maps.FirstOrDefault() ?? throw new InvalidDataException("WAD contains no classic maps.") :
                 map.Trim().ToUpperInvariant();
             game = new(wad, selected);
+            frameDirty = true;
             game.PlaySound = QueueSound;
             status = $"Playing {selected}. Click the game to begin.";
         }
@@ -109,8 +112,11 @@ No proprietary assets included. <a href="assets/freedoom/COPYING.txt">Freedoom l
     }
 
     [JSInvokable]
-    public async Task<byte[]> Frame(double milliseconds, double mouseX, bool active)
+    public async Task<byte[]?> Frame(double milliseconds, double mouseX, bool active)
     {
+        if (!active && game != null) ResetInput();
+        if (!frameDirty && (game == null || !active)) return null;
+        frameDirty = false;
         if (game != null)
         {
             if (active)
@@ -130,7 +136,6 @@ No proprietary assets included. <a href="assets/freedoom/COPYING.txt">Freedoom l
                 }
                 previous = milliseconds;
             }
-            else ResetInput();
             renderer.Render(game);
             for (int i = 0; i < renderer.Pixels.Length; i++)
             {
