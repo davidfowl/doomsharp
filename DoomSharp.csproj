@@ -10,8 +10,9 @@
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
   </PropertyGroup>
   <ItemGroup>
-    <Compile Remove="tools/**/*.cs" />
-    <None Remove="tools/**/bin/**/*;tools/**/obj/**/*" />
+    <Compile Remove="tools/**/*.cs;Browser/**/*.cs" />
+    <EmbeddedResource Remove="Browser/**/*" />
+    <None Remove="Browser/**/*;tools/**/bin/**/*;tools/**/obj/**/*" />
     <None Update="assets\freedoom\freedoom1.wad;assets\freedoom\COPYING.txt;assets\freedoom\CREDITS.txt;assets\freedoom\CREDITS-MUSIC.txt"
           CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
   </ItemGroup>
