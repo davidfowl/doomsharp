@@ -1,7 +1,9 @@
 # DoomSharp
 
-A clean-room C# classic WAD engine with native desktop hosts. Gameplay, WAD
-loading, software rendering, generated assets and development tools are C#.
+A clean-room C# classic WAD engine, with native desktop and browser WebAssembly
+hosts. Gameplay, WAD loading, software rendering, generated assets and development
+tools are C#. The browser's small JavaScript adapter only bridges Canvas, browser
+events, animation scheduling and WebAudio; there is no JavaScript game engine.
 
 **Playable, but not a complete DOOM replacement.** `--demo` plays the bundled,
 freely licensed Freedoom Phase 1. The original two-room encounter is available
@@ -38,22 +40,68 @@ command-line tools on macOS. Cross-OS Native AOT publishing is not supported.
 
 | Target RIDs | Desktop facilities | Requirements / evidence |
 |---|---|---|
-| `linux-x64`, `linux-arm64` | X11, ALSA | `libX11.so.6`, `libasound.so.2`; Wayland requires XWayland. This change was exercised on Linux x64 only. |
-| `win-x64`, `win-arm64` | Win32/GDI, waveOut | No third-party native window/audio library. Windows runtime behavior was not reverified in this Linux workspace. |
-| `osx-x64`, `osx-arm64` | AppKit/CoreGraphics, AudioQueue | Run from a graphical login session. macOS runtime behavior was not reverified in this Linux workspace. |
+| `linux-x64`, `linux-arm64` | X11, ALSA | `libX11.so.6`, `libasound.so.2`; Wayland requires XWayland. Both RIDs passed CI executable/engine and XTest/Xvfb native checks. |
+| `win-x64`, `win-arm64` | Win32/GDI, waveOut | No third-party native window/audio library. Both RIDs passed CI executable/engine checks and bounded native window rendering. |
+| `osx-x64`, `osx-arm64` | AppKit/CoreGraphics, AudioQueue | Run from a graphical login session. Both RIDs passed CI executable/engine checks and bounded native window rendering. |
+| Browser WASM | Canvas 2D, WebAudio, keyboard/pointer events | Desktop Chromium, Firefox and WebKit smoke checks; not proof of Safari/macOS or mobile-device behavior. |
 
 The desktop framebuffer is 640x400 in an initially 960x600 window. Linux requires
 a 24/32-bit TrueColor display. The CI workflow publishes and exercises six desktop
-OS/architecture targets. A configured job is **not**
+OS/architecture targets, plus three browser engines. A configured job is **not**
 evidence that this local revision ran on that target.
+
+[CI for the integrated C# tooling/WASM increment](https://github.com/davidfowl/doomsharp/actions/runs/38846813017)
+passed all six native targets and Chromium/Firefox/WebKit. Native jobs publish
+and run the actual executable, not just compile it; Linux additionally exercises
+synthetic OS input, framebuffer readback and null PCM. Windows/macOS desktop
+smoke is bounded to 35 frames with audio disabled. Local qualification used
+Linux x64; neither it nor hosted CI establishes physical-device input, audible
+playback, Safari/mobile support or complete campaign compatibility.
+
+## Browser WebAssembly
+
+```sh
+dotnet workload install wasm-tools
+dotnet run --project Browser/DoomSharp.Browser.csproj -c Release --urls http://localhost:5187
+```
+
+Open `http://localhost:5187`. Choose **Play Freedoom**, **Test level**, or a local
+classic WAD (up to 64 MiB), then click the game. The optional Map field accepts a
+map name such as `E1M2`; leave it blank for the first map. A local WAD is processed
+on your device, not uploaded. Use only lawfully obtained assets.
+
+The browser runs the same C# engine source files as the desktop executable.
+It uses the .NET WebAssembly runtime via Blazor, not a server-side game process.
+Release builds compile the engine ahead of time for WebAssembly performance;
+the first publish is slower and needs the `wasm-tools` workload.
+The renderer is software-based; frame rate depends on map complexity and browser.
+Clicking enables audio and requests pointer lock. Keyboard controls still work
+when pointer lock is unavailable. Esc, loss of focus or a hidden tab pauses the
+game and clears held input; click to resume. **Mute** suppresses new sound effects.
+Mobile/touch controls, music, gamepads and persistent saves are not implemented.
+
+Publish a static site:
+
+```sh
+dotnet publish Browser/DoomSharp.Browser.csproj -c Release -o artifacts/browser
+dotnet run --project tools/Serve -c Release -- artifacts/browser/wwwroot --urls http://localhost:5187
+```
+
+Deploy the **contents** of `artifacts/browser/wwwroot` to any static HTTP host that
+serves `.wasm` as `application/wasm` and `.dat`/`.wad` as binary data. Do not open
+`index.html` as `file://`. Pointer lock/audio require browser permission and a
+user gesture; use HTTPS in deployment (localhost is suitable for development).
+For hosting under a subpath, change the `<base href="/">` in
+`Browser/wwwroot/index.html` to that path before publishing. Keep the bundled
+Freedoom license and credits with the site.
 
 ## Controls
 
 WASD moves/strafes; arrows turn (up/down also move). Click once to capture the
 mouse, then move it to turn. Ctrl or left click fires; E/Space uses; Shift runs.
 1 selects the pistol, 2 an acquired shotgun, 4 an acquired chaingun, and 5 an
-acquired rocket launcher. Tab toggles the automap; R restarts. Esc quits desktop.
-Losing focus clears input and releases mouse capture.
+acquired rocket launcher. Tab toggles the automap; R restarts. Esc quits desktop
+or pauses the browser. Losing focus clears input and releases mouse capture.
 
 Use/fire advances after an exit where a next map exists. Living players retain
 health/inventory; dead players start fresh. Episode finales offer replay.
@@ -62,6 +110,7 @@ health/inventory; dead players start fresh. Episode finales offer replay.
 ## Verification and development tools
 
 All repository-owned tools are C#; there are no Python scripts or commands.
+The .NET WebAssembly workload supplies its upstream native compiler toolchain.
 From the root:
 
 ```sh
@@ -100,7 +149,28 @@ Previous evidence remains historical, not newly established by these checks.
 See [fixture tooling](tools/e2e-fixtures/README.md) and
 [lift qualification](tools/e2e-fixtures/LIFT.md).
 
-Synthetic input and null PCM do not establish physical-device
+Browser runtime checks use the C# Playwright API:
+
+```sh
+dotnet run --project tools/BrowserChecks -c Release -- install --with-deps chromium firefox webkit
+# In another terminal, serve the published site using tools/Serve as above.
+dotnet run --project tools/BrowserChecks -c Release -- http://localhost:5187 tools/e2e-fixtures/generated artifacts/browser-chromium chromium
+dotnet run --project tools/BrowserChecks -c Release -- http://localhost:5187 tools/e2e-fixtures/generated artifacts/browser-firefox firefox
+dotnet run --project tools/BrowserChecks -c Release -- http://localhost:5187 tools/e2e-fixtures/generated artifacts/browser-webkit webkit
+```
+
+The browser checks observe actual Canvas output, keyboard movement, pointer
+capture/turning where supported, automap, pause, visible-HUD-confirmed demo
+completion/restart, WebAudio scheduling, mute, bundled/local WAD
+loading and visible load errors. Browser tooling brings Playwright's own driver/browser dependencies;
+the application itself does not depend on Playwright.
+
+On headless Linux, Firefox needs a working audio backend even to schedule
+WebAudio. CI supplies a private PulseAudio null sink and exports its `PULSE_SERVER`;
+local desktop sessions normally already have PulseAudio/PipeWire. A missing
+backend is a failed audio check, not silently reported as verified sound.
+
+Synthetic input, null PCM and headless browsers do not establish physical-device
 input, audible sound, original-game parity, mobile support or campaign completion.
 
 ## Engine scope and limits

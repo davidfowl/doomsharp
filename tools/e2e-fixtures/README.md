@@ -23,7 +23,7 @@ the lift fixture remains
 tagged-door and boss scenarios. Every generated WAD is listed in `SHA256SUMS`.
 All assets are generated original data, not proprietary game artwork.
 
-The production project excludes tool sources explicitly. Tool
+The production project excludes tools and browser sources explicitly. Tool
 projects compile their own sources; no `.cs.txt` workaround or Python is needed.
 Fixture generator outputs stay under `.build`, keeping the source tree clean.
 
@@ -51,3 +51,6 @@ The malformed cases must fail with exit 1 and a `DoomSharp:` diagnostic.
 In particular, an invalid BLOCKMAP offset is now rejected rather than accepted
 by an unused lump path; empty BLOCKMAP data remains supported because collision
 scans linedefs directly.
+
+Browser checks are separate in `tools/BrowserChecks`. See the root README for
+static publishing, the C# static server and Chromium/Firefox/WebKit commands.
