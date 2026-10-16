@@ -9,8 +9,10 @@
 <h1>DoomSharp</h1>
 <p>The same C# engine, running locally in WebAssembly. Incomplete DOOM compatibility.</p>
 <div class="controls">
-    <button @onclick="() => Load(false)" disabled="@loading">Play Freedoom</button>
-    <button @onclick="() => Load(true)" disabled="@loading">Test level</button>
+    @if (loadFailed)
+    {
+        <button @onclick="LoadFreedoom" disabled="@loading">Retry Freedoom</button>
+    }
     <label>Local WAD <InputFile OnChange="LoadFile" accept=".wad" disabled="@loading" /></label>
     <label>Map <input @bind="map" aria-label="Map" size="8" /></label>
     <label><input type="checkbox" @bind="muted" /> Mute</label>
@@ -35,8 +37,8 @@ No proprietary assets included. <a href="assets/freedoom/COPYING.txt">Freedoom l
     Game? game;
     IJSObjectReference? host;
     DotNetObjectReference<App>? reference;
-    string status = "Choose a WAD to start.", map = "";
-    bool loading;
+    string status = "Loading Freedoom...", map = "";
+    bool loading = true, loadFailed;
     bool frameDirty = true;
     bool muted { get; set; }
     double previous = -1, accumulator;
@@ -48,13 +50,11 @@ No proprietary assets included. <a href="assets/freedoom/COPYING.txt">Freedoom l
         host = await JS.InvokeAsync<IJSObjectReference>("import", "./host.js");
         reference = DotNetObjectReference.Create(this);
         await host.InvokeVoidAsync("initialize", reference);
+        await LoadFreedoom();
     }
 
-    async Task Load(bool fixture)
-    {
-        await LoadWad(async () => fixture ? Demo.Create() :
-            await Http.GetByteArrayAsync("assets/freedoom/freedoom1.wad"));
-    }
+    Task LoadFreedoom() => LoadWad(
+        () => Http.GetByteArrayAsync("assets/freedoom/freedoom1.wad"), "Freedoom");
 
     async Task LoadFile(InputFileChangeEventArgs e)
     {
@@ -67,15 +67,17 @@ No proprietary assets included. <a href="assets/freedoom/COPYING.txt">Freedoom l
         });
     }
 
-    async Task LoadWad(Func<Task<byte[]>> read)
+    async Task LoadWad(Func<Task<byte[]>> read, string name = "WAD")
     {
         loading = true;
-        status = "Loading WAD...";
+        loadFailed = false;
+        status = $"Loading {name}...";
         game = null;
         Array.Clear(rgba);
         frameDirty = true;
         sounds.Clear(); soundCache.Clear();
         ResetInput();
+        StateHasChanged();
         try
         {
             Wad wad = new(await read());
@@ -90,10 +92,15 @@ No proprietary assets included. <a href="assets/freedoom/COPYING.txt">Freedoom l
         catch (Exception ex) when (ex is IOException or InvalidDataException or ArgumentException or
             InvalidOperationException or HttpRequestException)
         {
+            loadFailed = true;
             status = $"Cannot load WAD: {ex.Message}";
             Console.Error.WriteLine(status);
         }
-        finally { loading = false; }
+        finally
+        {
+            loading = false;
+            StateHasChanged();
+        }
     }
 
     void QueueSound(string name)

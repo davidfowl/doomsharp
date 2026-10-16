@@ -65,10 +65,13 @@ dotnet workload install wasm-tools
 dotnet run --project Browser/DoomSharp.Browser.csproj -c Release --urls http://localhost:5187
 ```
 
-Open `http://localhost:5187`. Choose **Play Freedoom**, **Test level**, or a local
-classic WAD (up to 64 MiB), then click the game. The optional Map field accepts a
-map name such as `E1M2`; leave it blank for the first map. A local WAD is processed
-on your device, not uploaded. Use only lawfully obtained assets.
+Open `http://localhost:5187`. Freedoom downloads and renders automatically, with
+visible loading/error status and a retry button if loading fails. Click the
+canvas to begin gameplay and enable browser audio/mouse capture; no selection
+click is needed to load Freedoom. There is no public test-level selector.
+You can still load a local classic WAD (up to 64 MiB). The optional Map field
+selects a map such as `E1M2` when loading a local WAD; leave it blank for the first map.
+A local WAD is processed on your device, not uploaded. Use only lawfully obtained assets.
 
 The browser runs the same C# engine source files as the desktop executable.
 It uses the .NET WebAssembly runtime via Blazor, not a server-side game process.
@@ -190,8 +193,10 @@ dotnet run --project tools/BrowserChecks -c Release -- http://localhost:5187 too
 
 The browser checks observe actual Canvas output, keyboard movement, pointer
 capture/turning where supported, automap, pause, visible-HUD-confirmed demo
-completion/restart, WebAudio scheduling, mute, bundled/local WAD
-loading and visible load errors. Browser tooling brings Playwright's own driver/browser dependencies;
+completion/restart, WebAudio scheduling, mute, automatic Freedoom startup,
+download failure/retry and local WAD loading. Generated test levels are uploaded
+through the local-WAD control by the checks, not offered in the public UI.
+Browser tooling brings Playwright's own driver/browser dependencies;
 the application itself does not depend on Playwright.
 
 On headless Linux, Firefox needs a working audio backend even to schedule

@@ -79,8 +79,22 @@ try
             return original.apply(this, args);
         };
         """);
-    await page.GotoAsync(args[0]);
-    await page.GetByRole(AriaRole.Button, new() { Name = "Test level", Exact = true }).WaitForAsync();
+    TaskCompletionSource releaseFreedoom = new();
+    const string freedoomRoute = "**/assets/freedoom/freedoom1.wad";
+    await page.RouteAsync(freedoomRoute, async route =>
+    {
+        await releaseFreedoom.Task;
+        await route.ContinueAsync();
+    });
+    await page.GotoAsync(args[0], new() { WaitUntil = WaitUntilState.DOMContentLoaded });
+    await page.GetByRole(AriaRole.Status).Filter(new() { HasText = "Loading Freedoom..." }).WaitForAsync();
+    Check("automatic-Freedoom-loading-is-visible", await page.Locator("input[type=file]").IsDisabledAsync());
+    Check("no-public-game-selection-buttons",
+        await page.GetByRole(AriaRole.Button, new() { Name = "Test level", Exact = true }).CountAsync() == 0
+        && await page.GetByRole(AriaRole.Button, new() { Name = "Play Freedoom", Exact = true }).CountAsync() == 0);
+    releaseFreedoom.SetResult();
+    await page.Locator("input[type=file]:enabled").WaitForAsync();
+    await page.UnrouteAsync(freedoomRoute);
     ILocator canvas = page.Locator("#game");
     async Task CheckPageScroll(string name, bool overCanvas)
     {
@@ -187,9 +201,24 @@ try
         diagnostics.Add("Load status: " + text);
         if (!text.StartsWith("Playing ", StringComparison.Ordinal)) throw new InvalidOperationException(text);
     }
-    await page.GetByRole(AriaRole.Button, new() { Name = "Test level", Exact = true }).ClickAsync();
     await WaitForLoad();
     await WaitForPixels();
+    JsonElement automaticFreedoom = await Pixels();
+    Check("Freedoom-starts-without-selection-click", automaticFreedoom.GetProperty("nonblack").GetInt32() > 200000,
+        automaticFreedoom);
+    Check("automatic-startup-does-not-request-audio-or-pointer-lock",
+        await page.EvaluateAsync<bool>("window.audioContexts.length===0 && document.pointerLockElement===null"));
+    await page.ScreenshotAsync(new() { Path = Path.Combine(output, "automatic-freedoom.png") });
+    async Task LoadFixture()
+    {
+        await page.Locator("input[type=file]").SetInputFilesAsync(new FilePayload
+        {
+            Name = "fixture-demo.wad", MimeType = "application/octet-stream", Buffer = Demo.Create()
+        });
+        await WaitForLoad();
+        await WaitForPixels();
+    }
+    await LoadFixture();
     JsonElement initial = await Pixels();
     Check("fixture-renders-in-WASM", initial.GetProperty("nonblack").GetInt32() > 200000, initial);
     await canvas.ClickAsync();
@@ -236,8 +265,9 @@ try
     await CheckIdlePresents("paused-canvas-does-not-repaint-unchanged-frames");
     await page.SetViewportSizeAsync(1200, 1000);
     await page.ScreenshotAsync(new() { Path = Path.Combine(output, "fixture.png") });
+    await page.ReloadAsync();
+    await page.Locator("input[type=file]:enabled").WaitForAsync();
     await page.GetByRole(AriaRole.Checkbox, new() { Name = "Mute" }).CheckAsync();
-    await page.GetByRole(AriaRole.Button, new() { Name = "Play Freedoom", Exact = true }).ClickAsync();
     await WaitForLoad();
     await WaitForPixels();
     JsonElement freedoom = await Pixels();
@@ -252,8 +282,7 @@ try
     await WaitForLoad();
     await WaitForPixels();
     Check("local-WAD-renders", (await Pixels()).GetProperty("nonblack").GetInt32() > 200000);
-    await page.GetByRole(AriaRole.Button, new() { Name = "Test level", Exact = true }).ClickAsync();
-    await WaitForLoad(); await WaitForPixels();
+    await LoadFixture();
     await canvas.ClickAsync();
     await page.Keyboard.DownAsync("w");
     await UntilHud(355, 0xffdb8a, "SHOTGUN");
@@ -290,9 +319,30 @@ try
         """);
     Check("failed-load-clears-retained-frame", (await Pixels()).GetProperty("nonblack").GetInt32() == 0);
     await page.GetByRole(AriaRole.Textbox, new() { Name = "Map", Exact = true }).FillAsync("E9M9");
-    await page.GetByRole(AriaRole.Button, new() { Name = "Test level", Exact = true }).ClickAsync();
+    await page.GetByRole(AriaRole.Textbox, new() { Name = "Map", Exact = true }).PressAsync("Tab");
+    await page.Locator("input[type=file]").SetInputFilesAsync(new FilePayload
+    {
+        Name = "fixture-demo.wad", MimeType = "application/octet-stream", Buffer = Demo.Create()
+    });
     await page.GetByRole(AriaRole.Status).Filter(new() { HasText = "Cannot load WAD:" }).WaitForAsync();
     Check("missing-map-reported", (await page.GetByRole(AriaRole.Status).InnerTextAsync()).Contains("E9M9", StringComparison.Ordinal));
+    await page.RouteAsync(freedoomRoute, route => route.FulfillAsync(new() { Status = 503, Body = "Unavailable" }));
+    await page.ReloadAsync();
+    await page.GetByRole(AriaRole.Status).Filter(new() { HasText = "Cannot load WAD:" }).WaitForAsync();
+    Check("automatic-Freedoom-download-error-is-visible",
+        (await page.GetByRole(AriaRole.Status).InnerTextAsync()).Contains("503", StringComparison.Ordinal)
+        && await page.GetByRole(AriaRole.Button, new() { Name = "Retry Freedoom", Exact = true }).IsVisibleAsync());
+    Check("local-WAD-remains-available-after-startup-error", await page.Locator("input[type=file]").IsEnabledAsync());
+    await LoadFixture();
+    Check("local-WAD-recovers-from-startup-error",
+        !await page.GetByRole(AriaRole.Button, new() { Name = "Retry Freedoom", Exact = true }).IsVisibleAsync());
+    await page.ReloadAsync();
+    await page.GetByRole(AriaRole.Status).Filter(new() { HasText = "Cannot load WAD:" }).WaitForAsync();
+    await page.UnrouteAsync(freedoomRoute);
+    await page.GetByRole(AriaRole.Button, new() { Name = "Retry Freedoom", Exact = true }).ClickAsync();
+    await WaitForLoad(); await WaitForPixels();
+    Check("retry-Freedoom-recovers", !await page.GetByRole(AriaRole.Button,
+        new() { Name = "Retry Freedoom", Exact = true }).IsVisibleAsync());
     Check("no-unhandled-browser-errors", errors.Count == 0, errors);
     Check("resources-stay-under-base-path", outsideBase.Count == 0, outsideBase);
     Check("no-false-fatal-error-banner", !await page.Locator("#blazor-error-ui").IsVisibleAsync());
