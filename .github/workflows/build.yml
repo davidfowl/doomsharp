@@ -118,9 +118,57 @@ jobs:
         with:
           name: doomsharp-browser-${{ matrix.browser }}
           path: artifacts/
+  windows-edge:
+    needs: browser
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+      - uses: actions/download-artifact@v4
+        with:
+          name: doomsharp-browser-chromium
+          path: artifacts
+      - run: dotnet build tools/Serve -c Release
+      - run: dotnet build tools/BrowserChecks -c Release
+      - run: dotnet run --project tools/e2e-fixtures/FixtureGenerator.csproj -c Release -- tools/e2e-fixtures/generated
+      - run: dotnet run --project tools/BrowserChecks -c Release -- install ffmpeg
+      - name: Exercise Windows Edge and record live-versus-candidate scrolling
+        shell: pwsh
+        run: |
+          $hostProcess = Start-Process dotnet -ArgumentList @(
+            'run', '--no-build', '--project', 'tools/Serve', '-c', 'Release', '--',
+            'artifacts/browser/wwwroot', '--urls', 'http://127.0.0.1:5187', '--path-base', '/doomsharp'
+          ) -PassThru -RedirectStandardOutput artifacts/edge-host.log -RedirectStandardError artifacts/edge-host-error.log
+          try {
+            $ready = $false
+            for ($attempt = 0; $attempt -lt 60; $attempt++) {
+              curl.exe --silent --fail http://127.0.0.1:5187/doomsharp/ -o NUL
+              if ($LASTEXITCODE -eq 0) { $ready = $true; break }
+              Start-Sleep -Seconds 1
+            }
+            if (!$ready) { throw 'Published browser host did not become ready.' }
+            $failed = $false
+            dotnet run --no-build --project tools/BrowserChecks -c Release -- http://127.0.0.1:5187/doomsharp/ tools/e2e-fixtures/generated artifacts/edge-checks msedge
+            if ($LASTEXITCODE -ne 0) { $failed = $true }
+            dotnet run --no-build --project tools/BrowserChecks -c Release -- scroll https://davidfowl.github.io/doomsharp/ artifacts/edge-live-scroll msedge --headed
+            if ($LASTEXITCODE -ne 0) { $failed = $true }
+            dotnet run --no-build --project tools/BrowserChecks -c Release -- scroll http://127.0.0.1:5187/doomsharp/ artifacts/edge-candidate-scroll msedge --headed
+            if ($LASTEXITCODE -ne 0) { $failed = $true }
+            if ($failed) { throw 'Windows Edge checks failed; inspect retained results.' }
+          } finally {
+            Stop-Process -Id $hostProcess.Id -ErrorAction SilentlyContinue
+          }
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: doomsharp-windows-edge
+          path: |
+            artifacts/edge-*
   pages:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    needs: browser
+    needs: [browser, windows-edge]
     runs-on: ubuntu-latest
     permissions:
       contents: read

@@ -108,8 +108,8 @@ content-encoding headers if served.
 
 Set repository **Settings > Pages > Source** to **GitHub Actions**. On a push to
 `main`, `.github/workflows/build.yml` publishes the browser site and exercises it
-under `/doomsharp/` in Chromium, Firefox and WebKit. After all three browser jobs
-succeed, it deploys only the published `wwwroot` contents to the `github-pages`
+under `/doomsharp/` in Chromium, Firefox and WebKit, then checks Windows Edge.
+After these browser jobs succeed, it deploys only the published `wwwroot` contents to the `github-pages`
 environment. Pull requests and other branches test without deploying.
 The deployment job then runs Chromium against the public Pages URL, exercising
 WAD loading, rendering, input and gameplay. Its `doomsharp-live-pages` artifact
@@ -198,6 +198,15 @@ download failure/retry and local WAD loading. Generated test levels are uploaded
 through the local-WAD control by the checks, not offered in the public UI.
 Browser tooling brings Playwright's own driver/browser dependencies;
 the application itself does not depend on Playwright.
+
+The Windows Edge job runs the browser checks with the installed `msedge` channel.
+It also records headed Edge scrolling over real Freedoom on the current public
+site and the candidate build, retaining video, snapshots, browser/graphics
+details and frame timing in `doomsharp-windows-edge`. The `scroll` diagnostic
+compares paused/native/scaled/composited canvases and animated rendering;
+keyboard-fallback scenarios explicitly disable pointer lock so the document can
+scroll during play. These recordings are not physical-display scanout and do not
+establish absence of hardware-specific tearing.
 
 On headless Linux, Firefox needs a working audio backend even to schedule
 WebAudio. CI supplies a private PulseAudio null sink and exports its `PULSE_SERVER`;

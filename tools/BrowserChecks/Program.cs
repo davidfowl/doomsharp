@@ -3,10 +3,11 @@ using Microsoft.Playwright;
 using DoomSharp;
 
 if (args.Length > 0 && args[0] == "install") return Microsoft.Playwright.Program.Main(args);
+if (args.Length > 0 && args[0] == "scroll") return await ScrollChecks.RunAsync(args[1..]);
 
 if (args.Length is < 3 or > 4)
 {
-    Console.Error.WriteLine("Usage: DoomSharp.BrowserChecks <base-url> <fixtures> <new-output-directory> [chromium|firefox|webkit]");
+    Console.Error.WriteLine("Usage: DoomSharp.BrowserChecks <base-url> <fixtures> <new-output-directory> [chromium|firefox|webkit|msedge]");
     return 2;
 }
 string output = Path.GetFullPath(args[2]), fixtures = Path.GetFullPath(args[1]);
@@ -15,7 +16,7 @@ Directory.CreateDirectory(output);
 using IPlaywright playwright = await Playwright.CreateAsync();
 IBrowserType type = (args.Length == 4 ? args[3] : "chromium") switch
 {
-    "chromium" => playwright.Chromium, "firefox" => playwright.Firefox, "webkit" => playwright.Webkit,
+    "chromium" or "msedge" => playwright.Chromium, "firefox" => playwright.Firefox, "webkit" => playwright.Webkit,
     _ => throw new ArgumentException("Unsupported browser.")
 };
 List<object> results = [];
@@ -31,7 +32,10 @@ void Check(string name, bool passed, object? observation = null)
 }
 try
 {
-    await using IBrowser browser = await type.LaunchAsync(new() { Headless = true });
+    await using IBrowser browser = await type.LaunchAsync(new()
+    {
+        Headless = true, Channel = args.Length == 4 && args[3] == "msedge" ? "msedge" : null
+    });
     IPage page = await browser.NewPageAsync(new() { ViewportSize = new() { Width = 1200, Height = 600 } });
     page.SetDefaultTimeout(60000);
     page.PageError += (_, error) => errors.Add(error);
@@ -356,7 +360,7 @@ finally
 {
     File.WriteAllText(Path.Combine(output, "results.json"), JsonSerializer.Serialize(new
     {
-        browser = type.Name, url = args[0], results, failed, diagnostics,
+        browser = args.Length == 4 ? args[3] : type.Name, url = args[0], results, failed, diagnostics,
         limits = "Headless browser, synthetic keyboard/pointer and WebAudio scheduling; no physical input or audible playback. Browser tests do not establish Windows/macOS desktop behavior."
     }, new JsonSerializerOptions { WriteIndented = true }));
 }
