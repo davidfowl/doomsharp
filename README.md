@@ -104,6 +104,10 @@ Set repository **Settings > Pages > Source** to **GitHub Actions**. On a push to
 under `/doomsharp/` in Chromium, Firefox and WebKit. After all three browser jobs
 succeed, it deploys only the published `wwwroot` contents to the `github-pages`
 environment. Pull requests and other branches test without deploying.
+The deployment job then runs Chromium against the public Pages URL, exercising
+WAD loading, rendering, input and gameplay. Its `doomsharp-live-pages` artifact
+retains the results and screenshots; a successful upload alone is not a
+successful live gameplay check.
 The site is available at <https://davidfowl.github.io/doomsharp/> after a successful
 Pages deployment. This build does not require cross-origin-isolation headers.
 
