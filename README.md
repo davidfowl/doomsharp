@@ -78,6 +78,8 @@ The renderer is software-based; frame rate depends on map complexity and browser
 Clicking enables audio and requests pointer lock. Keyboard controls still work
 when pointer lock is unavailable. Esc, loss of focus or a hidden tab pauses the
 game and clears held input; click to resume. **Mute** suppresses new sound effects.
+Wheel input over the active game does not scroll the page. Press Esc to pause
+and scroll normally; scrolling is also available before starting a game.
 Mobile/touch controls, music, gamepads and persistent saves are not implemented.
 
 Publish a static site:

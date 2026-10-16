@@ -32,7 +32,7 @@ void Check(string name, bool passed, object? observation = null)
 try
 {
     await using IBrowser browser = await type.LaunchAsync(new() { Headless = true });
-    IPage page = await browser.NewPageAsync(new() { ViewportSize = new() { Width = 1200, Height = 1000 } });
+    IPage page = await browser.NewPageAsync(new() { ViewportSize = new() { Width = 1200, Height = 600 } });
     page.SetDefaultTimeout(60000);
     page.PageError += (_, error) => errors.Add(error);
     page.Console += (_, message) => diagnostics.Add($"{message.Type}: {message.Text}");
@@ -76,6 +76,17 @@ try
     await page.GotoAsync(args[0]);
     await page.GetByRole(AriaRole.Button, new() { Name = "Test level", Exact = true }).WaitForAsync();
     ILocator canvas = page.Locator("#game");
+    async Task CheckPageScroll(string name, bool overCanvas)
+    {
+        await page.EvaluateAsync("window.scrollTo(0, 0)");
+        await page.Mouse.MoveAsync(overCanvas ? 400 : 10, overCanvas ? 350 : 20);
+        await page.Mouse.WheelAsync(0, 400);
+        await page.WaitForTimeoutAsync(400);
+        double scroll = await page.EvaluateAsync<double>("window.scrollY");
+        Check(name, scroll > 100, scroll);
+    }
+    await CheckPageScroll("initial-wheel-over-canvas-scrolls-page", true);
+    await CheckPageScroll("initial-wheel-outside-canvas-scrolls-page", false);
     async Task<JsonElement> Pixels() => await canvas.EvaluateAsync<JsonElement>("""
         c => {
             const p = c.getContext('2d').getImageData(0, 0, 640, 400).data;
@@ -169,6 +180,13 @@ try
     await canvas.ClickAsync();
     await page.WaitForTimeoutAsync(300);
     Check("pointer-capture-preserves-view", (await Pixels()).GetProperty("hash").GetUInt32() == initial.GetProperty("hash").GetUInt32());
+    double activeScroll = await page.EvaluateAsync<double>("window.scrollY");
+    await page.Mouse.WheelAsync(0, 400);
+    await page.WaitForTimeoutAsync(400);
+    double afterWheel = await page.EvaluateAsync<double>("window.scrollY");
+    Check("active-wheel-keeps-canvas-in-view", Math.Abs(afterWheel - activeScroll) < 1,
+        new { before = activeScroll, after = afterWheel });
+    Check("wheel-preserves-framebuffer", (await Pixels()).GetProperty("hash").GetUInt32() == initial.GetProperty("hash").GetUInt32());
     await Hold("Tab", 100);
     await WaitForPixels(automap: true);
     JsonElement map = await Pixels();
@@ -198,6 +216,9 @@ try
     JsonElement still = await Pixels();
     Check("Escape-pauses", paused.GetProperty("hash").GetUInt32() == still.GetProperty("hash").GetUInt32());
     Check("pause-releases-pointer", await page.EvaluateAsync<bool>("document.pointerLockElement === null"));
+    await CheckPageScroll("paused-wheel-over-canvas-scrolls-page", true);
+    await CheckPageScroll("paused-wheel-outside-canvas-scrolls-page", false);
+    await page.SetViewportSizeAsync(1200, 1000);
     await page.ScreenshotAsync(new() { Path = Path.Combine(output, "fixture.png") });
     await page.GetByRole(AriaRole.Checkbox, new() { Name = "Mute" }).CheckAsync();
     await page.GetByRole(AriaRole.Button, new() { Name = "Play Freedoom", Exact = true }).ClickAsync();
