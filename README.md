@@ -40,15 +40,23 @@ command-line tools on macOS. Cross-OS Native AOT publishing is not supported.
 
 | Target RIDs | Desktop facilities | Requirements / evidence |
 |---|---|---|
-| `linux-x64`, `linux-arm64` | X11, ALSA | `libX11.so.6`, `libasound.so.2`; Wayland requires XWayland. This change was exercised on Linux x64 only. |
-| `win-x64`, `win-arm64` | Win32/GDI, waveOut | No third-party native window/audio library. Windows runtime behavior was not reverified in this Linux workspace. |
-| `osx-x64`, `osx-arm64` | AppKit/CoreGraphics, AudioQueue | Run from a graphical login session. macOS runtime behavior was not reverified in this Linux workspace. |
+| `linux-x64`, `linux-arm64` | X11, ALSA | `libX11.so.6`, `libasound.so.2`; Wayland requires XWayland. Both RIDs passed CI executable/engine and XTest/Xvfb native checks. |
+| `win-x64`, `win-arm64` | Win32/GDI, waveOut | No third-party native window/audio library. Both RIDs passed CI executable/engine checks and bounded native window rendering. |
+| `osx-x64`, `osx-arm64` | AppKit/CoreGraphics, AudioQueue | Run from a graphical login session. Both RIDs passed CI executable/engine checks and bounded native window rendering. |
 | Browser WASM | Canvas 2D, WebAudio, keyboard/pointer events | Desktop Chromium, Firefox and WebKit smoke checks; not proof of Safari/macOS or mobile-device behavior. |
 
 The desktop framebuffer is 640x400 in an initially 960x600 window. Linux requires
 a 24/32-bit TrueColor display. The CI workflow publishes and exercises six desktop
 OS/architecture targets, plus three browser engines. A configured job is **not**
 evidence that this local revision ran on that target.
+
+[CI for the integrated C# tooling/WASM increment](https://github.com/davidfowl/doomsharp/actions/runs/38846813017)
+passed all six native targets and Chromium/Firefox/WebKit. Native jobs publish
+and run the actual executable, not just compile it; Linux additionally exercises
+synthetic OS input, framebuffer readback and null PCM. Windows/macOS desktop
+smoke is bounded to 35 frames with audio disabled. Local qualification used
+Linux x64; neither it nor hosted CI establishes physical-device input, audible
+playback, Safari/mobile support or complete campaign compatibility.
 
 ## Browser WebAssembly
 
