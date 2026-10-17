@@ -185,6 +185,7 @@ try
     Check("autoplay-remains-silent", await page.EvaluateAsync<bool>("window.audioContexts.length === 0 && window.soundStarts === 0"));
     await CheckPageScroll("active-wheel-outside-canvas-scrolls-page", false);
     await canvas.ClickAsync();
+    await page.WaitForFunctionAsync("window.audioContexts.some(context => context.state === 'running')");
     await Hold("Control", 400);
     Check("Freedoom-WebAudio-after-click", await page.EvaluateAsync<int>("window.soundStarts") > 0,
         await page.EvaluateAsync<JsonElement>("({states:window.audioContexts.map(a=>a.state),status:document.querySelector('#status').textContent})"));
@@ -246,7 +247,7 @@ try
     Check("mute-suppresses-effects", await page.EvaluateAsync<int>("window.soundStarts") == soundsBefore);
     await page.Keyboard.PressAsync("Escape");
     await page.ScreenshotAsync(new() { Path = Path.Combine(output, "freedoom.png") });
-    await page.Locator("input[type=file]").SetInputFilesAsync(Path.Combine(fixtures, "portal-equal.wad"));
+    await page.Locator("input[type=file]").SetInputFilesAsync(Path.Combine(fixtures, "step-24.wad"));
     await WaitForLoad();
     await WaitForPixels();
     Check("local-WAD-renders", (await Pixels()).GetProperty("nonblack").GetInt32() > 200000);
@@ -268,6 +269,26 @@ try
     await WaitForLoad();
     await WaitForPixels();
     Check("explicit-Freedoom-map-loads", (await page.GetByRole(AriaRole.Status).InnerTextAsync()).StartsWith("Playing E1M2.", StringComparison.Ordinal));
+    await page.GetByRole(AriaRole.Textbox, new() { Name = "Map", Exact = true }).FillAsync("");
+    await canvas.EvaluateAsync("""
+        c => {
+            window.originalPointerLock = c.requestPointerLock;
+            c.requestPointerLock = () => new Promise((resolve, reject) => {
+                window.rejectPointerLock = () => reject(new Error('Delayed pointer-lock denial'));
+            });
+        }
+        """);
+        await canvas.ClickAsync();
+    await page.Locator("input[type=file]").SetInputFilesAsync(Path.Combine(fixtures, "portal-equal.wad"));
+    await WaitForLoad();
+    await canvas.EvaluateAsync("""
+        c => {
+            c.requestPointerLock = window.originalPointerLock;
+            window.rejectPointerLock();
+        }
+        """);
+    await page.WaitForTimeoutAsync(200);
+    Check("stale-pointer-denial-does-not-overwrite-new-game", (await page.GetByRole(AriaRole.Status).InnerTextAsync()).StartsWith("Playing E1M1.", StringComparison.Ordinal));
     await page.RouteAsync("**/assets/freedoom/freedoom1.wad",
         route => route.FulfillAsync(new() { Status = 503, Body = "WAD unavailable" }));
     await page.ReloadAsync();

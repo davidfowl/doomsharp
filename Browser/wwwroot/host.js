@@ -1,6 +1,7 @@
 let canvas, context, dotnet, audio, animation, mouseX = 0, active = false, stopped = false;
 let activation = 0;
 let awaitingMouse = true;
+let audioReady = false;
 const listeners = [];
 const voices = new Set();
 
@@ -22,7 +23,8 @@ export function initialize(reference) {
         if (document.pointerLockElement !== canvas) awaitingMouse = true;
         try {
             audio ??= new AudioContext();
-            const resume = audio.resume();
+            audioReady = false;
+            const resume = audio.resume().then(() => { audioReady = true; });
             const lock = canvas.requestPointerLock();
             await Promise.all([resume, lock]);
         } catch (error) {
@@ -68,6 +70,7 @@ export function initialize(reference) {
 }
 
 export function start() {
+    activation++;
     mouseX = 0;
     awaitingMouse = true;
     active = !document.hidden;
@@ -104,7 +107,7 @@ async function frame(time) {
 
 export function playSound(bytes, sampleRate) {
     // Autoplay runs silently until a user gesture enables WebAudio.
-    if (!active || !audio) return;
+    if (!active || !audio || !audioReady) return;
     if (audio.state !== "running") throw new Error("Click the game to enable browser audio.");
     const buffer = audio.createBuffer(1, bytes.length / 2, sampleRate);
     const samples = buffer.getChannelData(0);
