@@ -7,16 +7,16 @@ const string FreedoomSha256 = "7323bcc168c5a45ff10749b339960e98314740a734c30d4b9
 
 if (args.Length > 0 && args[0] == "install") return Microsoft.Playwright.Program.Main(args);
 
-if (args.Length is < 3 or > 4)
+if (args.Length is < 3 or > 5 || args.Length == 5 && args[4] != "switches")
 {
-    Console.Error.WriteLine("Usage: DoomSharp.BrowserChecks <base-url> <fixtures> <new-output-directory> [chromium|firefox|webkit]");
+    Console.Error.WriteLine("Usage: DoomSharp.BrowserChecks <base-url> <fixtures> <new-output-directory> [chromium|firefox|webkit] [switches]");
     return 2;
 }
 string output = Path.GetFullPath(args[2]), fixtures = Path.GetFullPath(args[1]);
 if (Directory.Exists(output)) throw new IOException("Evidence directory already exists: " + output);
 Directory.CreateDirectory(output);
 using IPlaywright playwright = await Playwright.CreateAsync();
-IBrowserType type = (args.Length == 4 ? args[3] : "chromium") switch
+IBrowserType type = (args.Length >= 4 ? args[3] : "chromium") switch
 {
     "chromium" => playwright.Chromium, "firefox" => playwright.Firefox, "webkit" => playwright.Webkit,
     _ => throw new ArgumentException("Unsupported browser.")
@@ -75,6 +75,21 @@ try
             window.soundStarts++;
             return original.apply(this, args);
         };
+        window.framePixels = c => {
+            const p = c.getContext('2d').getImageData(0, 0, 640, 400).data;
+            let nonblack=0, background=0, white=0, switchOff=0, switchOn=0, hash=2166136261;
+            for(let i=0;i<p.length;i+=4) {
+                if(p[i]||p[i+1]||p[i+2]) nonblack++;
+                if(i<640*350*4 && p[i]===8 && p[i+1]===9 && p[i+2]===11) background++;
+                if(i>=640*175*4 && i<640*195*4 && p[i]===255 && p[i+1]===255 && p[i+2]===255) white++;
+                if(i<640*350*4 && p[i]>p[i+1]*2 && p[i]>p[i+2]*2) switchOff++;
+                if(i<640*350*4 && p[i+1]>p[i]*2 && p[i+1]>p[i+2]*2) switchOn++;
+                hash=Math.imul(hash^p[i],16777619);
+                hash=Math.imul(hash^p[i+1],16777619);
+                hash=Math.imul(hash^p[i+2],16777619);
+            }
+            return {nonblack, background, white, switchOff, switchOn, hash:hash>>>0};
+        };
         """);
     IResponse bundledWad = await page.RunAndWaitForResponseAsync(
         () => page.GotoAsync(args[0]),
@@ -90,23 +105,7 @@ try
         double scroll = await page.EvaluateAsync<double>("window.scrollY");
         Check(name, scroll > 100, scroll);
     }
-    async Task<JsonElement> Pixels() => await canvas.EvaluateAsync<JsonElement>("""
-        c => {
-            const p = c.getContext('2d').getImageData(0, 0, 640, 400).data;
-            let nonblack=0, background=0, white=0, switchOff=0, switchOn=0, hash=2166136261;
-            for(let i=0;i<p.length;i+=4) {
-                if(p[i]||p[i+1]||p[i+2]) nonblack++;
-                if(i<640*350*4 && p[i]===8 && p[i+1]===9 && p[i+2]===11) background++;
-                if(i>=640*175*4 && i<640*195*4 && p[i]===255 && p[i+1]===255 && p[i+2]===255) white++;
-                if(i<640*350*4 && p[i]>p[i+1]*2 && p[i]>p[i+2]*2) switchOff++;
-                if(i<640*350*4 && p[i+1]>p[i]*2 && p[i+1]>p[i+2]*2) switchOn++;
-                hash=Math.imul(hash^p[i],16777619);
-                hash=Math.imul(hash^p[i+1],16777619);
-                hash=Math.imul(hash^p[i+2],16777619);
-            }
-            return {nonblack, background, white, switchOff, switchOn, hash:hash>>>0};
-        }
-        """);
+    async Task<JsonElement> Pixels() => await canvas.EvaluateAsync<JsonElement>("c => window.framePixels(c)");
     async Task Hold(string key, int ms)
     {
         await page.Keyboard.DownAsync(key);
@@ -165,6 +164,12 @@ try
     }
     await WaitForLoad();
     await WaitForPixels();
+    if (args.Length == 5)
+    {
+        await CheckSwitches();
+        Check("no-unhandled-browser-errors", errors.Count == 0, errors);
+        return failed == 0 ? 0 : 1;
+    }
     Check("Freedoom-autoloads-E1M1", (await page.GetByRole(AriaRole.Status).InnerTextAsync()).StartsWith("Playing E1M1.", StringComparison.Ordinal));
     // The WAD exceeds Chromium's inspector response-body cache.
     IAPIResponse wadAsset = await page.APIRequest.GetAsync(bundledWad.Url);
@@ -259,40 +264,110 @@ try
     await Hold("r", 100);
     Check("browser-live-restart", (await Hud(355, 0xffdb8a)).Contains("AMMO 50  PISTOL", StringComparison.Ordinal));
     await page.Keyboard.PressAsync("Escape");
-    foreach (var scenario in new[] { (29, "middle"), (99, "middle"), (99, "no-key") })
+    async Task CheckSwitches()
     {
-        int special = scenario.Item1;
-        string variant = scenario.Item2, name = $"switch-{special}-{variant}";
-        bool changed = variant != "no-key", repeat = special == 99 && changed;
-        await page.WaitForFunctionAsync("document.pointerLockElement === null");
-        await page.WaitForTimeoutAsync(200);
-        await page.Locator("input[type=file]").SetInputFilesAsync(Path.Combine(fixtures, name + ".wad"));
-        await WaitForLoad();
-        await WaitForPixels();
-        JsonElement before = await Pixels();
-        await canvas.FocusAsync();
-        await page.WaitForTimeoutAsync(100);
-        await Hold("e", 60);
-        JsonElement activated = await Pixels();
-        Check(name + "-visible-toggle", before.GetProperty("switchOff").GetInt32() > 500 &&
-            before.GetProperty("switchOn").GetInt32() == 0 &&
-            (changed ? activated.GetProperty("switchOn").GetInt32() > 500 : activated.GetProperty("switchOn").GetInt32() == 0),
-            new { before, activated, hud = await Hud(355, 0xffdb8a),
-                input = await page.EvaluateAsync<JsonElement>("window.inputTrace") });
-        if (repeat)
+        foreach (var scenario in new[] { (29, "middle"), (99, "middle"), (99, "no-key") })
         {
-            await page.Keyboard.PressAsync("Escape");
+            int special = scenario.Item1;
+            string variant = scenario.Item2, name = $"switch-{special}-{variant}";
+            bool changed = variant != "no-key", repeat = special == 99 && changed;
+            await page.WaitForFunctionAsync("document.pointerLockElement === null");
+            await page.WaitForTimeoutAsync(200);
+            await page.Locator("input[type=file]").SetInputFilesAsync(Path.Combine(fixtures, name + ".wad"));
+            await WaitForLoad();
+            await WaitForPixels();
+            JsonElement before = await Pixels();
+            await canvas.FocusAsync();
+            await page.WaitForTimeoutAsync(100);
+            if (changed)
+                await canvas.EvaluateAsync("""
+                (c, pause) => {
+                    const context = c.getContext('2d'), render = context.putImageData;
+                    const capture = window.switchCapture = {armedAt:performance.now(), done:false};
+                    const use = event => {
+                        if(event.code === 'KeyE')
+                            capture.input = {time:performance.now(), trusted:event.isTrusted,
+                                focused:document.activeElement === c};
+                    };
+                    c.addEventListener('keydown', use);
+                    let timer;
+                    const restore = () => {
+                        context.putImageData = render;
+                        c.removeEventListener('keydown', use);
+                        clearTimeout(timer);
+                        capture.done = true;
+                    };
+                    context.putImageData = function(...args) {
+                        render.apply(this, args);
+                        const pixels = window.framePixels(c);
+                        if(pixels.switchOn <= 500) return;
+                        capture.activated = pixels;
+                        capture.firstGreenAt = performance.now();
+                        // Pause in the same render task; automation roundtrips can exceed the button lifetime.
+                        if(pause) {
+                            c.dispatchEvent(new KeyboardEvent('keydown',
+                                {code:'Escape', key:'Escape', bubbles:true, cancelable:true}));
+                            c.dispatchEvent(new KeyboardEvent('keyup',
+                                {code:'Escape', key:'Escape', bubbles:true, cancelable:true}));
+                            capture.pauseAt = performance.now();
+                        }
+                        restore();
+                    };
+                    timer = setTimeout(() => {
+                        capture.error = 'No green switch frame within 10000ms of arming before E';
+                        capture.last = window.framePixels(c);
+                        capture.timedOutAt = performance.now();
+                        restore();
+                    }, 10000);
+                }
+                """, repeat);
+            await Hold("e", 60);
+            JsonElement? capture = null;
+            if (changed)
+            {
+                await page.WaitForFunctionAsync("window.switchCapture.done", null, new() { Timeout = 15000 });
+                capture = await page.EvaluateAsync<JsonElement>("window.switchCapture");
+                if (capture.Value.TryGetProperty("error", out _))
+                    throw new InvalidOperationException(name + " activation capture failed: " + capture);
+                Check(name + "-focused-use-input", capture.Value.TryGetProperty("input", out JsonElement use) &&
+                    use.GetProperty("trusted").GetBoolean() &&
+                    use.GetProperty("focused").GetBoolean(), use);
+            }
+            JsonElement activated = capture?.GetProperty("activated") ?? await Pixels();
+            if (repeat) await page.WaitForTimeoutAsync(1200);
+            Check(name + "-visible-toggle", before.GetProperty("switchOff").GetInt32() > 500 &&
+                before.GetProperty("switchOn").GetInt32() == 0 &&
+                (changed ? activated.GetProperty("switchOn").GetInt32() > 500 : activated.GetProperty("switchOn").GetInt32() == 0),
+                new
+                {
+                    before,
+                    activated,
+                    capture,
+                    hud = await Hud(355, 0xffdb8a),
+                    input = await page.EvaluateAsync<JsonElement>("window.inputTrace")
+                });
+            if (repeat)
+            {
+                JsonElement buttonCapture = capture ?? throw new InvalidOperationException(name + " activation was not captured");
+                await page.WaitForTimeoutAsync(1100);
+                double observedAt = await page.EvaluateAsync<double>("performance.now()");
+                JsonElement preserved = await Pixels();
+                Check(name + "-slow-diagnostics-preserve-captured-toggle",
+                    observedAt - buttonCapture.GetProperty("pauseAt").GetDouble() > 1200 &&
+                    activated.GetProperty("switchOn").GetInt32() > 500, new { capture, observedAt });
+                Check(name + "-pause-preserves-button", preserved.GetProperty("switchOn").GetInt32() > 500,
+                    new { preserved, capture, observedAt });
+                await canvas.ClickAsync();
+            }
             await page.WaitForTimeoutAsync(1100);
-            Check(name + "-pause-preserves-button", (await Pixels()).GetProperty("switchOn").GetInt32() > 500);
-            await canvas.ClickAsync();
+            JsonElement settled = await Pixels();
+            Check(name + "-visible-reset-or-latch", repeat || !changed ?
+                settled.GetProperty("switchOn").GetInt32() == 0 && settled.GetProperty("switchOff").GetInt32() > 500 :
+                settled.GetProperty("switchOn").GetInt32() > 500, settled);
+            await page.Keyboard.PressAsync("Escape");
         }
-        await page.WaitForTimeoutAsync(1100);
-        JsonElement settled = await Pixels();
-        Check(name + "-visible-reset-or-latch", repeat || !changed ?
-            settled.GetProperty("switchOn").GetInt32() == 0 && settled.GetProperty("switchOff").GetInt32() > 500 :
-            settled.GetProperty("switchOn").GetInt32() > 500, settled);
-        await page.Keyboard.PressAsync("Escape");
     }
+    await CheckSwitches();
     await page.Locator("input[type=file]").SetInputFilesAsync(Path.Combine(fixtures, "bad-directory-count.wad"));
     await page.GetByRole(AriaRole.Status).Filter(new() { HasText = "Cannot load WAD:" }).WaitForAsync();
     Check("invalid-WAD-reported", (await page.GetByRole(AriaRole.Status).InnerTextAsync()).Contains("directory", StringComparison.Ordinal));

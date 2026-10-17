@@ -68,6 +68,16 @@ null PCM. Manual-door control artwork can disappear as its door opens; its
 engine check independently requires that the door actually moves.
 The browser runner uses the same fixtures for visible S1/SR/key-denied controls
 and verifies that pausing preserves an active button for more than one second.
+Before Use, it arms a browser-side first-green-frame capture. For SR99 it sends
+a test-only synthetic Escape through the canvas handler in that same render
+task, before automation or HUD diagnostics can consume the 35-tick lifetime.
+The separate real-key `Escape-pauses` check still covers keyboard-driven pause.
+Switch checks require focused, trusted Use input and retain capture/input/pause
+timestamps. They deliberately delay diagnostics by 1.2 seconds while paused,
+then require the green surface to survive and reset after clicking to resume.
+Missing activation fails with a bounded timeout and the last pixel observation;
+it is not retried. Run just these scenarios by appending `switches` after the
+browser argument to `tools/BrowserChecks`; omit it for the complete browser suite.
 Real-time host checks complement, not replace, exact engine tick assertions.
 
 The production project excludes tools and browser sources explicitly. Tool
