@@ -264,18 +264,21 @@ try
         int special = scenario.Item1;
         string variant = scenario.Item2, name = $"switch-{special}-{variant}";
         bool changed = variant != "no-key", repeat = special == 99 && changed;
+        await page.WaitForFunctionAsync("document.pointerLockElement === null");
+        await page.WaitForTimeoutAsync(200);
         await page.Locator("input[type=file]").SetInputFilesAsync(Path.Combine(fixtures, name + ".wad"));
         await WaitForLoad();
         await WaitForPixels();
         JsonElement before = await Pixels();
-        await canvas.ClickAsync();
+        await canvas.FocusAsync();
         await page.WaitForTimeoutAsync(100);
         await Hold("e", 60);
         JsonElement activated = await Pixels();
         Check(name + "-visible-toggle", before.GetProperty("switchOff").GetInt32() > 500 &&
             before.GetProperty("switchOn").GetInt32() == 0 &&
             (changed ? activated.GetProperty("switchOn").GetInt32() > 500 : activated.GetProperty("switchOn").GetInt32() == 0),
-            new { before, activated });
+            new { before, activated, hud = await Hud(355, 0xffdb8a),
+                input = await page.EvaluateAsync<JsonElement>("window.inputTrace") });
         if (repeat)
         {
             await page.Keyboard.PressAsync("Escape");

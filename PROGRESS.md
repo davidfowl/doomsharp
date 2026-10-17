@@ -104,9 +104,10 @@ retrigger, independent timers, pending restart, warning deduplication and map
 transition. The original stair/crusher checks remain in the same suite.
 
 Linux x64 Native AOT publish and local browser Debug/non-AOT Release builds
-are included. Local Chromium runtime checks additionally observe switch latch,
-reset, key denial and pause preservation through the WASM host. Browser runtime
-checks do not qualify stair/crusher routes or complete campaigns. Local results
+are included. All 45 local Chromium runtime assertions pass, additionally
+observing switch latch, reset, key denial and pause preservation through the
+WASM host. Browser runtime checks do not qualify stair/crusher routes or complete
+campaigns. Local results
 and executable/input/fixture identities are under ignored `artifacts/switch-*`;
 these paths are sandbox-local evidence, not owner-accessible downloads. Remote
 CI for this increment must be independently identified before claiming its
@@ -114,10 +115,11 @@ platform or Release-AOT coverage.
 
 The first native development run exposed an invalid manual-door control target;
 the corrected fixture gives manual doors their actual back sector and a visible
-upper surface. A browser development run exposed Use arriving before the first
-key-pickup tick; the harness now allows gameplay to collect the spawn card before
-Use. A concurrent native development run also missed an existing type136
-traversal threshold; retain that failure separately from final serial results.
+upper surface. Browser fixture transitions needed pointer-unlock completion and
+keyboard focus before Use; the harness now synchronizes these boundaries and
+allows the spawn-card pickup tick. A concurrent native development run also
+missed an existing type136 traversal threshold; retain that failure separately
+from final serial results.
 These are not hidden as successful runs.
 
 **Integration gate:** a fresh authenticated effective-main-rules request at
@@ -126,6 +128,8 @@ previously recorded reset. The retained push rejection identifies repository
 rule violations but not the individual rule. Current rule/check/issue state and
 whether owner action is necessary remain unknown. No main retry, PR, bypass,
 rule change or unreconciled help issue was attempted in this increment.
+A final bounded read at 22:28:03Z also returned HTTP 403 with zero core requests
+remaining and a new reset at 22:43:42Z; no polling or wait for reset was used.
 
 Limits: synthetic XTest input/null PCM are not physical devices or audible sound.
 Vanilla pair selection is not custom/extended switch-lump support. Feedback uses
