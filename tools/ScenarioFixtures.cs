@@ -12,9 +12,9 @@ public static class ScenarioFixtures
         int spriteEnd = assets.FindIndex(l => l.Name == "S_END");
         List<Lump> patches = [];
         foreach (string prefix in new[] { "MGUN", "LAUN", "ROCK", "BROK", "CLIP", "AMMO", "SHOT",
-            "BKEY", "RKEY", "YKEY", "BSKU", "RSKU", "YSKU", "BAR1" })
+            "BKEY", "RKEY", "YKEY", "BSKU", "RSKU", "YSKU", "BAR1", "ARM1" })
             patches.Add(new(prefix + "A0", Patch(32, 32, 16, 32, 186)));
-        foreach (string prefix in new[] { "POSS", "CPOS", "TROO", "HEAD", "BOSS", "BOS2" })
+        foreach (string prefix in new[] { "POSS", "CPOS", "TROO", "HEAD", "BOSS", "BOS2", "SARG" })
             foreach (char frame in "ABCDEFGHIJKLMNOPQRSTU")
                 patches.Add(new($"{prefix}{frame}0", Patch(32, 56, 16, 56, 80)));
         foreach (string prefix in new[] { "PISG", "SHTG", "CHGG", "MISG" })
@@ -30,7 +30,7 @@ public static class ScenarioFixtures
             patches.Add(new($"MISLA{rotation}", Patch(16, 8, 8, 4, 214)));
         assets.InsertRange(spriteEnd, patches);
         byte[] tone = Enumerable.Range(0, 4032).Select(i => (byte)(i < 16 || i >= 4016 ? 128 : i % 50 < 25 ? 168 : 88)).ToArray();
-        foreach (string effect in new[] { "PISTOL", "RLAUNC", "BAREXP", "ITEMUP", "SHOTGN", "PLPAIN", "PODTH1" })
+        foreach (string effect in new[] { "PISTOL", "RLAUNC", "BAREXP", "ITEMUP", "SHOTGN", "PLPAIN", "PLDETH", "PODTH1", "STNMOV", "PSTOP" })
             assets.Add(new("DS" + effect, Pack(w => { w.Write((ushort)3); w.Write((ushort)11025); w.Write(tone.Length); w.Write(tone); })));
 
         foreach (int weapon in new[] { 2002, 2003 })
@@ -74,6 +74,11 @@ public static class ScenarioFixtures
             foreach (string mode in new[] { "chain", "texture-stop", "reversed", "no-tag", "zero-tag",
                 "multiple", "busy-seed", "busy-next", "blocked", "raised-start", "back-side" })
                 yield return ($"stairs-{special}-{mode}", Write(assets.Concat(Stairs(special, mode))));
+        foreach (int special in new[] { 6, 25, 77, 141 })
+            foreach (string mode in new[] { "cycle", "no-tag", "zero-tag", "multiple", "crush", "armor",
+                "overlap", "actor", "barrel", "drop", "stop57", "stop74", "door-busy", "floor-busy",
+                "crusher-door", "crusher-floor", "double-contact", "raised-floor", "paused-player", "trap", "paused-actor" })
+                yield return ($"crusher-{special}-{mode}", Write(assets.Concat(Crusher(special, mode))));
     }
 
     static void AddBarrier(List<Lump> map)
@@ -194,6 +199,47 @@ public static class ScenarioFixtures
         }
         if (mode == "back-side")
             BinaryPrimitives.WriteUInt16LittleEndian(map.Single(l => l.Name == "THINGS").Data.AsSpan(4), 180);
+        return map;
+    }
+
+    static List<Lump> Crusher(int special, string mode)
+    {
+        int target = mode is "crush" or "armor" or "overlap" or "double-contact" ? 1 :
+            mode is "paused-player" or "trap" ? 2 : 4;
+        int[] floors = [0, 0, 0, 0, mode == "floor-busy" ? 64 : mode == "raised-floor" ? 32 : 0, 0];
+        int[] ceilings = [256, 256, 256, 256, 256, 256];
+        ceilings[target] = 128;
+        if (mode == "raised-floor") ceilings[target] = 160;
+        int[] tags = [0, 0, 0, 0, 0, 0];
+        tags[target] = mode == "no-tag" ? 8 : mode == "zero-tag" ? 0 : 7;
+        if (mode == "multiple") { tags[5] = 7; ceilings[5] = 96; }
+        if (mode == "double-contact") { tags[2] = 7; ceilings[2] = 128; }
+        List<(int X, int Y, int Type)> things = [(-32, 0, 1)];
+        if (mode == "armor") things.Add((-32, 0, 2018));
+        if (mode is "actor" or "barrel" or "drop" or "paused-actor")
+            things.Add((320, 0, mode is "actor" or "paused-actor" ? 3002 : mode == "barrel" ? 2035 : 3004));
+        var map = Corridor("E1M1", [-192, 0, 64, 128, 256, 384, 512], floors, ceilings, tags, things);
+        byte[] lines = map.Single(l => l.Name == "LINEDEFS").Data;
+        void Action(int line, int action)
+        {
+            BinaryPrimitives.WriteUInt16LittleEndian(lines.AsSpan(line * 14 + 6), (ushort)action);
+            BinaryPrimitives.WriteUInt16LittleEndian(lines.AsSpan(line * 14 + 8), (ushort)(mode == "zero-tag" ? 0 : 7));
+        }
+        Action(7, special);
+        if (mode is "stop57" or "stop74")
+        {
+            Action(8, mode == "stop57" ? 57 : 74);
+            Action(9, 77);
+        }
+        if (mode is "paused-player" or "paused-actor") { Action(8, 74); Action(9, 77); }
+        if (mode is "door-busy" or "floor-busy")
+        {
+            Action(7, mode == "door-busy" ? 2 : 88);
+            Action(8, special);
+        }
+        if (mode is "crusher-door" or "crusher-floor") Action(8, mode == "crusher-door" ? 2 : 58);
+        if (mode is "actor" or "drop" or "paused-actor")
+            BinaryPrimitives.WriteUInt16LittleEndian(lines.AsSpan(10 * 14 + 4), 6);
         return map;
     }
 

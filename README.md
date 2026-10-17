@@ -163,12 +163,15 @@ be **new**, so previous results are never silently overwritten.
 - `engine` feeds public C# input into the shared engine to check movement
   thresholds, all six tagged-lock actions and card/skull colors, weapon
   ownership/ammo/cadence/combat/carry/restart/death, Baron floor actions, and
-  tagged stair triggers/chains/speeds/headroom/restart.
+  tagged stair triggers/chains/speeds/headroom/restart, and crusher
+  activation/cycles/damage/stop/resume/mover ownership.
 - `native` drives the actual Linux executable using XTest keyboard events and
   reads the X11 framebuffer: demo completion/restart, Tab/movement/firing HUD,
   two lift lower/wait/raise/carry/step-off cycles, and both weapons with PCM
   submission through an ALSA null device. Stair checks traverse raised routes
   for all four supported actions and require untagged controls to stay blocked.
+  Crusher checks require death in active traps versus stable frames/health100
+  after stop actions; two fast-crusher cases also require null PCM submission.
 
 Results contain explicit pass/fail assertions, diagnostics, executable hashes,
 caller-supplied source revision and native frame/input records. A source revision
@@ -223,17 +226,50 @@ Stairs reuse moving-floor support and non-crushing occupancy checks, resume
 after an obstruction clears, and reset on restart. Switch textures, exact vanilla
 busy-neighbor quirks and complete campaign progression are not qualified.
 
+### Tagged crushers
+
+Walk-once actions 6 (fast), 25 (normal) and 141 (normal, silent), plus repeatable
+action 77 (fast), start all eligible tagged ceilings. They cycle without waiting
+between their starting ceiling and 8 units above the starting floor. Normal and
+fast speeds are 35 and 70 units/second; obstructed normal crushers slow to
+4.375 units/second for the rest of the downstroke and restore normal speed
+when rising. Silent crushers suppress movement sounds but play `PSTOP` at
+their endpoints; others use `STNMOV` every eight 35-Hz ticks.
+
+Overlapping living players, enemies and barrels receive 10 damage every four
+ticks through existing armor, death/drop and barrel-blast handling. A body
+spanning two crushers takes only one crush hit per tick. Contact uses sector
+footprints, not just the center. The simplified engine uses 56-unit living
+bodies and 16-unit dropped pickups; crushed drops are removed, while placed
+pickups and corpse artwork are retained. This is not exact original actor-height,
+gibbing, camera or collision parity.
+
+Actions 57 (walk once) and 74 (repeatable) pause tagged crushers in place,
+including damage. A new start action (for example 77) resumes the existing
+direction, speed and silent variant rather than replacing it. Running crushers
+are not restarted by recrossing. Successful once-only actions are consumed;
+missing/zero tags or busy sectors retain the action and provide a diagnostic.
+Active doors/floors are preserved, and active or paused crushers reserve their
+sectors against door, floor and stair takeover. Restart recreates the original
+geometry and removes crusher state.
+
+The action mapping is cross-checked against the
+[Doom editor linedef definitions](https://github.com/UltimateDoomBuilder/UltimateDoomBuilder/blob/master/Assets/Common/Configurations/Includes/Doom_linedefs.cfg).
+Other crusher/ceiling actions, exact original obstruction quirks and authentic
+campaign completion remain unqualified.
+
 ### Compatibility
 
 Implemented: classic IWAD/PWAD directory/geometry/BSP validation; textured
 walls/floors/ceilings, sky, masked walls and sprites; collision, sliding and
 24-unit steps; pistol, shotgun, chaingun and swept rocket/explosion combat;
 pickups, keys, armor, simplified enemies/barrels; common doors, tagged locks,
-lifts/floors, tagged 8/16-unit stairs, teleports, damaging floors, secrets, exits and map progression;
+lifts/floors, tagged stairs and cycling crushers, teleports, damaging floors,
+secrets, exits and map progression;
 E1M8 last-Baron/tag666 floors; DMX effects, HUD and automap.
 
 Still incomplete: other weapons/powerups, exact monster states/AI/physics/RNG,
-crushers and remaining moving-sector/switch specials, other boss actions,
+remaining crusher/ceiling and moving-sector/switch specials, other boss actions,
 animated textures, music/MUS, menus, saves, multiplayer and original visual/timing
 parity. No PWAD overlay stacking, Hexen/UDMF, extended nodes, Boom/MBF/DEHACKED or
 mod compatibility. Only medium-skill single-player flags are selected. Missing

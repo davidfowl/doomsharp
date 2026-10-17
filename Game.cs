@@ -99,7 +99,7 @@ public sealed class Game
     public int UnsupportedThings { get; private set; }
     bool secretExit;
     bool bossDeathActivated;
-    int chaingunTicks;
+    int chaingunTicks, crusherTicks;
     bool chaingunFollowup, chaingunRefiring, chaingunAccuratePair;
     Weapon? pendingWeapon;
 
@@ -282,6 +282,7 @@ public sealed class Game
         input.MouseX = 0;
         UpdateDoors(dt);
         UpdateFloors(dt);
+        UpdateCrushers(dt);
         foreach (Actor actor in Actors.ToArray()) UpdateActor(actor, dt);
         UpdateProjectiles(dt);
     }
@@ -366,7 +367,7 @@ public sealed class Game
             FinishLevel(special is 51 or 124);
             PlaySound?.Invoke("SWTCHN"); return;
         }
-        if (ActivateStairs(line, crossing) || ActivateFloor(line, crossing)) return;
+        if (ActivateCrusher(line, crossing) || ActivateStairs(line, crossing) || ActivateFloor(line, crossing)) return;
         bool lockedSwitch = !crossing && special is 99 or 133 or 134 or 135 or 136 or 137;
         bool door = crossing ? special is 2 or 3 or 4 or 16 or 86 or 90 :
             lockedSwitch || special is 1 or 26 or 27 or 28 or 31 or 32 or 33 or 34 or 29 or 63 or 103 or 111 or 112 or 113;
@@ -384,11 +385,12 @@ public sealed class Game
         IEnumerable<int> targets = manual
             ? line.Left == 65535 ? [] : [Map.Sides[line.Left].Sector]
             : TaggedSectors(line);
-        bool targeted = false, activated = false;
+        bool targeted = false, activated = false, crusherBlocked = false;
         foreach (int s in targets)
         {
             targeted = true;
             Sector sector = Map.Sectors[s];
+            if (sector.CrusherDirection != 0) { crusherBlocked = true; continue; }
             if (lockedSwitch && sector.DoorDirection != 0) continue;
             sector.DoorDirection = crossing && special is 3 or 16 ? -1 : 1;
             sector.DoorTime = lockedSwitch || special is 2 or 31 or 32 or 33 or 34 or 103 or 112 ? -1 : 4;
@@ -397,7 +399,8 @@ public sealed class Game
             PlaySound?.Invoke(lockedSwitch ? "BDOPN" : sector.DoorDirection > 0 ? "DOROPN" : "DORCLS");
         }
         if (lockedSwitch && !targeted) { Say("DOOR HAS NO TAGGED SECTOR"); PlaySound?.Invoke("NOWAY"); }
-        if ((!lockedSwitch || activated) &&
+        if (crusherBlocked && !activated) { Say("CEILING IS CONTROLLED BY A CRUSHER"); PlaySound?.Invoke("NOWAY"); }
+        if ((!crusherBlocked || activated) && (!lockedSwitch || activated) &&
             special is 2 or 3 or 4 or 16 or 29 or 31 or 32 or 33 or 34 or 103 or 111 or 112 or 113 or 133 or 135 or 137)
             line.Special = 0;
     }
@@ -417,6 +420,46 @@ public sealed class Game
         }
     }
 
+    bool ActivateCrusher(Line line, bool crossing)
+    {
+        int special = line.Special;
+        if (!crossing || special is not (6 or 25 or 77 or 141 or 57 or 74)) return false;
+        bool stop = special is 57 or 74;
+        bool targeted = false, activated = false;
+        foreach (int i in TaggedSectors(line))
+        {
+            targeted = true;
+            Sector sector = Map.Sectors[i];
+            if (sector.CrusherDirection != 0)
+            {
+                if (sector.CrusherPaused == stop) continue;
+                sector.CrusherPaused = stop;
+            }
+            else
+            {
+                if (stop || sector.DoorDirection != 0 || sector.FloorDirection != 0 ||
+                    sector.Ceiling <= sector.Floor + 8) continue;
+                sector.CrusherTop = sector.Ceiling;
+                sector.CrusherBottom = sector.Floor + 8;
+                sector.CrusherSpeed = special is 6 or 77 ? 70 : 35;
+                sector.CrusherSilent = special == 141;
+                sector.CrusherDirection = -1;
+            }
+            activated = true;
+        }
+        if (activated)
+        {
+            if (special is 6 or 25 or 141 or 57) line.Special = 0;
+        }
+        else
+        {
+            Say(!targeted ? "CRUSHER HAS NO TAGGED SECTOR" :
+                stop ? "NO ACTIVE CRUSHER" : "CRUSHER SECTOR IS BUSY");
+            PlaySound?.Invoke("NOWAY");
+        }
+        return true;
+    }
+
     bool ActivateStairs(Line line, bool crossing)
     {
         int special = line.Special;
@@ -430,7 +473,7 @@ public sealed class Game
         foreach (int seed in TaggedSectors(line))
         {
             targeted = true;
-            if (Map.Sectors[seed].FloorDirection != 0 || visited.Contains(seed)) continue;
+            if (Map.Sectors[seed].FloorDirection != 0 || Map.Sectors[seed].CrusherDirection != 0 || visited.Contains(seed)) continue;
             string texture = Map.Sectors[seed].FloorTexture;
             double target = Map.Sectors[seed].Floor + step;
             int current = seed;
@@ -447,7 +490,8 @@ public sealed class Game
                         Map.Sides[edge.Right].Sector != current) continue;
                     int candidate = Map.Sides[edge.Left].Sector;
                     Sector sector = Map.Sectors[candidate];
-                    if (visited.Contains(candidate) || sector.FloorDirection != 0 || sector.FloorTexture != texture) continue;
+                    if (visited.Contains(candidate) || sector.FloorDirection != 0 || sector.CrusherDirection != 0 ||
+                        sector.FloorTexture != texture) continue;
                     next = candidate;
                     break;
                 }
@@ -491,7 +535,7 @@ public sealed class Game
 
     static bool StartFloor(Sector sector, double target, bool lift, double speed)
     {
-        if (sector.FloorDirection != 0 || target == sector.Floor) return false;
+        if (sector.FloorDirection != 0 || sector.CrusherDirection != 0 || target == sector.Floor) return false;
         sector.FloorOrigin = sector.Floor; sector.FloorTarget = target;
         sector.FloorDirection = target > sector.Floor ? 1 : -1;
         sector.Lift = lift; sector.LiftWait = 3; sector.FloorSpeed = speed;
@@ -581,6 +625,46 @@ public sealed class Game
                 }
             }
         }
+    }
+
+    void UpdateCrushers(double dt)
+    {
+        crusherTicks++;
+        bool playerCrushed = false;
+        HashSet<Actor> crushed = [];
+        for (int i = 0; i < Map.Sectors.Length; i++)
+        {
+            Sector sector = Map.Sectors[i];
+            if (sector.CrusherDirection == 0 || sector.CrusherPaused) continue;
+            bool descending = sector.CrusherDirection < 0;
+            double speed = descending && sector.CrusherSlowed ? 35.0 / 8 : sector.CrusherSpeed;
+            double target = descending ? sector.CrusherBottom : sector.CrusherTop;
+            double next = sector.Ceiling + sector.CrusherDirection * speed * dt;
+            sector.Ceiling = descending ? Math.Max(next, target) : Math.Min(next, target);
+            if (!sector.CrusherSilent && (crusherTicks & 7) == 0) PlaySound?.Invoke("STNMOV");
+            bool blocked = Health > 0 && Map.TouchingSectors(Position, 16).Contains(i) && Feet + 56 > sector.Ceiling;
+            playerCrushed |= blocked;
+            foreach (Actor actor in Actors)
+            {
+                if (actor.Removed || !Map.TouchingSectors(actor.Position, actor.Radius).Contains(i) ||
+                    Map.FloorAt(actor.Position, actor.Radius) + (actor.Dropped ? 16 : 56) <= sector.Ceiling) continue;
+                if (actor.Dropped) { actor.Removed = true; continue; }
+                if (actor.Health <= 0 || !actor.Solid || !actor.Enemy && actor.Type != 2035) continue;
+                blocked = true;
+                crushed.Add(actor);
+            }
+            if (descending && blocked && sector.CrusherSpeed == 35) sector.CrusherSlowed = true;
+            if (sector.Ceiling == target)
+            {
+                sector.CrusherDirection = -sector.CrusherDirection;
+                sector.CrusherSlowed = false;
+                if (sector.CrusherSilent) PlaySound?.Invoke("PSTOP");
+            }
+        }
+        // One body spanning two crushers still takes only one crush hit per tic.
+        if ((crusherTicks & 3) != 0) return;
+        if (playerCrushed) Damage(10);
+        foreach (Actor actor in crushed) Hurt(actor, 10);
     }
 
     void SelectWeapon(Weapon weapon)
@@ -949,7 +1033,7 @@ public sealed class Game
         DamageFlash = 0; PickupFlash = 0; damageTick = 0; WalkTime = 0;
         chaingunTicks = 0; chaingunFollowup = false; chaingunRefiring = false; pendingWeapon = null;
         ChaingunFrame = 0; ChaingunFlashFrame = 0; ChaingunFlashTicks = 0;
-        RocketFireTicks = 0;
+        RocketFireTicks = 0; crusherTicks = 0;
         Spawn(); Say(name);
     }
 }

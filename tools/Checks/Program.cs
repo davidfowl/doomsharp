@@ -59,6 +59,147 @@ try
     }
     if (mode is "engine" or "all")
     {
+        foreach (int special in new[] { 6, 25, 77, 141 })
+        {
+            bool fast = special is 6 or 77;
+            int speed = fast ? 2 : 1;
+            Game cycle = Load($"crusher-{special}-cycle");
+            List<string> sounds = [];
+            cycle.PlaySound = sounds.Add;
+            Tick(cycle, Buttons.Use);
+            Check($"crusher-{special}-not-use", cycle.Map.Sectors[4].Ceiling == 128 && cycle.Map.Lines[7].Special == special);
+            Tick(cycle, Buttons.Forward, 8);
+            Check($"crusher-{special}-start-speed", cycle.Map.Sectors[4].Ceiling == 128 - speed);
+            Check($"crusher-{special}-consumption", cycle.Map.Lines[7].Special == (special == 77 ? 77 : 0));
+            Tick(cycle, Buttons.Back, 8);
+            Check($"crusher-{special}-recross-keeps-phase", cycle.Map.Sectors[4].Ceiling == 128 - 9 * speed);
+            int bottoms = 0, tops = 0;
+            for (int tick = 0; tick < 500; tick++)
+            {
+                Tick(cycle);
+                if (cycle.Map.Sectors[4].Ceiling == 8) bottoms++;
+                if (cycle.Map.Sectors[4].Ceiling == 128) tops++;
+            }
+            Check($"crusher-{special}-cycles", bottoms >= 2 && tops >= 2 && cycle.Health == 100, new { bottoms, tops, cycle.Health });
+            Check($"crusher-{special}-sounds", special == 141 ? !sounds.Contains("STNMOV") && sounds.Count(s => s == "PSTOP") >= 4 :
+                sounds.Contains("STNMOV"), sounds.Distinct().ToArray());
+            Tick(cycle, Buttons.Restart);
+            Check($"crusher-{special}-restart", cycle.Map.Sectors[4].Ceiling == 128 && cycle.Map.Lines[7].Special == special);
+            foreach (string modeName in new[] { "no-tag", "zero-tag" })
+            {
+                Game absent = Load($"crusher-{special}-{modeName}");
+                Tick(absent, Buttons.Forward, 8); Tick(absent, count: 100);
+                Check($"crusher-{special}-{modeName}", absent.Map.Sectors[4].Ceiling == 128 &&
+                    absent.Map.Lines[7].Special == special && absent.Message == "CRUSHER HAS NO TAGGED SECTOR", absent.Message);
+            }
+            Game multiple = Load($"crusher-{special}-multiple");
+            Tick(multiple, Buttons.Forward, 8);
+            Check($"crusher-{special}-all-tags", multiple.Map.Sectors[4].Ceiling == 128 - speed &&
+                multiple.Map.Sectors[5].Ceiling == 96 - speed && multiple.Map.Sectors[3].Ceiling == 256);
+            Game raised = Load($"crusher-{special}-raised-floor");
+            Tick(raised, Buttons.Forward, 8);
+            double lowest = raised.Map.Sectors[4].Ceiling;
+            for (int tick = 0; tick < 250; tick++) { Tick(raised); lowest = Math.Min(lowest, raised.Map.Sectors[4].Ceiling); }
+            Check($"crusher-{special}-relative-bottom", lowest == 40 && raised.Map.Sectors[4].Floor == 32, lowest);
+            Game doubleContact = Load($"crusher-{special}-double-contact");
+            Tick(doubleContact, Buttons.Forward, 21);
+            for (int tick = 0; tick < 160 && doubleContact.Health == 100; tick++) Tick(doubleContact);
+            Check($"crusher-{special}-double-contact-single-damage", doubleContact.Health == 90 &&
+                doubleContact.Map.TouchingSectors(doubleContact.Position, 16).Distinct().Count() == 2, doubleContact.Health);
+            foreach (string variant in new[] { "crush", "armor", "overlap" })
+            {
+                Game crush = Load($"crusher-{special}-{variant}");
+                Tick(crush, Buttons.Forward, 8);
+                if (variant == "overlap") Tick(crush, Buttons.Back, 3);
+                int first = 0;
+                while (crush.Health == 100 && first++ < 160) Tick(crush);
+                int health = crush.Health;
+                double ceiling = crush.Map.Sectors[1].Ceiling;
+                Check($"crusher-{special}-{variant}-damage", health == (variant == "armor" ? 93 : 90) &&
+                    (variant != "overlap" || crush.Map.FindSector(crush.Position) == 0), new { health, crush.Position, ceiling });
+                Tick(crush, count: 3);
+                Check($"crusher-{special}-{variant}-damage-spacing", crush.Health == health, crush.Health);
+                Tick(crush);
+                Check($"crusher-{special}-{variant}-damage-cadence", crush.Health == health - (variant == "armor" ? 7 : 10), crush.Health);
+                Check($"crusher-{special}-{variant}-crush-speed", Math.Abs(ceiling - crush.Map.Sectors[1].Ceiling - (fast ? 8 : .5)) < .000001);
+                Tick(crush, count: 100);
+                if (fast && variant == "armor")
+                    Check($"crusher-{special}-armor-survives-first-stroke", crush.Health > 0 && crush.Health < 93, crush.Health);
+                Tick(crush, count: 200);
+                Check($"crusher-{special}-{variant}-lethal", crush.Health == 0, crush.Health);
+                int wait = 0;
+                while (crush.Map.Sectors[1].Ceiling != 8 && wait++ < 1200) Tick(crush);
+                Tick(crush);
+                Check($"crusher-{special}-{variant}-rise-restores-speed", crush.Map.Sectors[1].Ceiling == 8 + speed);
+            }
+            Game clear = Load($"crusher-{special}-overlap");
+            Tick(clear, Buttons.Forward, 8); Tick(clear, Buttons.Back, 8); Tick(clear, count: 200);
+            Check($"crusher-{special}-outside-footprint-safe", clear.Health == 100, clear.Health);
+            foreach (string variant in new[] { "actor", "barrel", "drop" })
+            {
+                Game victim = Load($"crusher-{special}-{variant}");
+                Tick(victim, Buttons.Forward, 8); Tick(victim, count: variant == "drop" ? 600 : 350);
+                Actor actor = victim.Actors.First(a => a.Solid);
+                Check($"crusher-{special}-{variant}", actor.Health <= 0 && (variant == "barrel" ? actor.Removed : victim.Kills == 1),
+                    new { actor.Health, actor.Removed, victim.Kills });
+                if (variant == "drop")
+                    Check($"crusher-{special}-crushed-drop", victim.Actors.Any(a => a.Dropped) &&
+                        victim.Actors.Where(a => a.Dropped).All(a => a.Removed));
+            }
+            foreach (int stop in new[] { 57, 74 })
+                foreach (bool ascending in new[] { false, true })
+                {
+                    Game paused = Load($"crusher-{special}-stop{stop}");
+                    Tick(paused, Buttons.Forward, 8);
+                    if (ascending) Tick(paused, count: fast ? 60 : 120);
+                    Tick(paused, Buttons.Forward, 16);
+                    double height = paused.Map.Sectors[4].Ceiling;
+                    Tick(paused, count: 40);
+                    Check($"crusher-{special}-stop{stop}-{ascending}", paused.Map.Sectors[4].Ceiling == height &&
+                        paused.Map.Lines[8].Special == (stop == 57 ? 0 : 74), height);
+                    Tick(paused, Buttons.Forward, 15);
+                    Check($"crusher-{special}-resume{stop}-{ascending}",
+                        ascending ? paused.Map.Sectors[4].Ceiling > height : paused.Map.Sectors[4].Ceiling < height,
+                        new { before = height, after = paused.Map.Sectors[4].Ceiling });
+                    double resumedHeight = paused.Map.Sectors[4].Ceiling;
+                    Tick(paused);
+                    Check($"crusher-{special}-resume{stop}-{ascending}-preserves-speed",
+                        paused.Map.Sectors[4].Ceiling - resumedHeight == (ascending ? speed : -speed));
+                }
+            Game pausedPlayer = Load($"crusher-{special}-paused-player");
+            Tick(pausedPlayer, Buttons.Forward, 24);
+            double pausedHeight = pausedPlayer.Map.Sectors[2].Ceiling;
+            Tick(pausedPlayer, count: 200);
+            Check($"crusher-{special}-paused-player-safe", pausedPlayer.Health == 100 &&
+                pausedPlayer.Map.Sectors[2].Ceiling == pausedHeight, pausedPlayer.Health);
+            Tick(pausedPlayer, Buttons.Forward, 15); Tick(pausedPlayer, count: 150);
+            Check($"crusher-{special}-resumed-player-crushed", pausedPlayer.Health < 100, pausedPlayer.Health);
+            Game pausedActor = Load($"crusher-{special}-paused-actor");
+            Tick(pausedActor, Buttons.Forward, 8);
+            Actor caught = pausedActor.Actors.Single(a => a.Enemy);
+            for (int tick = 0; tick < 160 && caught.Health == 150; tick++) Tick(pausedActor);
+            Tick(pausedActor, Buttons.Forward, 16);
+            int pausedHealth = caught.Health;
+            Tick(pausedActor, count: 40);
+            Check($"crusher-{special}-stop-halts-damage", pausedHealth is > 0 and < 150 && caught.Health == pausedHealth, caught.Health);
+            Tick(pausedActor, Buttons.Forward, 15); Tick(pausedActor, count: 4);
+            Check($"crusher-{special}-resume-restores-damage", caught.Health < pausedHealth, caught.Health);
+            foreach (string variant in new[] { "door-busy", "floor-busy", "crusher-door", "crusher-floor" })
+            {
+                Game busy = Load($"crusher-{special}-{variant}");
+                Tick(busy, Buttons.Forward, 24);
+                Sector sector = busy.Map.Sectors[4];
+                bool valid = variant switch
+                {
+                    "door-busy" => sector.DoorDirection != 0 && sector.Ceiling > 128 && busy.Map.Lines[8].Special == special,
+                    "floor-busy" => sector.FloorDirection != 0 && sector.Ceiling == 128 && busy.Map.Lines[8].Special == special,
+                    "crusher-door" => sector.DoorDirection == 0 && sector.Ceiling < 128,
+                    _ => sector.FloorDirection == 0 && sector.Floor == 0 && busy.Map.Lines[8].Special == 58
+                };
+                Check($"crusher-{special}-{variant}-ownership", valid,
+                    new { sector.Ceiling, sector.Floor, sector.DoorDirection, sector.FloorDirection });
+            }
+        }
         foreach (int special in new[] { 7, 8, 100, 127 })
         {
             bool walk = special is 8 or 100, turbo = special is 100 or 127;
@@ -241,6 +382,24 @@ try
     if (mode is "native" or "all")
     {
         if (!OperatingSystem.IsLinux()) throw new PlatformNotSupportedException("Native input checks require Linux/X11/XTest; use headless/engine on Windows and macOS.");
+        foreach (int special in new[] { 6, 25, 77, 141 })
+            foreach (bool paused in new[] { false, true })
+            {
+                string name = $"crusher-{special}-{(paused ? "paused-player" : "trap")}";
+                using NativeGame game = await NativeGame.Start(executable, ["--wad", Path.Combine(fixtures, name + ".wad")],
+                    Path.Combine(output, "native-" + name), source, audio: special == 6);
+                game.Capture("initial");
+                game.Hold("w", .7);
+                Thread.Sleep(250);
+                Frame first = game.Capture("active-or-paused");
+                Thread.Sleep(4000);
+                Frame final = game.Capture("after-wait");
+                string text = await game.Quit();
+                Check("native-" + name, text.Contains(paused ? "health=100," : "health=0,", StringComparison.Ordinal) &&
+                    (!paused || first.Hash == final.Hash), text);
+                if (special == 6)
+                    Check("native-" + name + "-PCM", Regex.IsMatch(text, @"Audio: [1-9]\d* sound events, [1-9]\d* PCM samples submitted"), text);
+            }
         foreach (int special in new[] { 7, 8, 100, 127 })
             foreach (bool tagged in new[] { true, false })
             {

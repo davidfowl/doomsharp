@@ -20,7 +20,7 @@ The original portal fixture SHA-256 remains
 the lift fixture remains
 `e86d622806c6bf68ad3ba1facfeecd312fe04d27ea1b0dfdd4fff288b6297525`.
 `../ScenarioFixtures.cs` generates additional original synthetic weapon,
-tagged-door, boss and stair scenarios. Every generated WAD is listed in `SHA256SUMS`.
+tagged-door, boss, stair and crusher scenarios. Every generated WAD is listed in `SHA256SUMS`.
 All assets are generated original data, not proprietary game artwork.
 
 The 44 `stairs-<special>-<variant>` fixtures cover actions 7/8/100/127:
@@ -33,6 +33,24 @@ Native checks use eight fresh processes: four tagged routes must reach X>224;
 four missing-tag controls must stay at 160<=X<=176. They capture the initial,
 built and traversed frames and retain the usual input/process/hash records.
 These are synthetic progression checks, not authentic-map campaign acceptance.
+
+The 84 `crusher-<special>-<variant>` fixtures cover actions 6/25/77/141 and
+coupled stop actions 57/74. The 222 engine assertions cover exact per-tick speed,
+relative endpoints and repeated cycles, silent/normal effects, use rejection,
+once-only/repeatable activation, missing/zero/multiple tags, overlapping sector
+footprints, four-tick damage and armor, survival/death, monster kills, barrel
+explosions, crushed drops, slowed-downstroke/normal-upstroke recovery, stop/resume
+in both directions, suspended damage, preserved original speed and existing
+door/floor ownership. Actor movement barriers are ordinary monster-blocking
+linedefs, not injected state.
+
+Eight fresh native processes cross into active or stopped traps using XTest:
+each active variant must report health0; each paused control must report
+health100 with identical stationary frames across four seconds. Two type6
+processes additionally require sound events and nonzero ALSA-null PCM. Each
+retains initial/active-or-paused/final captures and input/session/hash records.
+These are local Linux virtual-device observations, not audible sound,
+browser/other-OS gameplay or original-engine/campaign parity.
 
 The production project excludes tools and browser sources explicitly. Tool
 projects compile their own sources; no `.cs.txt` workaround or Python is needed.

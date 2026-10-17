@@ -64,6 +64,9 @@ public sealed class Sector
     public double FloorTarget, FloorOrigin, LiftWait, FloorSpeed;
     public int FloorDirection;
     public bool Lift;
+    public double CrusherTop, CrusherBottom, CrusherSpeed;
+    public int CrusherDirection;
+    public bool CrusherPaused, CrusherSilent, CrusherSlowed;
     public Sector(byte[] b, int p)
     {
         Floor = Wad.I16(b, p); Ceiling = OriginalCeiling = Wad.I16(b, p + 2);

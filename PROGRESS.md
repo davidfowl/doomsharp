@@ -90,9 +90,47 @@ are recorded in the delivery handoff.
 Limits: no browser runtime stair traversal, physical-device input, audible
 playback, other-platform runtime results, exact original busy-neighbor quirks,
 switch-texture updates or natural-map/campaign completion. Existing floor
-occupancy rules are retained rather than introducing crushers. No PR or merge
-is part of this bounded cycle. Further work should keep branch-only evidence
+occupancy rules were retained in that increment rather than introducing
+crushers. No PR or merge is part of this bounded cycle. Further work should keep branch-only evidence
 separate from the merged-main status above.
+
+### Branch-only: classic cycling crushers
+
+The same `feat/classic-stair-builders` branch adds cycling crusher actions
+6/25/77/141 and their coupled stop actions 57/74. This increment is separate
+from the preserved stair commit and is **not merged into main**. These four
+start actions occur on 38 linedefs across eight bundled Freedoom maps:
+18 type6, four type25, 15 type77 and one type141. This inventory does not
+establish natural-map or campaign completion.
+
+The implementation uses existing sector geometry and damage/death/barrel
+machinery, with 35/70-unit-per-second motion between the original ceiling and
+floor+8. Slow crushers retain their one-eighth-speed downstroke after contact
+and recover normal upward speed. Four-tick damage respects existing armor and
+footprints, avoids double hits across two sectors, kills monsters/explodes
+barrels and removes crushed drops. Stop actions suspend movement/damage;
+resumption preserves direction, speed and silent mode. Doors, floors, stairs
+and crushers do not overwrite each other's active crusher reservation.
+
+There are 84 new original fixtures and 222 crusher engine assertions. The
+pre-crusher engine at `010a6045b6b3dc3bc7e0f5c05d69c5428789d699` fails
+177 of those assertions, while all 249 earlier engine assertions pass.
+The combined candidate passes 748 checks: 231 generated-WAD executable checks,
+five CLI rejection checks, 471 engine assertions and 41 native assertions.
+Eight new native processes observe all four active traps killing the player,
+versus stopped controls retaining health100 and identical stationary frames
+across four seconds; two cases additionally verify ALSA-null PCM submission.
+Linux x64 Native AOT publishing and browser Debug compilation pass.
+
+Final committed-source results, logs, native frames, input schedules and hashes
+are retained locally under `artifacts/crusher-final-all`; exact source and
+binary identities are in the delivery handoff. These are not public artifacts
+or remote CI success. The current environment has no WebAssembly workload;
+browser runtime/Release AOT, other-OS runtime, physical devices and audible
+playback are not qualified. The simplified 56-unit living-body/16-unit-drop
+model retains placed pickups and corpse artwork rather than implementing
+original actor heights/gibbing or exact obstruction/visual/audio parity.
+Other crusher/ceiling specials and full campaigns remain unfinished.
 
 ### Remaining main compatibility work
 
