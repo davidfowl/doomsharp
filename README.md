@@ -65,8 +65,10 @@ dotnet workload install wasm-tools
 dotnet run --project Browser/DoomSharp.Browser.csproj -c Release --urls http://localhost:5187
 ```
 
-Open `http://localhost:5187`. Choose **Play Freedoom**, **Test level**, or a local
-classic WAD (up to 64 MiB), then click the game. The optional Map field accepts a
+Open `http://localhost:5187`. Bundled Freedoom Phase 1 loads and runs automatically,
+without sound or mouse capture until you click the game. **Restart Freedoom**
+reloads the bundled WAD; you can also choose a local classic WAD (up to 64 MiB).
+The browser does not offer the original test level. The optional Map field accepts a
 map name such as `E1M2`; leave it blank for the first map. A local WAD is processed
 on your device, not uploaded. Use only lawfully obtained assets.
 
@@ -79,7 +81,7 @@ Clicking enables audio and requests pointer lock. Keyboard controls still work
 when pointer lock is unavailable. Esc, loss of focus or a hidden tab pauses the
 game and clears held input; click to resume. **Mute** suppresses new sound effects.
 Wheel input over the active game does not scroll the page. Press Esc to pause
-and scroll normally; scrolling is also available before starting a game.
+and scroll normally; scrolling outside the game remains available during play.
 Mobile/touch controls, music, gamepads and persistent saves are not implemented.
 
 Publish a static site:
@@ -187,9 +189,9 @@ dotnet run --project tools/BrowserChecks -c Release -- http://localhost:5187 too
 ```
 
 The browser checks observe actual Canvas output, keyboard movement, pointer
-capture/turning where supported, automap, pause, visible-HUD-confirmed demo
-completion/restart, WebAudio scheduling, mute, bundled/local WAD
-loading and visible load errors. Browser tooling brings Playwright's own driver/browser dependencies;
+capture/turning where supported, automap, pause/restart, WebAudio scheduling, mute,
+automatic bundled Freedoom startup before any interaction, local WAD loading,
+and visible load/download errors with retry. Browser tooling brings Playwright's own driver/browser dependencies;
 the application itself does not depend on Playwright.
 
 On headless Linux, Firefox needs a working audio backend even to schedule

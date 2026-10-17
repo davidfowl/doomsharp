@@ -9,15 +9,14 @@
 <h1>DoomSharp</h1>
 <p>The same C# engine, running locally in WebAssembly. Incomplete DOOM compatibility.</p>
 <div class="controls">
-    <button @onclick="() => Load(false)" disabled="@loading">Play Freedoom</button>
-    <button @onclick="() => Load(true)" disabled="@loading">Test level</button>
+    <button @onclick="LoadFreedoom" disabled="@loading">Restart Freedoom</button>
     <label>Local WAD <InputFile OnChange="LoadFile" accept=".wad" disabled="@loading" /></label>
     <label>Map <input @bind="map" aria-label="Map" size="8" /></label>
     <label><input type="checkbox" @bind="muted" /> Mute</label>
 </div>
 <p id="status" role="status">@status</p>
 <canvas id="game" width="640" height="400" tabindex="0" aria-label="DoomSharp game"></canvas>
-<p>Click the game to focus and capture the mouse. WASD moves, arrows turn,
+<p>Freedoom starts automatically without sound. Click the game to enable sound and capture the mouse. WASD moves, arrows turn,
 Ctrl/click fires, E/Space uses, Shift runs, 1/2/4/5 selects weapons, Tab maps,
 R restarts. Esc releases the pointer and pauses. Click to resume.</p>
 <p>Local WADs stay on your device (64 MiB limit). Map defaults to the first map.
@@ -35,8 +34,8 @@ No proprietary assets included. <a href="assets/freedoom/COPYING.txt">Freedoom l
     Game? game;
     IJSObjectReference? host;
     DotNetObjectReference<App>? reference;
-    string status = "Choose a WAD to start.", map = "";
-    bool loading;
+    string status = "Loading Freedoom...", map = "";
+    bool loading = true;
     bool muted { get; set; }
     double previous = -1, accumulator;
     string? audioError;
@@ -47,12 +46,13 @@ No proprietary assets included. <a href="assets/freedoom/COPYING.txt">Freedoom l
         host = await JS.InvokeAsync<IJSObjectReference>("import", "./host.js");
         reference = DotNetObjectReference.Create(this);
         await host.InvokeVoidAsync("initialize", reference);
+        await LoadFreedoom();
+        StateHasChanged();
     }
 
-    async Task Load(bool fixture)
+    async Task LoadFreedoom()
     {
-        await LoadWad(async () => fixture ? Demo.Create() :
-            await Http.GetByteArrayAsync("assets/freedoom/freedoom1.wad"));
+        await LoadWad(() => Http.GetByteArrayAsync("assets/freedoom/freedoom1.wad"));
     }
 
     async Task LoadFile(InputFileChangeEventArgs e)
@@ -70,6 +70,7 @@ No proprietary assets included. <a href="assets/freedoom/COPYING.txt">Freedoom l
     {
         loading = true;
         status = "Loading WAD...";
+        StateHasChanged();
         game = null;
         Array.Clear(rgba);
         sounds.Clear(); soundCache.Clear();
@@ -82,7 +83,8 @@ No proprietary assets included. <a href="assets/freedoom/COPYING.txt">Freedoom l
                 map.Trim().ToUpperInvariant();
             game = new(wad, selected);
             game.PlaySound = QueueSound;
-            status = $"Playing {selected}. Click the game to begin.";
+            await host!.InvokeVoidAsync("start");
+            status = $"Playing {selected}. Click the game to enable sound and mouse capture.";
         }
         catch (Exception ex) when (ex is IOException or InvalidDataException or ArgumentException or
             InvalidOperationException or HttpRequestException)
