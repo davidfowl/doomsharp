@@ -58,6 +58,14 @@ smoke is bounded to 35 frames with audio disabled. Local qualification used
 Linux x64; neither it nor hosted CI establishes physical-device input, audible
 playback, Safari/mobile support or complete campaign compatibility.
 
+[Stair/crusher milestone CI](https://github.com/davidfowl/doomsharp/actions/runs/39067803717)
+also passed all nine native/browser jobs at implementation `42a186f`.
+Downloaded Linux x64 results confirm 748 executable/engine/native assertions;
+the browser Release-AOT application passes 38 Chromium, 38 Firefox and 37 WebKit
+runtime assertions. WebKit mouse look was unavailable, and the browser checks
+do not traverse stair/crusher scenarios. See [PROGRESS.md](PROGRESS.md) for exact
+coverage, downloadable CI evidence and remaining compatibility limits.
+
 ## Browser WebAssembly
 
 ```sh

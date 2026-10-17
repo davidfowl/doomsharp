@@ -6,9 +6,11 @@ commands and verification boundaries. Entries below are historical: Python
 commands and old runner hashes refer to their recorded revisions, not current
 tooling. Historical platform results do not qualify a newer local revision.
 
-Last verified: **2026-10-13**, against merged `main` and its linked CI run. This distinguishes the
-verified playable increment from full DOOM compatibility and physical-device
-verification. **Full original-DOOM parity remains unfinished.**
+Last verified: **2026-10-17**, against implementation
+[`42a186f`](https://github.com/davidfowl/doomsharp/commit/42a186f1269cd022ae6f68d2bdcb04b2b89fa1d5)
+and its [completed CI run](https://github.com/davidfowl/doomsharp/actions/runs/39067803717).
+This distinguishes the qualified playable increment from full DOOM compatibility
+and physical-device verification. **Full original-DOOM parity remains unfinished.**
 
 ## Merged
 
@@ -49,23 +51,25 @@ Build/publish output includes the Phase 1 WAD, BSD license and credits.
 | Chaingun pickup/fire/inventory | Partial | Type2002 and chaingunner drop, key4, shared bullets, four-tick shots/two-shot pairs and supplied body/flash patches; dedicated Linux executable scenarios below, not exact original timing/RNG/visual parity or broad platform gameplay |
 | Rocket launcher/inventory/projectiles | Partial | Type2003/key5, separate2010/2046 ammo/cap50, real20-unit/tick swept missiles, direct/occluded radial damage and supplied weapon/flight/explosion patches; bounded native scenarios described below, not exact original autoaim/windup/RNG/visual or campaign parity |
 | Movement, collision and sector actions | Partial | Native door/lift paths and selected boundaries; tagged locked fast-door99/133-137 action scope has dedicated executable scenarios below, not every mover/trigger |
+| Tagged stair builders | Partial | Actions7/8/100/127, directed same-flat chains and shared floor support;128 engine assertions and eight Linux native positive/negative processes; not exact original busy-neighbor quirks or campaign completion |
+| Cycling crushers and stops | Partial | Actions6/25/77/141 with57/74 stops, speed/cycles, footprint/armor damage and preserved pause/resume;222 engine assertions and eight Linux native processes; simplified actor heights/corpses and other ceiling actions remain incomplete |
 | Map progression and damaging exits | Partial | Native Linux input observes E1M1 to E1M2 with inventory/health retained; local classic-map scenarios qualify sector-11 damage/exit, fresh dead-player next-map state and finale/missing-map stop; not original campaign completion |
 | E1M8 Baron/tag666 floor action | Partial | Last living type3003 with a live player, all eligible tagged floors lower to lowest neighbors through shared movers;14 synthetic native cases below, not original E1M8/campaign or exact death-state timing |
 | Actors, sprites, pickups and barrels | Partial | Native demo observes pickup and one enemy kill; exact states/attacks, infighting, boss behavior and many item/visual cases remain unfinished or unverified |
 | HUD, weapon overlays and automap | Partial | Actual executable exports HUD/weapon frames; local Linux native Tab on/off plus W/Ctrl controls qualify automap input, not original visuals or other-platform interactive behavior |
-| Native window presentation | Working | Bounded actual-engine desktop smoke runs pass on three OSes; interactive input coverage differs by platform below |
+| Native window presentation | Working | Six native OS/architecture targets pass bounded desktop CI; Linux also exercises synthetic OS input; not physical-device verification |
 | DMX decoding and sound-effects mixer | Partial | Native Linux playthrough submits effects to ALSA null; exact resampling/audio comparison, audible playback and Windows/macOS audio unverified |
-| Remaining weapons/powerups, stairs/crushers, switch textures and other boss actions | Not implemented | Required for original gameplay/campaign parity |
+| Remaining weapons/powerups, mover variants, switch textures and other boss actions | Not implemented | Required for original gameplay/campaign parity |
 | Music/MUS, saves, menus, multiplayer and extended maps/mods | Not implemented | No end-to-end capability claimed |
 | Complete authentic WAD campaigns | Unverified | Map rendering alone is not campaign completion; missing behaviors can block progression |
 
-## In-flight work and known limits
+## Stair/crusher milestone qualification
 
-### Branch-only: classic stair builders
+### Classic stair builders
 
-`feat/classic-stair-builders` proposes actions 7/8 (8-unit stairs) and 127/100
-(fast 16-unit stairs), reusing shared floor movers. This is **not merged-main
-capability** and does not qualify complete campaigns. The bundled Freedoom WAD
+The [stair increment](https://github.com/davidfowl/doomsharp/commit/010a6045b6b3dc3bc7e0f5c05d69c5428789d699)
+implements actions 7/8 (8-unit stairs) and 127/100 (fast 16-unit stairs), reusing
+shared floor movers. It does not qualify complete campaigns. The bundled Freedoom WAD
 contains these actions on ten maps, including E1M3, E2M1 and E2M4; this is a
 linedef inventory, not evidence of completing those maps.
 
@@ -87,18 +91,18 @@ is retained locally under `artifacts/stairs-final-all`, not a published raw pack
 or completed remote CI run. Its exact committed source and executable identities
 are recorded in the delivery handoff.
 
-Limits: no browser runtime stair traversal, physical-device input, audible
-playback, other-platform runtime results, exact original busy-neighbor quirks,
+Limits of that local packet: no browser runtime stair traversal, physical-device
+input, audible playback, other-platform runtime results, exact original busy-neighbor quirks,
 switch-texture updates or natural-map/campaign completion. Existing floor
 occupancy rules were retained in that increment rather than introducing
-crushers. No PR or merge is part of this bounded cycle. Further work should keep branch-only evidence
-separate from the merged-main status above.
+crushers. Cross-platform CI for the combined milestone is recorded below;
+it does not turn these synthetic routes into natural-map completion evidence.
 
-### Branch-only: classic cycling crushers
+### Classic cycling crushers
 
-The same `feat/classic-stair-builders` branch adds cycling crusher actions
-6/25/77/141 and their coupled stop actions 57/74. This increment is separate
-from the preserved stair commit and is **not merged into main**. These four
+The [crusher increment](https://github.com/davidfowl/doomsharp/commit/42a186f1269cd022ae6f68d2bdcb04b2b89fa1d5)
+adds cycling actions 6/25/77/141 and their coupled stop actions 57/74 while
+preserving the stair increment. These four
 start actions occur on 38 linedefs across eight bundled Freedoom maps:
 18 type6, four type25, 15 type77 and one type141. This inventory does not
 establish natural-map or campaign completion.
@@ -124,17 +128,42 @@ Linux x64 Native AOT publishing and browser Debug compilation pass.
 
 Final committed-source results, logs, native frames, input schedules and hashes
 are retained locally under `artifacts/crusher-final-all`; exact source and
-binary identities are in the delivery handoff. These are not public artifacts
-or remote CI success. The current environment has no WebAssembly workload;
-browser runtime/Release AOT, other-OS runtime, physical devices and audible
-playback are not qualified. The simplified 56-unit living-body/16-unit-drop
+binary identities are in the delivery handoff. That local packet is separate
+from the downloadable CI evidence below. The simplified 56-unit living-body/16-unit-drop
 model retains placed pickups and corpse artwork rather than implementing
 original actor heights/gibbing or exact obstruction/visual/audio parity.
 Other crusher/ceiling specials and full campaigns remain unfinished.
 
-### Remaining main compatibility work
+### Cross-platform CI and integration review
 
-Remaining compatibility work includes stairs/crushers, remaining mover variants,
+[Run39067803717](https://github.com/davidfowl/doomsharp/actions/runs/39067803717)
+completed successfully on exact implementation `42a186f`: all six native
+OS/architecture jobs and Chromium/Firefox/WebKit jobs passed. Native jobs
+publish AOT, run executable/engine checks and render bounded desktop windows;
+both Linux targets additionally run the synthetic-input native suite.
+The downloaded [Linux x64 artifact](https://github.com/davidfowl/doomsharp/actions/runs/39067803717/artifacts/12113923142)
+confirms 236 executable/CLI, 471 engine and 41 native assertions, all passing
+with matching source revision and executable hash.
+
+Browser jobs publish Release AOT and exercise the actual hosted application.
+Downloaded results pass 38 Chromium, 38 Firefox and 37 WebKit assertions:
+autoload, rendering, keyboard input, firing, pause/restart, audio scheduling,
+local WADs and visible failure/retry behavior. WebKit pointer lock was unavailable,
+so its mouse-look behavior is explicitly unverified. These checks do **not**
+exercise browser stair/crusher routes, establish physical devices/audible sound,
+Safari/mobile behavior or campaign completion. Pages deployment was skipped for
+the feature-branch run; this is not live-site deployment evidence.
+
+Integration review covered shared mover ownership, footprint occupancy and
+four-tick damage, stopping/resuming in both directions, action consumption and
+stair preservation. No material correctness issue was found within the stated
+contract. The qualification documentation changes no engine, host, fixture,
+check, workflow or dependency inputs; runtime evidence remains pinned to `42a186f`
+rather than being mislabeled as a later execution.
+
+### Remaining compatibility work
+
+Remaining compatibility work includes other stair/crusher and mover variants,
 all vanilla map specials and switch textures, other boss actions, exact monster states
 and attacks/infighting, remaining weapons/powerups, telefragging, original physics,
 music/MUS playback, saves, menus and multiplayer. These gaps can block complete
