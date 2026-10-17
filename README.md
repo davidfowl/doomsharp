@@ -162,11 +162,13 @@ be **new**, so previous results are never silently overwritten.
   complete P6 frames, and requires malformed input to exit 1 with a diagnostic.
 - `engine` feeds public C# input into the shared engine to check movement
   thresholds, all six tagged-lock actions and card/skull colors, weapon
-  ownership/ammo/cadence/combat/carry/restart/death, and Baron floor actions.
+  ownership/ammo/cadence/combat/carry/restart/death, Baron floor actions, and
+  tagged stair triggers/chains/speeds/headroom/restart.
 - `native` drives the actual Linux executable using XTest keyboard events and
   reads the X11 framebuffer: demo completion/restart, Tab/movement/firing HUD,
   two lift lower/wait/raise/carry/step-off cycles, and both weapons with PCM
-  submission through an ALSA null device.
+  submission through an ALSA null device. Stair checks traverse raised routes
+  for all four supported actions and require untagged controls to stay blocked.
 
 Results contain explicit pass/fail assertions, diagnostics, executable hashes,
 caller-supplied source revision and native frame/input records. A source revision
@@ -204,15 +206,34 @@ input, audible sound, original-game parity, mobile support or campaign completio
 
 ## Engine scope and limits
 
+### Tagged stairs
+
+Classic linedef actions 7 (use once) and 8 (walk once) build 8-unit steps at
+8.75 units/second. Actions 127 (use once) and 100 (walk once) build 16-unit steps
+at 140 units/second. Use actions require the front side; walk actions accept
+either crossing direction. Each tagged seed starts from its current floor.
+Chains follow the first available front-to-back two-sided linedef in map order,
+keeping the seed's floor texture and adding one step per sector, including
+untagged neighbors. All eligible tagged seeds are processed.
+
+Active floor movers are not overwritten. A busy seed can be retried; a busy
+neighbor is skipped when choosing the next link. Successful activation consumes
+the action; missing/zero tags leave it available and display a diagnostic.
+Stairs reuse moving-floor support and non-crushing occupancy checks, resume
+after an obstruction clears, and reset on restart. Switch textures, exact vanilla
+busy-neighbor quirks and complete campaign progression are not qualified.
+
+### Compatibility
+
 Implemented: classic IWAD/PWAD directory/geometry/BSP validation; textured
 walls/floors/ceilings, sky, masked walls and sprites; collision, sliding and
 24-unit steps; pistol, shotgun, chaingun and swept rocket/explosion combat;
 pickups, keys, armor, simplified enemies/barrels; common doors, tagged locks,
-lifts/floors, teleports, damaging floors, secrets, exits and map progression;
+lifts/floors, tagged 8/16-unit stairs, teleports, damaging floors, secrets, exits and map progression;
 E1M8 last-Baron/tag666 floors; DMX effects, HUD and automap.
 
 Still incomplete: other weapons/powerups, exact monster states/AI/physics/RNG,
-stairs/crushers and every moving-sector/switch special, other boss actions,
+crushers and remaining moving-sector/switch specials, other boss actions,
 animated textures, music/MUS, menus, saves, multiplayer and original visual/timing
 parity. No PWAD overlay stacking, Hexen/UDMF, extended nodes, Boom/MBF/DEHACKED or
 mod compatibility. Only medium-skill single-player flags are selected. Missing

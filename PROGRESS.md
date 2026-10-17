@@ -61,9 +61,40 @@ Build/publish output includes the Phase 1 WAD, BSD license and credits.
 
 ## In-flight work and known limits
 
-No additional unmerged engine capability is claimed here. Future progress PRs
-must update this page with their verification scope and evidence links, and keep
-branch-only work separate from merged-main status.
+### Branch-only: classic stair builders
+
+`feat/classic-stair-builders` proposes actions 7/8 (8-unit stairs) and 127/100
+(fast 16-unit stairs), reusing shared floor movers. This is **not merged-main
+capability** and does not qualify complete campaigns. The bundled Freedoom WAD
+contains these actions on ten maps, including E1M3, E2M1 and E2M4; this is a
+linedef inventory, not evidence of completing those maps.
+
+The baseline at `6325ccd0f837bdf7bdce1467da709ee211c53ff7` failed 90 of
+128 new engine assertions, including all four generated progression routes.
+The candidate passed 432 combined executable/engine/Linux-native assertions:
+147 generated-WAD executable checks, five CLI rejection checks, 249 engine
+checks and 31 native checks. Of these, 128 engine assertions and eight native
+processes cover stairs. Native positives reached X238 or beyond (required
+X>224), while all four missing-tag controls stopped at X173.71 (required
+160<=X<=176). The raised destination is unreachable without building the stairs.
+
+Coverage includes action/side rules, exact 35-Hz per-tick speeds, relative
+starting heights, texture and directed-chain boundaries, multiple seeds,
+busy seed/neighbor preservation and retry, occupied headroom/resumption,
+one-shot consumption, traversal and restart. There are 44 new original fixtures.
+Linux x64 Native AOT publish and the browser Debug build pass. Final qualification
+is retained locally under `artifacts/stairs-final-all`, not a published raw packet
+or completed remote CI run. Its exact committed source and executable identities
+are recorded in the delivery handoff.
+
+Limits: no browser runtime stair traversal, physical-device input, audible
+playback, other-platform runtime results, exact original busy-neighbor quirks,
+switch-texture updates or natural-map/campaign completion. Existing floor
+occupancy rules are retained rather than introducing crushers. No PR or merge
+is part of this bounded cycle. Further work should keep branch-only evidence
+separate from the merged-main status above.
+
+### Remaining main compatibility work
 
 Remaining compatibility work includes stairs/crushers, remaining mover variants,
 all vanilla map specials and switch textures, other boss actions, exact monster states

@@ -70,6 +70,10 @@ public static class ScenarioFixtures
                 yield return ($"door-{special}-{key}", Write(assets.Concat(Door(special, key))));
         foreach (string mode in new[] { "last-baron", "two-barons", "knight", "mixed", "wrong-map", "no-tag" })
             yield return ($"boss-{mode}", Write(assets.Concat(Boss(mode))));
+        foreach (int special in new[] { 7, 8, 100, 127 })
+            foreach (string mode in new[] { "chain", "texture-stop", "reversed", "no-tag", "zero-tag",
+                "multiple", "busy-seed", "busy-next", "blocked", "raised-start", "back-side" })
+                yield return ($"stairs-{special}-{mode}", Write(assets.Concat(Stairs(special, mode))));
     }
 
     static void AddBarrier(List<Lump> map)
@@ -148,6 +152,49 @@ public static class ScenarioFixtures
         if (mode is "two-barons" or "mixed") things.Add((600, 200, mode == "mixed" ? 69 : 3003));
         return Corridor(mode == "wrong-map" ? "E1M1" : "E1M8", [-128, 768, 832, 960],
             [0, 64, -32], [256, 256, 256], [0, mode == "no-tag" ? 667 : 666, 0], things);
+    }
+
+    static List<Lump> Stairs(int special, string mode)
+    {
+        int end = special is 100 or 127 ? 64 : 48;
+        int[] floors = mode == "raised-start" ? [0, 0, 16, 0, 0, end] : [0, 0, 0, 0, 0, end];
+        int[] ceilings = mode == "blocked" ? [256, 256, 60, 256, 256, 256] : [256, 256, 256, 256, 256, 256];
+        int tag = mode == "zero-tag" ? 0 : 7;
+        int[] tags = [0, 0, mode == "no-tag" ? 8 : tag, 0, mode == "multiple" ? tag : 0, 0];
+        if (mode is "busy-seed" or "busy-next") tags[mode == "busy-seed" ? 2 : 3] = 9;
+        var map = Corridor("E1M1", [-192, -64, 0, 64, 128, 192, 320], floors, ceilings, tags,
+            [(mode is "busy-seed" or "busy-next" ? -96 : mode == "back-side" ? 32 : -32, 0, 1)]);
+        byte[] sectors = map.Single(l => l.Name == "SECTORS").Data;
+        NameAt(5, "QLCEIL");
+        if (mode == "texture-stop") NameAt(3, "QLCEIL");
+        if (mode == "multiple") { NameAt(4, "QLCEIL"); NameAt(5, "QLFLOOR"); }
+        void NameAt(int sector, string name) =>
+            Encoding.ASCII.GetBytes(name.PadRight(8, '\0')).CopyTo(sectors, sector * 26 + 4);
+        byte[] lines = map.Single(l => l.Name == "LINEDEFS").Data;
+        BinaryPrimitives.WriteUInt16LittleEndian(lines.AsSpan(8 * 14 + 6), (ushort)special);
+        BinaryPrimitives.WriteUInt16LittleEndian(lines.AsSpan(8 * 14 + 8), (ushort)tag);
+        if (mode is "busy-seed" or "busy-next")
+        {
+            BinaryPrimitives.WriteUInt16LittleEndian(lines.AsSpan(7 * 14 + 6), 58);
+            BinaryPrimitives.WriteUInt16LittleEndian(lines.AsSpan(7 * 14 + 8), 9);
+            // Keep the stair seed tagged too when the earlier crossing starts its mover.
+            if (mode == "busy-seed")
+                BinaryPrimitives.WriteUInt16LittleEndian(lines.AsSpan(8 * 14 + 8), 9);
+        }
+        if (mode == "reversed")
+        {
+            ushort right = BinaryPrimitives.ReadUInt16LittleEndian(lines.AsSpan(9 * 14 + 10));
+            ushort left = BinaryPrimitives.ReadUInt16LittleEndian(lines.AsSpan(9 * 14 + 12));
+            BinaryPrimitives.WriteUInt16LittleEndian(lines.AsSpan(9 * 14 + 10), left);
+            BinaryPrimitives.WriteUInt16LittleEndian(lines.AsSpan(9 * 14 + 12), right);
+            byte[] segs = map.Single(l => l.Name == "SEGS").Data;
+            for (int p = 0; p < segs.Length; p += 12)
+                if (BinaryPrimitives.ReadUInt16LittleEndian(segs.AsSpan(p + 6)) == 9)
+                    segs[p + 8] ^= 1;
+        }
+        if (mode == "back-side")
+            BinaryPrimitives.WriteUInt16LittleEndian(map.Single(l => l.Name == "THINGS").Data.AsSpan(4), 180);
+        return map;
     }
 
     static List<Lump> Corridor(string label, int[] bounds, int[] floors, int[] ceilings, int[] tags,

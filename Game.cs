@@ -366,7 +366,7 @@ public sealed class Game
             FinishLevel(special is 51 or 124);
             PlaySound?.Invoke("SWTCHN"); return;
         }
-        if (ActivateFloor(line, crossing)) return;
+        if (ActivateStairs(line, crossing) || ActivateFloor(line, crossing)) return;
         bool lockedSwitch = !crossing && special is 99 or 133 or 134 or 135 or 136 or 137;
         bool door = crossing ? special is 2 or 3 or 4 or 16 or 86 or 90 :
             lockedSwitch || special is 1 or 26 or 27 or 28 or 31 or 32 or 33 or 34 or 29 or 63 or 103 or 111 or 112 or 113;
@@ -415,6 +415,50 @@ public sealed class Game
             int other = right == sector ? left : right;
             if (other != sector) yield return other;
         }
+    }
+
+    bool ActivateStairs(Line line, bool crossing)
+    {
+        int special = line.Special;
+        if (!(crossing ? special is 8 or 100 : special is 7 or 127)) return false;
+        if (!crossing && Vec.Cross(Map.Vertices[line.B] - Map.Vertices[line.A],
+            Position - Map.Vertices[line.A]) > 0) { PlaySound?.Invoke("NOWAY"); return true; }
+        bool turbo = special is 100 or 127;
+        double step = turbo ? 16 : 8, speed = turbo ? 140 : 8.75;
+        bool targeted = false, activated = false;
+        HashSet<int> visited = [];
+        foreach (int seed in TaggedSectors(line))
+        {
+            targeted = true;
+            if (Map.Sectors[seed].FloorDirection != 0 || visited.Contains(seed)) continue;
+            string texture = Map.Sectors[seed].FloorTexture;
+            double target = Map.Sectors[seed].Floor + step;
+            int current = seed;
+            while (true)
+            {
+                visited.Add(current);
+                activated |= StartFloor(Map.Sectors[current], target, false, speed);
+                int next = -1;
+                // Stair chains follow front-to-back two-sided lines in map order.
+                foreach (int index in Map.SectorLines[current])
+                {
+                    Line edge = Map.Lines[index];
+                    if (edge.Left == 65535 || (edge.Flags & 4) == 0 ||
+                        Map.Sides[edge.Right].Sector != current) continue;
+                    int candidate = Map.Sides[edge.Left].Sector;
+                    Sector sector = Map.Sectors[candidate];
+                    if (visited.Contains(candidate) || sector.FloorDirection != 0 || sector.FloorTexture != texture) continue;
+                    next = candidate;
+                    break;
+                }
+                if (next < 0) break;
+                current = next;
+                target += step;
+            }
+        }
+        if (activated) { line.Special = 0; PlaySound?.Invoke("PSTART"); }
+        if (!targeted) { Say("STAIRS HAVE NO TAGGED SECTOR"); PlaySound?.Invoke("NOWAY"); }
+        return true;
     }
 
     bool ActivateFloor(Line line, bool crossing)

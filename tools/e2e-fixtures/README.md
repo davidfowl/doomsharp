@@ -20,8 +20,19 @@ The original portal fixture SHA-256 remains
 the lift fixture remains
 `e86d622806c6bf68ad3ba1facfeecd312fe04d27ea1b0dfdd4fff288b6297525`.
 `../ScenarioFixtures.cs` generates additional original synthetic weapon,
-tagged-door and boss scenarios. Every generated WAD is listed in `SHA256SUMS`.
+tagged-door, boss and stair scenarios. Every generated WAD is listed in `SHA256SUMS`.
 All assets are generated original data, not proprietary game artwork.
+
+The 44 `stairs-<special>-<variant>` fixtures cover actions 7/8/100/127:
+three-step routes to an otherwise unreachable raised destination, flat-texture
+and linedef-direction boundaries, missing/zero tags, independent tagged seeds,
+active floor movers started by ordinary crossing input, occupied headroom,
+raised starting floors and back-side activation. Engine checks assert exact
+targets and 35-Hz speeds, consumption/retry, obstruction/resumption and restart.
+Native checks use eight fresh processes: four tagged routes must reach X>224;
+four missing-tag controls must stay at 160<=X<=176. They capture the initial,
+built and traversed frames and retain the usual input/process/hash records.
+These are synthetic progression checks, not authentic-map campaign acceptance.
 
 The production project excludes tools and browser sources explicitly. Tool
 projects compile their own sources; no `.cs.txt` workaround or Python is needed.

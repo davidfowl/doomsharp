@@ -59,6 +59,95 @@ try
     }
     if (mode is "engine" or "all")
     {
+        foreach (int special in new[] { 7, 8, 100, 127 })
+        {
+            bool walk = special is 8 or 100, turbo = special is 100 or 127;
+            int step = turbo ? 16 : 8;
+            void ActivateStairs(Game game)
+            {
+                if (walk) Tick(game, Buttons.Forward, 8);
+                else Tick(game, Buttons.Use);
+            }
+            foreach (string variant in new[] { "chain", "texture-stop", "reversed", "no-tag", "zero-tag",
+                "multiple", "raised-start" })
+            {
+                Game game = Load($"stairs-{special}-{variant}");
+                ActivateStairs(game);
+                bool targeted = variant is not ("no-tag" or "zero-tag");
+                int start = variant == "raised-start" ? 16 : 0;
+                double[] expected = !targeted ? [0, 0, 0] :
+                    variant is "texture-stop" or "reversed" ? [step, 0, 0] :
+                    variant == "multiple" ? [step, 2 * step, step] :
+                    [start + step, start + 2 * step, start + 3 * step];
+                Check($"stairs-{special}-{variant}-targets",
+                    game.Map.Sectors.Skip(2).Take(3).Select(s => s.FloorTarget).SequenceEqual(expected),
+                    game.Map.Sectors.Select(s => s.FloorTarget).ToArray());
+                Check($"stairs-{special}-{variant}-consumption", game.Map.Lines[8].Special == (targeted ? 0 : special));
+                if (!targeted)
+                    Check($"stairs-{special}-{variant}-diagnostic", game.Message == "STAIRS HAVE NO TAGGED SECTOR", game.Message);
+                Tick(game, count: 220);
+                Check($"stairs-{special}-{variant}-settled",
+                    game.Map.Sectors.Skip(2).Take(3).Select(s => s.Floor).SequenceEqual(expected) &&
+                    game.Map.Sectors.All(s => s.FloorDirection == 0), game.Map.Sectors.Select(s => s.Floor).ToArray());
+                if (variant == "chain")
+                {
+                    Tick(game, Buttons.Forward, 70);
+                    Check($"stairs-{special}-traversal", game.Position.X > 224, game.Position);
+                    Tick(game, Buttons.Restart);
+                    Check($"stairs-{special}-restart", game.Map.Sectors.Take(5).All(s => s.Floor == 0) &&
+                        game.Map.Sectors[5].Floor == (turbo ? 64 : 48) && game.Map.Lines[8].Special == special);
+                }
+            }
+            Game cadence = Load($"stairs-{special}-chain");
+            ActivateStairs(cadence);
+            double before = cadence.Map.Sectors[2].Floor;
+            Tick(cadence);
+            double delta = cadence.Map.Sectors[2].Floor - before;
+            Check($"stairs-{special}-speed", Math.Abs(delta - (turbo ? 4 : .25)) < .000001, delta);
+            Game wrong = Load($"stairs-{special}-chain");
+            if (walk) Tick(wrong, Buttons.Use);
+            else Tick(wrong, Buttons.Forward, 8);
+            Check($"stairs-{special}-wrong-trigger", wrong.Map.Sectors.All(s => s.FloorDirection == 0) && wrong.Map.Lines[8].Special == special);
+            Game back = Load($"stairs-{special}-back-side");
+            ActivateStairs(back);
+            Check($"stairs-{special}-back-side", (back.Map.Sectors[2].FloorDirection != 0) == walk &&
+                back.Map.Lines[8].Special == (walk ? 0 : special));
+            foreach (bool seed in new[] { true, false })
+            {
+                Game busy = Load($"stairs-{special}-busy-{(seed ? "seed" : "next")}");
+                Tick(busy, Buttons.Forward, 15);
+                double target = busy.Map.Sectors[seed ? 2 : 3].FloorTarget;
+                ActivateStairs(busy);
+                Check($"stairs-{special}-busy-{(seed ? "seed" : "next")}",
+                    target == 24 && busy.Map.Sectors[seed ? 2 : 3].FloorTarget == target &&
+                    busy.Map.Sectors[4].FloorDirection == 0 && busy.Map.Lines[8].Special == (seed ? special : 0),
+                    new { busy.Position, targets = busy.Map.Sectors.Select(s => s.FloorTarget).ToArray(), action = busy.Map.Lines[8].Special });
+                if (seed)
+                {
+                    Tick(busy, count: 35);
+                    if (walk)
+                    {
+                        Tick(busy, Buttons.Back, 8);
+                        ActivateStairs(busy);
+                    }
+                    else { Tick(busy); ActivateStairs(busy); }
+                    Check($"stairs-{special}-busy-seed-retry", busy.Map.Sectors[2].FloorTarget == 24 + step && busy.Map.Lines[8].Special == 0,
+                        new { busy.Position, target = busy.Map.Sectors[2].FloorTarget });
+                }
+            }
+            if (!walk)
+            {
+                Game blocked = Load($"stairs-{special}-blocked");
+                Tick(blocked, Buttons.Forward, 4);
+                Tick(blocked, Buttons.Use);
+                Tick(blocked, count: 220);
+                Check($"stairs-{special}-occupied-headroom", blocked.Health == 100 && blocked.Feet <= 4 &&
+                    blocked.Map.Sectors[2].FloorDirection == 1, new { blocked.Feet, blocked.Health });
+                Tick(blocked, Buttons.Back, 16);
+                Tick(blocked, count: 220);
+                Check($"stairs-{special}-unblocked-resumes", blocked.Map.Sectors[2].Floor == step && blocked.Map.Sectors[2].FloorDirection == 0);
+            }
+        }
         foreach (string name in new[] { "portal-equal", "step-24", "step-25", "clearance-56", "clearance-55",
             "overlap-55", "closed-portal", "flag-blocked", "masked-passable", "masked-blocked" })
         {
@@ -152,6 +241,22 @@ try
     if (mode is "native" or "all")
     {
         if (!OperatingSystem.IsLinux()) throw new PlatformNotSupportedException("Native input checks require Linux/X11/XTest; use headless/engine on Windows and macOS.");
+        foreach (int special in new[] { 7, 8, 100, 127 })
+            foreach (bool tagged in new[] { true, false })
+            {
+                string name = $"stairs-{special}-{(tagged ? "chain" : "no-tag")}";
+                using NativeGame game = await NativeGame.Start(executable, ["--wad", Path.Combine(fixtures, name + ".wad")],
+                    Path.Combine(output, "native-" + name), source);
+                game.Capture("initial");
+                game.Hold(special is 8 or 100 ? "w" : "e", special is 8 or 100 ? .25 : .06);
+                Thread.Sleep(3100);
+                game.Capture("built");
+                game.Hold("w", 1.8);
+                game.Capture("traversal");
+                string text = await game.Quit();
+                double x = ProcessCheck.Position(text).X;
+                Check("native-" + name, tagged ? x > 224 : x is >= 160 and <= 176, new { x, text });
+            }
         foreach (bool restart in new[] { false, true })
         {
             string name = restart ? "native-restart" : "native-demo";
