@@ -108,6 +108,8 @@ public sealed class Assets
         return picture;
     }
 
+    public bool HasTexture(string name) => textures.ContainsKey(name);
+
     public Picture Texture(string name)
     {
         if (textures.TryGetValue(name, out Picture? texture)) return texture;

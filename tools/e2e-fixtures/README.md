@@ -20,7 +20,7 @@ The original portal fixture SHA-256 remains
 the lift fixture remains
 `e86d622806c6bf68ad3ba1facfeecd312fe04d27ea1b0dfdd4fff288b6297525`.
 `../ScenarioFixtures.cs` generates additional original synthetic weapon,
-tagged-door, boss, stair and crusher scenarios. Every generated WAD is listed in `SHA256SUMS`.
+tagged-door, boss, stair, crusher and switch scenarios. Every generated WAD is listed in `SHA256SUMS`.
 All assets are generated original data, not proprietary game artwork.
 
 The 44 `stairs-<special>-<variant>` fixtures cover actions 7/8/100/127:
@@ -51,6 +51,24 @@ processes additionally require sound events and nonzero ALSA-null PCM. Each
 retains initial/active-or-paused/final captures and input/session/hash records.
 These are local Linux virtual-device observations, not audible sound,
 browser/other-OS gameplay or original-engine/campaign parity.
+
+The 112 `switch-<special>-<variant>` fixtures cover 24 existing use-switch actions
+without changing earlier fixture assets. Engine checks cover success/denial,
+front/back sides, tags/keys/busy/no-motion cases, one-shot versus repeatable
+consumption, exact pair/state/upper-middle-lower priority, missing partner
+fallback, unsupported custom names, 35-tick restoration, retriggers, independent
+buttons and restart/map-change cleanup. Test-only solids distinguish off red
+from on green; paired patches and click tones are generated original data.
+
+Nine native processes observe the actual framebuffer before activation, after
+Use and after the reset deadline. Positive upper/middle/lower surfaces require
+more than 500 on-color pixels, excluding the HUD; controls must never turn green.
+S1 actions remain latched, SR99 resets, and one SR99 process submits nonzero
+null PCM. Manual-door control artwork can disappear as its door opens; its
+engine check independently requires that the door actually moves.
+The browser runner uses the same fixtures for visible S1/SR/key-denied controls
+and verifies that pausing preserves an active button for more than one second.
+Real-time host checks complement, not replace, exact engine tick assertions.
 
 The production project excludes tools and browser sources explicitly. Tool
 projects compile their own sources; no `.cs.txt` workaround or Python is needed.

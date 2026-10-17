@@ -102,6 +102,22 @@ public sealed class Game
     int chaingunTicks, crusherTicks;
     bool chaingunFollowup, chaingunRefiring, chaingunAccuratePair;
     Weapon? pendingWeapon;
+    static readonly string[] switchPairs =
+    [
+        "BRCOM", "BRN1", "BRN2", "BRNGN", "BROWN", "COMM", "COMP", "DIRT", "EXIT",
+        "GRAY", "GRAY1", "METAL", "PIPE", "SLAD", "STARG", "STON1", "STON2", "STONE", "STRTN",
+        "BLUE", "CMT", "GARG", "GSTON", "HOT", "LION", "SATYR", "SKIN", "VINE", "WOOD",
+        "PANEL", "ROCK", "MET2", "WDMET", "BRIK", "MOD1", "ZIM", "STON6", "TEK", "MARB", "SKULL"
+    ];
+    sealed class ButtonReset(Line line, int slot, string texture)
+    {
+        public readonly Line Line = line;
+        public readonly int Slot = slot;
+        public readonly string Texture = texture;
+        public int Ticks = 35;
+    }
+    readonly List<ButtonReset> buttons = [];
+    readonly HashSet<string> switchWarnings = [];
 
     public Game(Wad wad, string map)
     {
@@ -116,6 +132,7 @@ public sealed class Game
         Position = start.Value.Position; Angle = start.Value.Angle * Math.PI / 180;
         Feet = Map.FloorAt(Position, 16);
         Actors.Clear(); Projectiles.Clear(); foundSecrets.Clear();
+        buttons.Clear(); switchWarnings.Clear();
         bossDeathActivated = false;
         UnsupportedThings = 0;
         foreach (Thing thing in Map.Things)
@@ -233,6 +250,7 @@ public sealed class Game
             input.MouseX = 0;
             return;
         }
+        UpdateButtons();
         if (Health > 0)
         {
             if ((pressed & Buttons.Map) != 0) Automap = !Automap;
@@ -362,10 +380,18 @@ public sealed class Game
     void Activate(Line line, bool crossing)
     {
         int special = line.Special;
+        bool useSwitch = !crossing && special is 7 or 127 or 11 or 51 or
+            18 or 21 or 23 or 60 or 62 or 69 or 122 or 123 or
+            29 or 63 or 99 or 103 or 111 or 112 or 113 or 133 or 134 or 135 or 136 or 137;
+        if (useSwitch && Vec.Cross(Map.Vertices[line.B] - Map.Vertices[line.A],
+            Position - Map.Vertices[line.A]) > 0) { PlaySound?.Invoke("NOWAY"); return; }
         if ((!crossing && special is 11 or 51) || (crossing && special is 52 or 124))
         {
+            if (useSwitch) ChangeSwitch(line, false, true);
+            else PlaySound?.Invoke("SWTCHN");
+            if (useSwitch) line.Special = 0;
             FinishLevel(special is 51 or 124);
-            PlaySound?.Invoke("SWTCHN"); return;
+            return;
         }
         if (ActivateCrusher(line, crossing) || ActivateStairs(line, crossing) || ActivateFloor(line, crossing)) return;
         bool lockedSwitch = !crossing && special is 99 or 133 or 134 or 135 or 136 or 137;
@@ -376,8 +402,6 @@ public sealed class Game
             if (!crossing && special != 0) Say($"UNSUPPORTED LINE SPECIAL {special}");
             return;
         }
-        if (lockedSwitch && Vec.Cross(Map.Vertices[line.B] - Map.Vertices[line.A],
-            Position - Map.Vertices[line.A]) > 0) { PlaySound?.Invoke("NOWAY"); return; }
         int key = special is 26 or 32 or 99 or 133 ? 1 :
             special is 27 or 34 or 136 or 137 ? 2 : special is 28 or 33 or 134 or 135 ? 4 : 0;
         if (key != 0 && (Keys & key) == 0) { Say("YOU NEED THE MATCHING KEY"); PlaySound?.Invoke("NOWAY"); return; }
@@ -391,18 +415,72 @@ public sealed class Game
             targeted = true;
             Sector sector = Map.Sectors[s];
             if (sector.CrusherDirection != 0) { crusherBlocked = true; continue; }
-            if (lockedSwitch && sector.DoorDirection != 0) continue;
+            if (!manual && sector.DoorDirection != 0) continue;
             sector.DoorDirection = crossing && special is 3 or 16 ? -1 : 1;
             sector.DoorTime = lockedSwitch || special is 2 or 31 or 32 or 33 or 34 or 103 or 112 ? -1 : 4;
             sector.DoorSpeed = lockedSwitch ? 280 : 90;
             activated = true;
             PlaySound?.Invoke(lockedSwitch ? "BDOPN" : sector.DoorDirection > 0 ? "DOROPN" : "DORCLS");
         }
-        if (lockedSwitch && !targeted) { Say("DOOR HAS NO TAGGED SECTOR"); PlaySound?.Invoke("NOWAY"); }
+        if (!manual && !targeted) { Say("DOOR HAS NO TAGGED SECTOR"); PlaySound?.Invoke("NOWAY"); }
         if (crusherBlocked && !activated) { Say("CEILING IS CONTROLLED BY A CRUSHER"); PlaySound?.Invoke("NOWAY"); }
-        if ((!crusherBlocked || activated) && (!lockedSwitch || activated) &&
+        if (useSwitch && activated) ChangeSwitch(line, special is 63 or 99 or 134 or 136);
+        if (activated &&
             special is 2 or 3 or 4 or 16 or 29 or 31 or 32 or 33 or 34 or 103 or 111 or 112 or 113 or 133 or 135 or 137)
             line.Special = 0;
+    }
+
+    void SetSwitchTexture(Line line, int slot, string texture)
+    {
+        Side side = Map.Sides[line.Right];
+        Map.Sides[line.Right] = slot switch
+        {
+            0 => side with { Upper = texture },
+            1 => side with { Middle = texture },
+            _ => side with { Lower = texture }
+        };
+    }
+
+    void ChangeSwitch(Line line, bool repeat, bool exit = false)
+    {
+        Side side = Map.Sides[line.Right];
+        string[] slots = [side.Upper, side.Middle, side.Lower];
+        foreach (string suffix in switchPairs)
+            for (int state = 1; state <= 2; state++)
+                for (int slot = 0; slot < slots.Length; slot++)
+                {
+                    string original = $"SW{state}{suffix}";
+                    if (slots[slot] != original) continue;
+                    string partner = $"SW{3 - state}{suffix}";
+                    if (!Assets.HasTexture(partner))
+                    {
+                        if (switchWarnings.Add(partner))
+                            Console.Error.WriteLine($"Missing switch texture partner {partner} in {Map.Name}; left {original} unchanged.");
+                        continue;
+                    }
+                    SetSwitchTexture(line, slot, partner);
+                    PlaySound?.Invoke(exit ? "SWTCHX" : "SWTCHN");
+                    // Retriggers keep the first activation's texture and deadline.
+                    if (repeat && !buttons.Any(b => b.Line == line))
+                        buttons.Add(new(line, slot, original));
+                    return;
+                }
+        foreach (string texture in slots.Where(t => t.StartsWith("SW1", StringComparison.Ordinal) ||
+            t.StartsWith("SW2", StringComparison.Ordinal)))
+            if (!switchPairs.Contains(texture[3..]) && switchWarnings.Add(texture))
+                Console.Error.WriteLine($"Unsupported switch texture {texture} in {Map.Name}; left unchanged.");
+    }
+
+    void UpdateButtons()
+    {
+        for (int i = buttons.Count - 1; i >= 0; i--)
+        {
+            ButtonReset button = buttons[i];
+            if (--button.Ticks > 0) continue;
+            SetSwitchTexture(button.Line, button.Slot, button.Texture);
+            PlaySound?.Invoke("SWTCHN");
+            buttons.RemoveAt(i);
+        }
     }
 
     IEnumerable<int> TaggedSectors(Line line) => Enumerable.Range(0, Map.Sectors.Length)
@@ -500,7 +578,11 @@ public sealed class Game
                 target += step;
             }
         }
-        if (activated) { line.Special = 0; PlaySound?.Invoke("PSTART"); }
+        if (activated)
+        {
+            if (!crossing) ChangeSwitch(line, false);
+            line.Special = 0; PlaySound?.Invoke("PSTART");
+        }
         if (!targeted) { Say("STAIRS HAVE NO TAGGED SECTOR"); PlaySound?.Invoke("NOWAY"); }
         return true;
     }
@@ -513,9 +595,10 @@ public sealed class Game
         bool raiseNext = crossing ? special is 119 or 128 : special is 18 or 69;
         bool raise24 = crossing && special is 58 or 92;
         if (!lift && !lower && !raiseNext && !raise24) return false;
-        bool activated = false;
+        bool targeted = false, activated = false;
         foreach (int i in TaggedSectors(line))
         {
+            targeted = true;
             Sector sector = Map.Sectors[i];
             if (sector.FloorDirection != 0) continue;
             double[] heights = Neighbors(i).Select(n => Map.Sectors[n].Floor).ToArray();
@@ -527,9 +610,11 @@ public sealed class Game
         }
         if (activated)
         {
+            if (!crossing) ChangeSwitch(line, special is 60 or 62 or 69 or 123);
             PlaySound?.Invoke("PSTART");
             if (special is 10 or 21 or 120 or 122 or 38 or 23 or 119 or 18 or 58) line.Special = 0;
         }
+        if (!targeted) { Say("FLOOR HAS NO TAGGED SECTOR"); PlaySound?.Invoke("NOWAY"); }
         return true;
     }
 

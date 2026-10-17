@@ -93,16 +93,18 @@ try
     async Task<JsonElement> Pixels() => await canvas.EvaluateAsync<JsonElement>("""
         c => {
             const p = c.getContext('2d').getImageData(0, 0, 640, 400).data;
-            let nonblack=0, background=0, white=0, hash=2166136261;
+            let nonblack=0, background=0, white=0, switchOff=0, switchOn=0, hash=2166136261;
             for(let i=0;i<p.length;i+=4) {
                 if(p[i]||p[i+1]||p[i+2]) nonblack++;
                 if(i<640*350*4 && p[i]===8 && p[i+1]===9 && p[i+2]===11) background++;
                 if(i>=640*175*4 && i<640*195*4 && p[i]===255 && p[i+1]===255 && p[i+2]===255) white++;
+                if(i<640*350*4 && p[i]>p[i+1]*2 && p[i]>p[i+2]*2) switchOff++;
+                if(i<640*350*4 && p[i+1]>p[i]*2 && p[i+1]>p[i+2]*2) switchOn++;
                 hash=Math.imul(hash^p[i],16777619);
                 hash=Math.imul(hash^p[i+1],16777619);
                 hash=Math.imul(hash^p[i+2],16777619);
             }
-            return {nonblack, background, white, hash:hash>>>0};
+            return {nonblack, background, white, switchOff, switchOn, hash:hash>>>0};
         }
         """);
     async Task Hold(string key, int ms)
@@ -257,6 +259,37 @@ try
     await Hold("r", 100);
     Check("browser-live-restart", (await Hud(355, 0xffdb8a)).Contains("AMMO 50  PISTOL", StringComparison.Ordinal));
     await page.Keyboard.PressAsync("Escape");
+    foreach (var scenario in new[] { (29, "middle"), (99, "middle"), (99, "no-key") })
+    {
+        int special = scenario.Item1;
+        string variant = scenario.Item2, name = $"switch-{special}-{variant}";
+        bool changed = variant != "no-key", repeat = special == 99 && changed;
+        await page.Locator("input[type=file]").SetInputFilesAsync(Path.Combine(fixtures, name + ".wad"));
+        await WaitForLoad();
+        await WaitForPixels();
+        JsonElement before = await Pixels();
+        await canvas.ClickAsync();
+        await page.WaitForTimeoutAsync(100);
+        await Hold("e", 60);
+        JsonElement activated = await Pixels();
+        Check(name + "-visible-toggle", before.GetProperty("switchOff").GetInt32() > 500 &&
+            before.GetProperty("switchOn").GetInt32() == 0 &&
+            (changed ? activated.GetProperty("switchOn").GetInt32() > 500 : activated.GetProperty("switchOn").GetInt32() == 0),
+            new { before, activated });
+        if (repeat)
+        {
+            await page.Keyboard.PressAsync("Escape");
+            await page.WaitForTimeoutAsync(1100);
+            Check(name + "-pause-preserves-button", (await Pixels()).GetProperty("switchOn").GetInt32() > 500);
+            await canvas.ClickAsync();
+        }
+        await page.WaitForTimeoutAsync(1100);
+        JsonElement settled = await Pixels();
+        Check(name + "-visible-reset-or-latch", repeat || !changed ?
+            settled.GetProperty("switchOn").GetInt32() == 0 && settled.GetProperty("switchOff").GetInt32() > 500 :
+            settled.GetProperty("switchOn").GetInt32() > 500, settled);
+        await page.Keyboard.PressAsync("Escape");
+    }
     await page.Locator("input[type=file]").SetInputFilesAsync(Path.Combine(fixtures, "bad-directory-count.wad"));
     await page.GetByRole(AriaRole.Status).Filter(new() { HasText = "Cannot load WAD:" }).WaitForAsync();
     Check("invalid-WAD-reported", (await page.GetByRole(AriaRole.Status).InnerTextAsync()).Contains("directory", StringComparison.Ordinal));

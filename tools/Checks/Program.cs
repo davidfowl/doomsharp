@@ -59,6 +59,123 @@ try
     }
     if (mode is "engine" or "all")
     {
+        static string[] Textures(Side side) => [side.Upper, side.Lower, side.Middle];
+        static bool RepeatSwitch(int special) => special is 60 or 62 or 69 or 123 or 63 or 99 or 134 or 136;
+        foreach (string file in Directory.GetFiles(fixtures, "switch-*.wad").Order(StringComparer.Ordinal))
+        {
+            string name = Path.GetFileNameWithoutExtension(file);
+            string[] parts = name.Split('-', 3);
+            int special = int.Parse(parts[1], CultureInfo.InvariantCulture);
+            string variant = parts[2];
+            bool surface = special is not (1 or 31 or 6 or 8), exit = special is 11 or 51;
+            bool allowed = surface && variant is not ("back" or "busy" or "no-key") && (variant != "no-tag" || exit);
+            bool changed = allowed && variant is not ("missing" or "custom"), repeat = RepeatSwitch(special);
+            Game game = Load(name);
+            if (variant == "busy") Tick(game, Buttons.Forward, 15); else Tick(game);
+            Line line = game.Map.Lines[7];
+            string[] before = Textures(game.Map.Sides[line.Right]);
+            Side back = game.Map.Sides[line.Left];
+            List<string> sounds = [];
+            game.PlaySound = sounds.Add;
+            using StringWriter diagnostics = new();
+            TextWriter stderr = Console.Error;
+            try { Console.SetError(diagnostics); Tick(game, Buttons.Use); }
+            finally { Console.SetError(stderr); }
+            int slot = variant is "upper" or "same-pair" or "fallback" ? 0 :
+                variant is "lower" or "priority" ? 1 : 2;
+            string[] expected = (string[])before.Clone();
+            if (changed) expected[slot] = (before[slot].StartsWith("SW1", StringComparison.Ordinal) ? "SW2" : "SW1") + before[slot][3..];
+            Check(name + "-texture-selection", Textures(game.Map.Sides[line.Right]).SequenceEqual(expected),
+                new { before, actual = Textures(game.Map.Sides[line.Right]), expected });
+            Check(name + "-back-side-unchanged", game.Map.Sides[line.Left] == back);
+            int expectedSpecial = surface ? allowed && !repeat ? 0 : special : special == 31 ? 0 : special;
+            Check(name + "-consumption", line.Special == expectedSpecial, line.Special);
+            Check(name + "-click", sounds.Count(s => s is "SWTCHN" or "SWTCHX") == (changed ? 1 : 0) &&
+                (!changed || sounds.Contains(exit ? "SWTCHX" : "SWTCHN")), sounds);
+            if (special is 1 or 31)
+                Check(name + "-manual-door-still-opens", game.Map.Sectors[2].Ceiling > 0);
+            if (variant == "back")
+                Check(name + "-back-denies-action", !game.Finished && game.Map.Sectors.All(s => s.DoorDirection == 0 && s.FloorDirection == 0));
+            if (variant is "missing" or "fallback" or "custom")
+                Check(name + "-diagnostic", diagnostics.ToString().Contains(variant == "custom" ? "Unsupported switch texture" :
+                    "Missing switch texture partner", StringComparison.Ordinal) && game.Assets.MissingTextures == 0, diagnostics.ToString());
+            Tick(game, count: 34);
+            Check(name + "-before-35-ticks", Textures(game.Map.Sides[line.Right]).SequenceEqual(expected));
+            Tick(game);
+            Check(name + "-reset-or-latch", Textures(game.Map.Sides[line.Right]).SequenceEqual(changed && repeat ? before : expected));
+            Check(name + "-reset-sound", sounds.Count(s => s is "SWTCHN" or "SWTCHX") == (changed ? repeat ? 2 : 1 : 0), sounds);
+            Tick(game, Buttons.Restart);
+            Check(name + "-restart", game.Map.Lines[7].Special == special &&
+                Textures(game.Map.Sides[game.Map.Lines[7].Right]).SequenceEqual(before) && !game.Finished);
+            Tick(game, count: 40);
+            Check(name + "-no-stale-reset", Textures(game.Map.Sides[game.Map.Lines[7].Right]).SequenceEqual(before));
+        }
+        Game retrigger = Load("switch-99-middle"); Tick(retrigger);
+        List<string> clicks = [];
+        retrigger.PlaySound = clicks.Add;
+        Tick(retrigger, Buttons.Use); Tick(retrigger, count: 16); Tick(retrigger, Buttons.Use);
+        Check("switch-successful-retrigger-toggles", retrigger.Map.Sides[retrigger.Map.Lines[7].Right].Middle == "SW1BRCOM" &&
+            clicks.Count(s => s == "SWTCHN") == 2);
+        Tick(retrigger, count: 17);
+        Check("switch-retrigger-keeps-original-timer", clicks.Count(s => s == "SWTCHN") == 2);
+        Tick(retrigger);
+        Check("switch-retrigger-one-reset", clicks.Count(s => s == "SWTCHN") == 3);
+        Tick(retrigger, count: 35);
+        Check("switch-retrigger-no-duplicate-timer", clicks.Count(s => s == "SWTCHN") == 3);
+        Game busyButton = Load("switch-63-middle"); Tick(busyButton);
+        clicks.Clear(); busyButton.PlaySound = clicks.Add;
+        Tick(busyButton, Buttons.Use); Tick(busyButton, count: 5); Tick(busyButton, Buttons.Use);
+        Check("switch-busy-retrigger-does-not-toggle", busyButton.Map.Sides[busyButton.Map.Lines[7].Right].Middle == "SW2BRCOM" &&
+            clicks.Count(s => s == "SWTCHN") == 1);
+        Tick(busyButton, count: 29);
+        Check("switch-busy-retrigger-does-not-extend", busyButton.Map.Sides[busyButton.Map.Lines[7].Right].Middle == "SW1BRCOM" &&
+            clicks.Count(s => s == "SWTCHN") == 2);
+        Game restartedButton = Load("switch-99-middle"); Tick(restartedButton); Tick(restartedButton, Buttons.Use);
+        Tick(restartedButton, count: 5); Tick(restartedButton, Buttons.Restart); Tick(restartedButton); Tick(restartedButton, Buttons.Use);
+        Tick(restartedButton, count: 34);
+        Check("switch-pending-restart-keeps-new-deadline", restartedButton.Map.Sides[restartedButton.Map.Lines[7].Right].Middle == "SW2BRCOM");
+        Tick(restartedButton);
+        Check("switch-pending-restart-resets-new-button", restartedButton.Map.Sides[restartedButton.Map.Lines[7].Right].Middle == "SW1BRCOM");
+        Game noMove = Load("switch-23-middle");
+        foreach (Sector sector in noMove.Map.Sectors) sector.Floor = 24;
+        Tick(noMove); Tick(noMove, Buttons.Use);
+        Check("switch-no-floor-motion-does-not-toggle", noMove.Map.Lines[7].Special == 23 &&
+            noMove.Map.Sides[noMove.Map.Lines[7].Right].Middle == "SW1BRCOM");
+        foreach (string variant in new[] { "missing", "custom" })
+        {
+            Game warning = Load("switch-99-" + variant); Tick(warning);
+            using StringWriter diagnostics = new();
+            TextWriter stderr = Console.Error;
+            try
+            {
+                Console.SetError(diagnostics);
+                Tick(warning, Buttons.Use); Tick(warning, count: 16); Tick(warning, Buttons.Use);
+                Check("switch-" + variant + "-warns-once", diagnostics.ToString().Split('\n', StringSplitOptions.RemoveEmptyEntries).Length == 1);
+                Tick(warning, Buttons.Restart); Tick(warning); Tick(warning, Buttons.Use);
+                Check("switch-" + variant + "-restart-clears-warning", diagnostics.ToString().Split('\n', StringSplitOptions.RemoveEmptyEntries).Length == 2);
+            }
+            finally { Console.SetError(stderr); }
+        }
+        Game independent = Load("switch-63-independent"); Tick(independent); Tick(independent, Buttons.Use);
+        Tick(independent, Buttons.Forward, 15); Tick(independent, Buttons.Use);
+        Check("switch-independent-buttons", independent.Map.Sides[independent.Map.Lines[7].Right].Middle == "SW2BRCOM" &&
+            independent.Map.Sides[independent.Map.Lines[8].Right].Middle == "SW2BRN1");
+        Tick(independent, count: 19);
+        Check("switch-independent-first-reset", independent.Map.Sides[independent.Map.Lines[7].Right].Middle == "SW1BRCOM" &&
+            independent.Map.Sides[independent.Map.Lines[8].Right].Middle == "SW2BRN1");
+        Tick(independent, count: 16);
+        Check("switch-independent-second-reset", independent.Map.Sides[independent.Map.Lines[8].Right].Middle == "SW1BRN1");
+        Game carryButton = Load("switch-63-carry"); Tick(carryButton); Tick(carryButton, Buttons.Use);
+        Tick(carryButton, Buttons.Forward | Buttons.Run, 16); Tick(carryButton, Buttons.Use);
+        Check("switch-exit-with-pending-button", carryButton.Finished);
+        Tick(carryButton); Tick(carryButton, Buttons.Use); Tick(carryButton, count: 40);
+        Check("switch-no-reset-in-new-map", carryButton.Map.Name == "E1M2" && carryButton.Map.Sides.Length == 4);
+        foreach (int crossing in new[] { 6, 8 })
+        {
+            Game cross = Load($"switch-{crossing}-middle"); Tick(cross, Buttons.Forward, 8);
+            Check("switch-crossing-does-not-toggle-" + crossing, cross.Map.Sides[cross.Map.Lines[7].Right].Middle == "SW1BRCOM" &&
+                (crossing == 6 ? cross.Map.Sectors[3].Ceiling < 128 : cross.Map.Sectors[3].Floor > 0));
+        }
         foreach (int special in new[] { 6, 25, 77, 141 })
         {
             bool fast = special is 6 or 77;
@@ -382,6 +499,29 @@ try
     if (mode is "native" or "all")
     {
         if (!OperatingSystem.IsLinux()) throw new PlatformNotSupportedException("Native input checks require Linux/X11/XTest; use headless/engine on Windows and macOS.");
+        foreach (var scenario in new[] { (29, "middle"), (99, "middle"), (99, "upper"), (99, "lower"),
+            (7, "middle"), (23, "middle"), (99, "no-key"), (29, "no-tag"), (1, "middle") })
+        {
+            int special = scenario.Item1;
+            string variant = scenario.Item2, name = $"switch-{special}-{variant}";
+            bool changed = variant is not ("no-key" or "no-tag") && special != 1;
+            using NativeGame game = await NativeGame.Start(executable, ["--wad", Path.Combine(fixtures, name + ".wad")],
+                Path.Combine(output, "native-" + name), source, audio: special == 99 && variant == "middle");
+            Frame before = game.Capture("before");
+            game.Hold("e", .06); Thread.Sleep(100);
+            Frame activated = game.Capture("activated");
+            Thread.Sleep(1100);
+            Frame settled = game.Capture("after-reset");
+            string text = await game.Quit();
+            Check("native-" + name + "-visible-toggle", before.SwitchPixels(false) > 500 && before.SwitchPixels(true) == 0 &&
+                (changed ? activated.SwitchPixels(true) > 500 : activated.SwitchPixels(true) == 0),
+                new { before = before.SwitchPixels(false), after = activated.SwitchPixels(true) });
+            bool reset = changed && special == 99;
+            Check("native-" + name + "-visible-reset-or-latch", reset || !changed ? settled.SwitchPixels(true) == 0 &&
+                (special == 1 || settled.SwitchPixels(false) > 500) : settled.SwitchPixels(true) > 500);
+            if (special == 99 && variant == "middle")
+                Check("native-switch-PCM", Regex.IsMatch(text, @"Audio: [1-9]\d* sound events, [1-9]\d* PCM samples submitted"), text);
+        }
         foreach (int special in new[] { 6, 25, 77, 141 })
             foreach (bool paused in new[] { false, true })
             {

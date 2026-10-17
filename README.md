@@ -174,7 +174,8 @@ be **new**, so previous results are never silently overwritten.
   thresholds, all six tagged-lock actions and card/skull colors, weapon
   ownership/ammo/cadence/combat/carry/restart/death, Baron floor actions, and
   tagged stair triggers/chains/speeds/headroom/restart, and crusher
-  activation/cycles/damage/stop/resume/mover ownership.
+  activation/cycles/damage/stop/resume/mover ownership, plus switch texture
+  selection, success/denial, button deadlines/retriggers and map lifecycle.
 - `native` drives the actual Linux executable using XTest keyboard events and
   reads the X11 framebuffer: demo completion/restart, Tab/movement/firing HUD,
   two lift lower/wait/raise/carry/step-off cycles, and both weapons with PCM
@@ -182,6 +183,8 @@ be **new**, so previous results are never silently overwritten.
   for all four supported actions and require untagged controls to stay blocked.
   Crusher checks require death in active traps versus stable frames/health100
   after stop actions; two fast-crusher cases also require null PCM submission.
+  Switch checks observe off/on colors, permanent latches, timed resets and
+  denied/manual controls; one repeatable-button case also requires null PCM.
 
 Results contain explicit pass/fail assertions, diagnostics, executable hashes,
 caller-supplied source revision and native frame/input records. A source revision
@@ -208,6 +211,8 @@ capture/turning where supported, automap, pause/restart, WebAudio scheduling, mu
 automatic bundled Freedoom startup before any interaction, local WAD loading,
 and visible load/download errors with retry. Browser tooling brings Playwright's own driver/browser dependencies;
 the application itself does not depend on Playwright.
+Original switch fixtures additionally exercise visible one-shot latching,
+repeatable reset, key denial and preservation of a pending button while paused.
 
 On headless Linux, Firefox needs a working audio backend even to schedule
 WebAudio. CI supplies a private PulseAudio null sink and exports its `PULSE_SERVER`;
@@ -233,8 +238,9 @@ Active floor movers are not overwritten. A busy seed can be retried; a busy
 neighbor is skipped when choosing the next link. Successful activation consumes
 the action; missing/zero tags leave it available and display a diagnostic.
 Stairs reuse moving-floor support and non-crushing occupancy checks, resume
-after an obstruction clears, and reset on restart. Switch textures, exact vanilla
-busy-neighbor quirks and complete campaign progression are not qualified.
+after an obstruction clears, and reset on restart. Use-switch feedback is covered
+below; exact vanilla busy-neighbor quirks and complete campaign progression
+remain unqualified.
 
 ### Tagged crushers
 
@@ -268,6 +274,29 @@ The action mapping is cross-checked against the
 Other crusher/ceiling actions, exact original obstruction quirks and authentic
 campaign completion remain unqualified.
 
+### Switch textures and buttons
+
+On `feat/classic-switch-textures` (not merged into `main`), successful front-side
+use toggles the 40 canonical vanilla `SW1`/`SW2` pairs on existing switch actions:
+7/127, 11/51, 18/21/23/60/62/69/122/123, and
+29/63/99/103/111/112/113/133/134/135/136/137. Pair-table order is considered
+first, off before on, then upper/middle/lower; only the front sidedef changes.
+This is not arbitrary name-prefix pairing or support for Boom `SWITCHES` lumps.
+
+One-shot switches latch. Repeatable buttons (60/62/69/123/63/99/134/136)
+restore their original texture after 35 subsequent gameplay ticks. Successful
+early retriggers may toggle again but neither extend the original deadline nor
+create another reset. Failed/busy actions leave textures and deadlines untouched.
+Buttons are independent, pause with gameplay, and are discarded on restart or
+map change. Switch clicks/reset use `SWTCHN`; exit switches use `SWTCHX`.
+
+Missing partners leave the texture unchanged, log once per map and allow another
+valid slot/pair to be selected; unsupported custom switch names are diagnosed
+without installing checkerboards. Missing tags, keys, busy movers and back-side
+use do not falsely consume S1 actions or change textures. Manual doors and
+crossing actions do not toggle switch textures. This adds feedback to existing
+dispatch, not new action families or full door/mover/gameplay parity.
+
 ### Compatibility
 
 Implemented: classic IWAD/PWAD directory/geometry/BSP validation; textured
@@ -277,6 +306,7 @@ pickups, keys, armor, simplified enemies/barrels; common doors, tagged locks,
 lifts/floors, tagged stairs and cycling crushers, teleports, damaging floors,
 secrets, exits and map progression;
 E1M8 last-Baron/tag666 floors; DMX effects, HUD and automap.
+The switch-texture branch additionally supplies the bounded feedback above.
 
 Still incomplete: other weapons/powerups, exact monster states/AI/physics/RNG,
 remaining crusher/ceiling and moving-sector/switch specials, other boss actions,

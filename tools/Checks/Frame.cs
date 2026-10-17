@@ -30,6 +30,16 @@ sealed record Frame(int Width, int Height, byte[] Rgb)
             if (Rgb[i * 3] == 8 && Rgb[i * 3 + 1] == 9 && Rgb[i * 3 + 2] == 11) count++;
         return count / (double)pixels;
     }
+    public int SwitchPixels(bool on)
+    {
+        int count = 0;
+        for (int i = 0; i < Width * (Height * 7 / 8); i++)
+        {
+            int r = Rgb[i * 3], g = Rgb[i * 3 + 1], b = Rgb[i * 3 + 2];
+            if (on ? g > r * 2 && g > b * 2 : r > g * 2 && r > b * 2) count++;
+        }
+        return count;
+    }
     public int Ammo()
     {
         string[] digits = [

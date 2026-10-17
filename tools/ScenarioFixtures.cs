@@ -79,6 +79,96 @@ public static class ScenarioFixtures
                 "overlap", "actor", "barrel", "drop", "stop57", "stop74", "door-busy", "floor-busy",
                 "crusher-door", "crusher-floor", "double-contact", "raised-floor", "paused-player", "trap", "paused-actor" })
                 yield return ($"crusher-{special}-{mode}", Write(assets.Concat(Crusher(special, mode))));
+        var switchAssets = assets.ToList();
+        byte[] palette = (byte[])switchAssets.Single(l => l.Name == "PLAYPAL").Data.Clone();
+        new byte[] { 220, 40, 32, 32, 220, 48 }.CopyTo(palette, 230 * 3);
+        switchAssets[switchAssets.FindIndex(l => l.Name == "PLAYPAL")] = new("PLAYPAL", palette);
+        switchAssets[switchAssets.FindIndex(l => l.Name == "PNAMES")] = new("PNAMES",
+            Pack(w => { w.Write(4); foreach (string name in new[] { "QLSOLID", "QLMASK", "SWOFF", "SWON" }) Name(w, name); }));
+        switchAssets.Add(new("SWOFF", Patch(64, 128, 0, 128, 230)));
+        switchAssets.Add(new("SWON", Patch(64, 128, 0, 128, 231)));
+        foreach (string effect in new[] { "SWTCHN", "SWTCHX", "DOROPN", "BDOPN", "NOWAY" })
+            switchAssets.Add(new("DS" + effect, Pack(w => { w.Write((ushort)3); w.Write((ushort)11025); w.Write(tone.Length); w.Write(tone); })));
+        List<(int Special, string Mode)> switches = [];
+        foreach (int special in new[] { 7, 127, 11, 51, 18, 21, 23, 60, 62, 69, 122, 123,
+            29, 63, 99, 103, 111, 112, 113, 133, 134, 135, 136, 137 })
+            foreach (string mode in new[] { "middle", "no-tag", "back" }) switches.Add((special, mode));
+        foreach (int special in new[] { 29, 99 })
+            foreach (string mode in new[] { "upper", "lower", "reverse", "priority", "same-pair", "pair-state",
+                "missing", "fallback", "custom", "busy", "tier-two", "tier-three" }) switches.Add((special, mode));
+        foreach (int special in new[] { 7, 18, 23, 62 }) switches.Add((special, "busy"));
+        foreach (int special in new[] { 1, 31, 6, 8 }) switches.Add((special, "middle"));
+        foreach (int special in locks) switches.Add((special, "no-key"));
+        switches.Add((63, "independent"));
+        switches.Add((63, "carry"));
+        foreach (var scenario in switches)
+            yield return ($"switch-{scenario.Special}-{scenario.Mode}", Write(switchAssets
+                .Append(new("TEXTURE2", SwitchTextures(scenario.Mode is "missing" or "fallback")))
+                .Concat(Switch(scenario.Special, scenario.Mode))));
+    }
+
+    static byte[] SwitchTextures(bool missing) => Pack(w =>
+    {
+        string[] names = ["SW1BRCOM", "SW2BRCOM", "SW1BRN1", "SW2BRN1", "SW1EXIT", "SW2EXIT",
+            "SW1WOOD", "SW2WOOD", "SW1SKULL", "SW2SKULL", "SW1TEST", "SW2TEST"];
+        if (missing) names = names.Where(n => n != "SW2BRCOM").ToArray();
+        w.Write(names.Length);
+        for (int i = 0; i < names.Length; i++) w.Write(4 + names.Length * 4 + i * 32);
+        foreach (string name in names)
+        {
+            Name(w, name); w.Write(0); w.Write(Shorts(64, 128)); w.Write(0); w.Write((short)1);
+            w.Write(Shorts(0, 0, name.StartsWith("SW1", StringComparison.Ordinal) ? 2 : 3, 1, 0));
+        }
+    });
+
+    static List<Lump> Switch(int special, string mode)
+    {
+        bool door = special is 1 or 31 or 29 or 63 or 99 or 103 or 111 or 112 or 113 or 133 or 134 or 135 or 136 or 137;
+        int floor = special is 21 or 62 or 122 or 123 ? 64 : special is 23 or 60 ? 24 : 0;
+        int[] floors = [0, 0, mode == "lower" ? 32 : 0, floor, special is 18 or 69 ? 24 : 0];
+        int[] ceilings = [128, 128, mode == "upper" ? 64 : 128, door ? 0 : 128, 128];
+        if (special is 1 or 31) { ceilings[2] = 0; ceilings[3] = 128; }
+        int[] tags = [0, 0, 0, mode == "no-tag" ? 8 : 7, mode == "independent" ? 9 : 0];
+        if (mode == "independent") ceilings[4] = 0;
+        int x = mode == "busy" ? -96 : mode == "upper" ? -64 : mode == "back" ? 32 : -32;
+        List<(int X, int Y, int Type)> things = [(x, 0, 1)];
+        int key = special is 99 or 133 ? 5 : special is 134 or 135 ? 13 : special is 136 or 137 ? 6 : 0;
+        if (key != 0 && mode != "no-key") things.Add((x, 0, key));
+        var map = Corridor("E1M1", [-192, -64, 0, 64, 128, 320], floors, ceilings, tags, things);
+        byte[] lines = map.Single(l => l.Name == "LINEDEFS").Data;
+        void Action(int line, int action, int tag)
+        {
+            BinaryPrimitives.WriteUInt16LittleEndian(lines.AsSpan(line * 14 + 6), (ushort)action);
+            BinaryPrimitives.WriteUInt16LittleEndian(lines.AsSpan(line * 14 + 8), (ushort)tag);
+        }
+        Action(7, special, 7);
+        if (mode == "busy") Action(6, door ? 2 : 58, 7);
+        if (mode == "independent") Action(8, 63, 9);
+        if (mode == "carry") Action(8, 11, 0);
+        byte[] sides = map.Single(l => l.Name == "SIDEDEFS").Data;
+        int right = BinaryPrimitives.ReadUInt16LittleEndian(lines.AsSpan(7 * 14 + 10));
+        void Texture(int side, int slot, string texture) =>
+            Encoding.ASCII.GetBytes(texture.PadRight(8, '\0')).CopyTo(sides, side * 30 + 4 + slot * 8);
+        string name = mode == "reverse" ? "SW2BRCOM" : mode == "custom" ? "SW1TEST" :
+            mode == "tier-two" ? "SW1WOOD" : mode == "tier-three" ? "SW1SKULL" : "SW1BRCOM";
+        int slot = mode == "upper" || special is 1 or 31 ? 0 : mode == "lower" ? 1 : 2;
+        Texture(right, slot, name);
+        if (mode is "priority" or "same-pair" or "pair-state" or "fallback")
+        {
+            Texture(right, 0, mode is "priority" or "fallback" ? "SW1EXIT" : mode == "pair-state" ? "SW2BRCOM" : "SW1BRCOM");
+            Texture(right, 2, mode == "priority" ? "SW1BRN1" : "SW1BRCOM");
+            Texture(right, 1, mode == "priority" ? "SW1BRCOM" : mode == "fallback" ? "SW1EXIT" : "-");
+            if (mode == "same-pair") Texture(right, 1, "SW1BRCOM");
+        }
+        if (mode == "independent")
+        {
+            int second = BinaryPrimitives.ReadUInt16LittleEndian(lines.AsSpan(8 * 14 + 10));
+            Texture(second, 2, "SW1BRN1");
+        }
+        if (mode == "back")
+            BinaryPrimitives.WriteUInt16LittleEndian(map.Single(l => l.Name == "THINGS").Data.AsSpan(4), 180);
+        if (mode == "carry") map.AddRange(Room("E1M2", [(-64, 0, 1)]));
+        return map;
     }
 
     static void AddBarrier(List<Lump> map)

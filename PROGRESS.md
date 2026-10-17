@@ -6,7 +6,7 @@ commands and verification boundaries. Entries below are historical: Python
 commands and old runner hashes refer to their recorded revisions, not current
 tooling. Historical platform results do not qualify a newer local revision.
 
-Last verified: **2026-10-17**, against implementation
+Milestone verified: **2026-10-17**, against implementation
 [`42a186f`](https://github.com/davidfowl/doomsharp/commit/42a186f1269cd022ae6f68d2bdcb04b2b89fa1d5)
 and its [completed CI run](https://github.com/davidfowl/doomsharp/actions/runs/39067803717).
 This distinguishes the qualified playable increment from full DOOM compatibility
@@ -17,8 +17,12 @@ and physical-device verification. **Full original-DOOM parity remains unfinished
 `8af8ca24f954045b1d23d4df8ceb5d8e92f67180` to `main` was rejected with
 `push declined due to repository rule violations`. Remote `main` was then
 verified unchanged at `6325ccd0f837bdf7bdce1467da709ee211c53ff7`.
-No bypass or retry was attempted. The two branch-only rows below are not
+No bypass or retry was attempted. The branch-only rows below are not
 merged-main capabilities.
+
+The distinct switch-texture increment is on `feat/classic-switch-textures`,
+based on preserved milestone tip `7bf840a`. Its local qualification is described
+below; the earlier completed CI run does not qualify this newer implementation.
 
 ## Merged
 
@@ -61,15 +65,72 @@ Build/publish output includes the Phase 1 WAD, BSD license and credits.
 | Movement, collision and sector actions | Partial | Native door/lift paths and selected boundaries; tagged locked fast-door99/133-137 action scope has dedicated executable scenarios below, not every mover/trigger |
 | Tagged stair builders | Branch only (partial) | Actions7/8/100/127, directed same-flat chains and shared floor support;128 engine assertions and eight Linux native positive/negative processes; not exact original busy-neighbor quirks or campaign completion |
 | Cycling crushers and stops | Branch only (partial) | Actions6/25/77/141 with57/74 stops, speed/cycles, footprint/armor damage and preserved pause/resume;222 engine assertions and eight Linux native processes; simplified actor heights/corpses and other ceiling actions remain incomplete |
+| Classic switch textures/buttons | Branch only (partial) | Feedback for 24 existing S1/SR actions, 40 vanilla pairs, 35-tick independent resets, success/denial and lifecycle coverage; synthetic Linux and WASM observations below, not all switch/action families or campaigns |
 | Map progression and damaging exits | Partial | Native Linux input observes E1M1 to E1M2 with inventory/health retained; local classic-map scenarios qualify sector-11 damage/exit, fresh dead-player next-map state and finale/missing-map stop; not original campaign completion |
 | E1M8 Baron/tag666 floor action | Partial | Last living type3003 with a live player, all eligible tagged floors lower to lowest neighbors through shared movers;14 synthetic native cases below, not original E1M8/campaign or exact death-state timing |
 | Actors, sprites, pickups and barrels | Partial | Native demo observes pickup and one enemy kill; exact states/attacks, infighting, boss behavior and many item/visual cases remain unfinished or unverified |
 | HUD, weapon overlays and automap | Partial | Actual executable exports HUD/weapon frames; local Linux native Tab on/off plus W/Ctrl controls qualify automap input, not original visuals or other-platform interactive behavior |
 | Native window presentation | Working | Six native OS/architecture targets pass bounded desktop CI; Linux also exercises synthetic OS input; not physical-device verification |
 | DMX decoding and sound-effects mixer | Partial | Native Linux playthrough submits effects to ALSA null; exact resampling/audio comparison, audible playback and Windows/macOS audio unverified |
-| Remaining weapons/powerups, mover variants, switch textures and other boss actions | Not implemented | Required for original gameplay/campaign parity |
+| Remaining weapons/powerups, mover variants, switch action families and other boss actions | Not implemented | Required for original gameplay/campaign parity |
 | Music/MUS, saves, menus, multiplayer and extended maps/mods | Not implemented | No end-to-end capability claimed |
 | Complete authentic WAD campaigns | Unverified | Map rendering alone is not campaign completion; missing behaviors can block progression |
+
+## Classic switch feedback (branch only)
+
+This increment changes front-sidedef textures only after an existing use action
+actually succeeds. S1 switches latch; supported SR buttons restore the initial
+texture after 35 subsequent gameplay ticks, without extending/duplicating a
+pending reset on successful retrigger. Failed actions do not toggle or consume
+S1 specials. Manual doors and crossing actions retain their non-switch behavior.
+The README documents exact actions, pairing precedence and missing-asset policy.
+
+There are 112 new original fixtures (343 total). The final new engine tests
+against preserved production source `7bf840a` fail 265 of 1,060 switch assertions;
+all 471 earlier engine assertions pass. Baseline uses a newly published AOT
+executable from that production revision, with the candidate's regression tools
+and fixtures; it does not relabel the older qualification executable.
+All 231 pre-existing fixture WADs remain byte-identical to the retained milestone
+manifest.
+
+Local candidate qualification covers 348 executable/CLI checks, 1,531 engine
+assertions and 60 Linux native assertions (1,939 total). Nine new native processes
+observe rendered off/on colors, upper/middle/lower surfaces, latches/resets and
+denied/manual controls; one additionally requires nonzero ALSA-null PCM.
+Engine checks cover every selected action's front/back/missing-tag paths,
+keys, busy/no-motion failures, pair/slot/state precedence, absent partners and
+fallback, unsupported custom pairs, exact tick boundaries, successful/failed
+retrigger, independent timers, pending restart, warning deduplication and map
+transition. The original stair/crusher checks remain in the same suite.
+
+Linux x64 Native AOT publish and local browser Debug/non-AOT Release builds
+are included. Local Chromium runtime checks additionally observe switch latch,
+reset, key denial and pause preservation through the WASM host. Browser runtime
+checks do not qualify stair/crusher routes or complete campaigns. Local results
+and executable/input/fixture identities are under ignored `artifacts/switch-*`;
+these paths are sandbox-local evidence, not owner-accessible downloads. Remote
+CI for this increment must be independently identified before claiming its
+platform or Release-AOT coverage.
+
+The first native development run exposed an invalid manual-door control target;
+the corrected fixture gives manual doors their actual back sector and a visible
+upper surface. A browser development run exposed Use arriving before the first
+key-pickup tick; the harness now allows gameplay to collect the spawn card before
+Use. A concurrent native development run also missed an existing type136
+traversal threshold; retain that failure separately from final serial results.
+These are not hidden as successful runs.
+
+**Integration gate:** a fresh authenticated effective-main-rules request at
+2026-10-17T21:59:52Z still returned HTTP 403, API rate limit exceeded, after the
+previously recorded reset. The retained push rejection identifies repository
+rule violations but not the individual rule. Current rule/check/issue state and
+whether owner action is necessary remain unknown. No main retry, PR, bypass,
+rule change or unreconciled help issue was attempted in this increment.
+
+Limits: synthetic XTest input/null PCM are not physical devices or audible sound.
+Vanilla pair selection is not custom/extended switch-lump support. Feedback uses
+existing mover dispatch and does not correct every door or moving-sector
+semantic, establish original-engine parity, or prove campaign completion.
 
 ## Stair/crusher milestone qualification (branch only)
 
@@ -180,7 +241,7 @@ rule gate is required before remote integration.
 ### Remaining compatibility work
 
 Remaining compatibility work includes other stair/crusher and mover variants,
-all vanilla map specials and switch textures, other boss actions, exact monster states
+remaining vanilla map specials and switch action families, other boss actions, exact monster states
 and attacks/infighting, remaining weapons/powerups, telefragging, original physics,
 music/MUS playback, saves, menus and multiplayer. These gaps can block complete
 authentic WAD campaigns. Extended maps/mod formats are not implemented.
@@ -515,7 +576,7 @@ Owning a proprietary WAD does not permit redistribution; none is bundled.
 
 ## Next milestones
 
-- Complete vanilla map-special dispatch, mover variants, switches and boss actions.
+- Complete vanilla map-special dispatch, remaining mover/switch families and boss actions.
 - Implement remaining combat/weapon/powerup behavior and original gameplay semantics.
 - Add music, saves and menus, then verify full campaigns with lawful user-supplied WADs.
 - Verify interactive input and audible audio on physical Windows/Linux/macOS systems,
