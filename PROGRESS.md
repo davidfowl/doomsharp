@@ -12,6 +12,14 @@ and its [completed CI run](https://github.com/davidfowl/doomsharp/actions/runs/3
 This distinguishes the qualified playable increment from full DOOM compatibility
 and physical-device verification. **Full original-DOOM parity remains unfinished.**
 
+**Integration status (2026-10-17):** the stair/crusher milestone remains on
+`feat/classic-stair-builders`. A normal fast-forward push of qualified candidate
+`8af8ca24f954045b1d23d4df8ceb5d8e92f67180` to `main` was rejected with
+`push declined due to repository rule violations`. Remote `main` was then
+verified unchanged at `6325ccd0f837bdf7bdce1467da709ee211c53ff7`.
+No bypass or retry was attempted. The two branch-only rows below are not
+merged-main capabilities.
+
 ## Merged
 
 [Engine PR #1](https://github.com/davidfowl/doomsharp/pull/1) was squash-merged at
@@ -21,8 +29,8 @@ It uses the .NET platform/BCL and OS APIs, not third-party managed libraries or
 game engines. Original DOOM source and proprietary WADs are not included.
 
 The [status reconciliation PR #3](https://github.com/davidfowl/doomsharp/pull/3)
-is also merged. This page describes capabilities available on `main`, not
-unmerged branch claims. Working below means verified **within the stated scope**,
+is also merged. Except for explicitly marked branch-only rows, this page
+describes capabilities available on `main`. Working below means verified **within the stated scope**,
 not complete original-DOOM behavior.
 
 [Executable-only assurance PR #7](https://github.com/davidfowl/doomsharp/pull/7)
@@ -51,8 +59,8 @@ Build/publish output includes the Phase 1 WAD, BSD license and credits.
 | Chaingun pickup/fire/inventory | Partial | Type2002 and chaingunner drop, key4, shared bullets, four-tick shots/two-shot pairs and supplied body/flash patches; dedicated Linux executable scenarios below, not exact original timing/RNG/visual parity or broad platform gameplay |
 | Rocket launcher/inventory/projectiles | Partial | Type2003/key5, separate2010/2046 ammo/cap50, real20-unit/tick swept missiles, direct/occluded radial damage and supplied weapon/flight/explosion patches; bounded native scenarios described below, not exact original autoaim/windup/RNG/visual or campaign parity |
 | Movement, collision and sector actions | Partial | Native door/lift paths and selected boundaries; tagged locked fast-door99/133-137 action scope has dedicated executable scenarios below, not every mover/trigger |
-| Tagged stair builders | Partial | Actions7/8/100/127, directed same-flat chains and shared floor support;128 engine assertions and eight Linux native positive/negative processes; not exact original busy-neighbor quirks or campaign completion |
-| Cycling crushers and stops | Partial | Actions6/25/77/141 with57/74 stops, speed/cycles, footprint/armor damage and preserved pause/resume;222 engine assertions and eight Linux native processes; simplified actor heights/corpses and other ceiling actions remain incomplete |
+| Tagged stair builders | Branch only (partial) | Actions7/8/100/127, directed same-flat chains and shared floor support;128 engine assertions and eight Linux native positive/negative processes; not exact original busy-neighbor quirks or campaign completion |
+| Cycling crushers and stops | Branch only (partial) | Actions6/25/77/141 with57/74 stops, speed/cycles, footprint/armor damage and preserved pause/resume;222 engine assertions and eight Linux native processes; simplified actor heights/corpses and other ceiling actions remain incomplete |
 | Map progression and damaging exits | Partial | Native Linux input observes E1M1 to E1M2 with inventory/health retained; local classic-map scenarios qualify sector-11 damage/exit, fresh dead-player next-map state and finale/missing-map stop; not original campaign completion |
 | E1M8 Baron/tag666 floor action | Partial | Last living type3003 with a live player, all eligible tagged floors lower to lowest neighbors through shared movers;14 synthetic native cases below, not original E1M8/campaign or exact death-state timing |
 | Actors, sprites, pickups and barrels | Partial | Native demo observes pickup and one enemy kill; exact states/attacks, infighting, boss behavior and many item/visual cases remain unfinished or unverified |
@@ -63,7 +71,7 @@ Build/publish output includes the Phase 1 WAD, BSD license and credits.
 | Music/MUS, saves, menus, multiplayer and extended maps/mods | Not implemented | No end-to-end capability claimed |
 | Complete authentic WAD campaigns | Unverified | Map rendering alone is not campaign completion; missing behaviors can block progression |
 
-## Stair/crusher milestone qualification
+## Stair/crusher milestone qualification (branch only)
 
 ### Classic stair builders
 
@@ -160,6 +168,14 @@ stair preservation. No material correctness issue was found within the stated
 contract. The qualification documentation changes no engine, host, fixture,
 check, workflow or dependency inputs; runtime evidence remains pinned to `42a186f`
 rather than being mislabeled as a later execution.
+
+Candidate `8af8ca2` also passed a fresh 748 local checks (236 executable/CLI,
+471 engine and 41 native), Linux x64 AOT publishing, both local browser build
+configurations and 36 map-start renders. Only README/progress documentation
+differs from `42a186f`; no runtime inputs changed. Its own CI status could not
+be retrieved after a renewed API rate limit. Neither that unavailable status
+nor the rejected main push is reported as success. Resolving the repository
+rule gate is required before remote integration.
 
 ### Remaining compatibility work
 

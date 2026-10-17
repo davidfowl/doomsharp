@@ -65,6 +65,8 @@ the browser Release-AOT application passes 38 Chromium, 38 Firefox and 37 WebKit
 runtime assertions. WebKit mouse look was unavailable, and the browser checks
 do not traverse stair/crusher scenarios. See [PROGRESS.md](PROGRESS.md) for exact
 coverage, downloadable CI evidence and remaining compatibility limits.
+This milestone is still branch-only: a normal main fast-forward was rejected
+by repository rules. The qualified branch is preserved; no rule bypass was used.
 
 ## Browser WebAssembly
 
