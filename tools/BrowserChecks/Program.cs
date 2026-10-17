@@ -1,6 +1,9 @@
 using System.Text.Json;
+using System.Security.Cryptography;
 using Microsoft.Playwright;
 using DoomSharp;
+
+const string FreedoomSha256 = "7323bcc168c5a45ff10749b339960e98314740a734c30d4b9f3337001f9e703d";
 
 if (args.Length > 0 && args[0] == "install") return Microsoft.Playwright.Program.Main(args);
 
@@ -73,8 +76,10 @@ try
             return original.apply(this, args);
         };
         """);
-    await page.GotoAsync(args[0]);
-    await page.GetByRole(AriaRole.Button, new() { Name = "Test level", Exact = true }).WaitForAsync();
+    IResponse bundledWad = await page.RunAndWaitForResponseAsync(
+        () => page.GotoAsync(args[0]),
+        response => response.Url == new Uri(baseUri, "assets/freedoom/freedoom1.wad").AbsoluteUri);
+    await page.GetByRole(AriaRole.Button, new() { Name = "Restart Freedoom", Exact = true }).WaitForAsync();
     ILocator canvas = page.Locator("#game");
     async Task CheckPageScroll(string name, bool overCanvas)
     {
@@ -85,8 +90,6 @@ try
         double scroll = await page.EvaluateAsync<double>("window.scrollY");
         Check(name, scroll > 100, scroll);
     }
-    await CheckPageScroll("initial-wheel-over-canvas-scrolls-page", true);
-    await CheckPageScroll("initial-wheel-outside-canvas-scrolls-page", false);
     async Task<JsonElement> Pixels() => await canvas.EvaluateAsync<JsonElement>("""
         c => {
             const p = c.getContext('2d').getImageData(0, 0, 640, 400).data;
@@ -127,20 +130,6 @@ try
         return string.Concat(glyphs.Select(g => Enumerable.Range(32, 59).Select(i => (char)i)
             .FirstOrDefault(c => Font.Glyph(c) == g, '?')));
     }
-    async Task UntilHud(int y, int color, string text)
-    {
-        DateTime deadline = DateTime.UtcNow.AddSeconds(12);
-        string observed = "";
-        while (DateTime.UtcNow < deadline)
-        {
-            observed = await Hud(y, color);
-            if (observed.Contains(text, StringComparison.Ordinal)) return;
-            await page.WaitForTimeoutAsync(100);
-        }
-        await page.ScreenshotAsync(new() { Path = Path.Combine(output, "failed-hud.png") });
-        diagnostics.Add(await page.EvaluateAsync<string>("JSON.stringify({focus:document.activeElement?.id,hasFocus:document.hasFocus(),locked:document.pointerLockElement?.id,input:window.inputTrace,mouse:window.mouseTrace})"));
-        throw new InvalidOperationException($"Visible HUD did not reach '{text}': {observed}");
-    }
     async Task WaitForPixels(bool automap = false)
     {
         await page.WaitForFunctionAsync("""
@@ -172,11 +161,39 @@ try
         diagnostics.Add("Load status: " + text);
         if (!text.StartsWith("Playing ", StringComparison.Ordinal)) throw new InvalidOperationException(text);
     }
-    await page.GetByRole(AriaRole.Button, new() { Name = "Test level", Exact = true }).ClickAsync();
+    await WaitForLoad();
+    await WaitForPixels();
+    Check("Freedoom-autoloads-E1M1", (await page.GetByRole(AriaRole.Status).InnerTextAsync()).StartsWith("Playing E1M1.", StringComparison.Ordinal));
+    // The WAD exceeds Chromium's inspector response-body cache.
+    IAPIResponse wadAsset = await page.APIRequest.GetAsync(bundledWad.Url);
+    Check("bundled-Freedoom-asset", bundledWad.Ok && wadAsset.Ok &&
+        Convert.ToHexStringLower(SHA256.HashData(await wadAsset.BodyAsync())) == FreedoomSha256);
+    await wadAsset.DisposeAsync();
+    Check("no-test-level-button", await page.GetByRole(AriaRole.Button, new() { Name = "Test level", Exact = true }).CountAsync() == 0);
+    Check("autoplay-does-not-request-audio-or-pointer", await page.EvaluateAsync<bool>(
+        "window.audioContexts.length === 0 && window.soundStarts === 0 && document.pointerLockElement === null"));
+    Check("autoplay-focuses-keyboard-controls", await canvas.EvaluateAsync<bool>("c => document.activeElement === c"));
+    JsonElement autoplay = await Pixels();
+    Check("Freedoom-renders-without-interaction", autoplay.GetProperty("nonblack").GetInt32() > 200000, autoplay);
+    await page.ScreenshotAsync(new() { Path = Path.Combine(output, "freedoom-autoplay.png") });
+    await Hold("ArrowRight", 400);
+    Check("Freedoom-runs-before-first-click", (await Pixels()).GetProperty("hash").GetUInt32() != autoplay.GetProperty("hash").GetUInt32());
+    await Hold("Control", 250);
+    string autoplayHud = await Hud(355, 0xffdb8a);
+    Check("Freedoom-fires-before-first-click", autoplayHud.Contains("PISTOL", StringComparison.Ordinal)
+        && !autoplayHud.Contains("AMMO 50 ", StringComparison.Ordinal), autoplayHud);
+    Check("autoplay-remains-silent", await page.EvaluateAsync<bool>("window.audioContexts.length === 0 && window.soundStarts === 0"));
+    await CheckPageScroll("active-wheel-outside-canvas-scrolls-page", false);
+    await canvas.ClickAsync();
+    await Hold("Control", 400);
+    Check("Freedoom-WebAudio-after-click", await page.EvaluateAsync<int>("window.soundStarts") > 0,
+        await page.EvaluateAsync<JsonElement>("({states:window.audioContexts.map(a=>a.state),status:document.querySelector('#status').textContent})"));
+    await page.Keyboard.PressAsync("Escape");
+    await page.Locator("input[type=file]").SetInputFilesAsync(Path.Combine(fixtures, "portal-equal.wad"));
     await WaitForLoad();
     await WaitForPixels();
     JsonElement initial = await Pixels();
-    Check("fixture-renders-in-WASM", initial.GetProperty("nonblack").GetInt32() > 200000, initial);
+    Check("local-WAD-renders-in-WASM", initial.GetProperty("nonblack").GetInt32() > 200000, initial);
     await canvas.ClickAsync();
     await page.WaitForTimeoutAsync(300);
     Check("pointer-capture-preserves-view", (await Pixels()).GetProperty("hash").GetUInt32() == initial.GetProperty("hash").GetUInt32());
@@ -194,9 +211,6 @@ try
     await Hold("Tab", 100);
     JsonElement off = await Pixels();
     Check("Tab-closes-automap", off.GetProperty("background").GetInt32() < 12000, off);
-    await Hold("Control", 400);
-    Check("browser-WebAudio-effects", await page.EvaluateAsync<int>("window.soundStarts") > 0,
-        await page.EvaluateAsync<JsonElement>("({states:window.audioContexts.map(a=>a.state),status:document.querySelector('#status').textContent})"));
     await Hold("w", 500);
     JsonElement moved = await Pixels();
     Check("keyboard-moves-world", moved.GetProperty("hash").GetUInt32() != off.GetProperty("hash").GetUInt32());
@@ -221,7 +235,7 @@ try
     await page.SetViewportSizeAsync(1200, 1000);
     await page.ScreenshotAsync(new() { Path = Path.Combine(output, "fixture.png") });
     await page.GetByRole(AriaRole.Checkbox, new() { Name = "Mute" }).CheckAsync();
-    await page.GetByRole(AriaRole.Button, new() { Name = "Play Freedoom", Exact = true }).ClickAsync();
+    await page.GetByRole(AriaRole.Button, new() { Name = "Restart Freedoom", Exact = true }).ClickAsync();
     await WaitForLoad();
     await WaitForPixels();
     JsonElement freedoom = await Pixels();
@@ -236,39 +250,35 @@ try
     await WaitForLoad();
     await WaitForPixels();
     Check("local-WAD-renders", (await Pixels()).GetProperty("nonblack").GetInt32() > 200000);
-    await page.GetByRole(AriaRole.Button, new() { Name = "Test level", Exact = true }).ClickAsync();
-    await WaitForLoad(); await WaitForPixels();
     await canvas.ClickAsync();
-    await page.Keyboard.DownAsync("w");
-    await UntilHud(355, 0xffdb8a, "SHOTGUN");
-    await page.WaitForTimeoutAsync(500);
-    await page.Keyboard.UpAsync("w");
-    await Hold("e", 100); await page.WaitForTimeoutAsync(2500);
-    await page.Keyboard.DownAsync("w"); await page.Keyboard.DownAsync("Control");
-    await UntilHud(373, 0xc0c0c0, "KILLS 1/1");
-    await page.Keyboard.UpAsync("Control");
-    await page.WaitForTimeoutAsync(2500);
-    await page.Keyboard.UpAsync("w");
-    for (int attempt = 0; attempt < 5; attempt++)
-    {
-        await Hold("e", 100);
-        if ((await Hud(175, 0xffffff, 30, 50)).Contains("END OF AVAILABLE MAPS", StringComparison.Ordinal)) break;
-        await Hold("w", 1000);
-    }
-    string completed = await Hud(175, 0xffffff, 30, 50);
-    Check("browser-demo-completion", completed.Contains("END OF AVAILABLE MAPS", StringComparison.Ordinal), completed);
-    await page.ScreenshotAsync(new() { Path = Path.Combine(output, "completed-demo.png") });
+    await Hold("Control", 400);
+    Check("local-WAD-firing-consumes-ammo", !(await Hud(355, 0xffdb8a)).Contains("AMMO 50  PISTOL", StringComparison.Ordinal));
     await Hold("r", 100);
-    Check("browser-live-restart", (await Hud(355, 0xffdb8a)).Contains("AMMO 50  PISTOL", StringComparison.Ordinal)
-        && !(await Hud(175, 0xffffff, 30, 50)).Contains("END OF AVAILABLE MAPS", StringComparison.Ordinal));
+    Check("browser-live-restart", (await Hud(355, 0xffdb8a)).Contains("AMMO 50  PISTOL", StringComparison.Ordinal));
     await page.Keyboard.PressAsync("Escape");
     await page.Locator("input[type=file]").SetInputFilesAsync(Path.Combine(fixtures, "bad-directory-count.wad"));
     await page.GetByRole(AriaRole.Status).Filter(new() { HasText = "Cannot load WAD:" }).WaitForAsync();
     Check("invalid-WAD-reported", (await page.GetByRole(AriaRole.Status).InnerTextAsync()).Contains("directory", StringComparison.Ordinal));
     await page.GetByRole(AriaRole.Textbox, new() { Name = "Map", Exact = true }).FillAsync("E9M9");
-    await page.GetByRole(AriaRole.Button, new() { Name = "Test level", Exact = true }).ClickAsync();
+    await page.GetByRole(AriaRole.Button, new() { Name = "Restart Freedoom", Exact = true }).ClickAsync();
     await page.GetByRole(AriaRole.Status).Filter(new() { HasText = "Cannot load WAD:" }).WaitForAsync();
     Check("missing-map-reported", (await page.GetByRole(AriaRole.Status).InnerTextAsync()).Contains("E9M9", StringComparison.Ordinal));
+    await page.GetByRole(AriaRole.Textbox, new() { Name = "Map", Exact = true }).FillAsync("E1M2");
+    await page.GetByRole(AriaRole.Button, new() { Name = "Restart Freedoom", Exact = true }).ClickAsync();
+    await WaitForLoad();
+    await WaitForPixels();
+    Check("explicit-Freedoom-map-loads", (await page.GetByRole(AriaRole.Status).InnerTextAsync()).StartsWith("Playing E1M2.", StringComparison.Ordinal));
+    await page.RouteAsync("**/assets/freedoom/freedoom1.wad",
+        route => route.FulfillAsync(new() { Status = 503, Body = "WAD unavailable" }));
+    await page.ReloadAsync();
+    await page.GetByRole(AriaRole.Status).Filter(new() { HasText = "Cannot load WAD:" }).WaitForAsync();
+    Check("autoload-download-failure-reported", (await page.GetByRole(AriaRole.Status).InnerTextAsync()).Contains("503", StringComparison.Ordinal));
+    Check("failed-autoload-allows-retry", await page.GetByRole(AriaRole.Button, new() { Name = "Restart Freedoom", Exact = true }).IsEnabledAsync());
+    await page.UnrouteAsync("**/assets/freedoom/freedoom1.wad");
+    await page.GetByRole(AriaRole.Button, new() { Name = "Restart Freedoom", Exact = true }).ClickAsync();
+    await WaitForLoad();
+    await WaitForPixels();
+    Check("Freedoom-recovers-after-download-failure", (await page.GetByRole(AriaRole.Status).InnerTextAsync()).StartsWith("Playing E1M1.", StringComparison.Ordinal));
     Check("no-unhandled-browser-errors", errors.Count == 0, errors);
     Check("resources-stay-under-base-path", outsideBase.Count == 0, outsideBase);
     Check("no-false-fatal-error-banner", !await page.Locator("#blazor-error-ui").IsVisibleAsync());

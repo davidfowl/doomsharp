@@ -67,6 +67,13 @@ export function initialize(reference) {
     animation = requestAnimationFrame(frame);
 }
 
+export function start() {
+    mouseX = 0;
+    awaitingMouse = true;
+    active = !document.hidden;
+    if (active) canvas.focus({ preventScroll: true });
+}
+
 function pause() {
     activation++;
     active = false;
@@ -96,8 +103,9 @@ async function frame(time) {
 }
 
 export function playSound(bytes, sampleRate) {
-    if (!active) return;
-    if (!audio || audio.state !== "running") throw new Error("Click the game to enable browser audio.");
+    // Autoplay runs silently until a user gesture enables WebAudio.
+    if (!active || !audio) return;
+    if (audio.state !== "running") throw new Error("Click the game to enable browser audio.");
     const buffer = audio.createBuffer(1, bytes.length / 2, sampleRate);
     const samples = buffer.getChannelData(0);
     const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
