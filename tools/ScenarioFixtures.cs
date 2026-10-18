@@ -105,6 +105,73 @@ public static class ScenarioFixtures
             yield return ($"switch-{scenario.Special}-{scenario.Mode}", Write(switchAssets
                 .Append(new("TEXTURE2", SwitchTextures(scenario.Mode is "missing" or "fallback")))
                 .Concat(Switch(scenario.Special, scenario.Mode))));
+        foreach (int special in new[] { 19, 45, 83, 102 })
+            foreach (string mode in new[] { "highest", "negative", "equal", "higher", "no-neighbor",
+                "self-ref", "no-tag", "zero-tag", "multiple", "busy-floor", "busy-door",
+                "busy-crusher", "partial-busy", "floor-door", "back", "occupied", "blocked" })
+                yield return ($"floor-highest-{special}-{mode}", Write(switchAssets
+                    .Append(new("TEXTURE2", SwitchTextures(false))).Concat(LowerHighest(special, mode))));
+    }
+
+    static List<Lump> LowerHighest(int special, string mode)
+    {
+        int[] floors = [0, 0, 24, 64, -16, 128];
+        int[] ceilings = [128, 128, 128, 128, 128, 128];
+        int tag = mode == "zero-tag" ? 0 : 7;
+        int[] tags = [0, 0, 0, mode == "no-tag" ? 8 : tag, 0, 0];
+        if (mode == "negative") { floors[2] = -24; floors[4] = -64; }
+        if (mode == "equal") floors[4] = 64;
+        if (mode == "higher") floors[4] = 96;
+        if (mode == "busy-door") ceilings[3] = 64;
+        if (mode is "multiple" or "partial-busy") tags[5] = tag;
+        if (mode is "occupied" or "blocked")
+        {
+            tags[3] = 0; tags[2] = tag;
+            floors[1] = mode == "occupied" ? 40 : 0;
+            floors[2] = mode == "occupied" ? 64 : 0;
+            floors[3] = 24;
+            ceilings[2] = mode == "occupied" ? 120 : 60;
+        }
+        bool busy = mode.StartsWith("busy-", StringComparison.Ordinal) || mode is "partial-busy" or "floor-door";
+        var map = Corridor("E1M1", [-192, -64, 0, 96, 192, 320, 448], floors, ceilings, tags,
+            [(busy ? -96 : mode == "back" ? 32 : -32, 0, 1)]);
+        byte[] lines = map.Single(l => l.Name == "LINEDEFS").Data;
+        void Action(int line, int action)
+        {
+            BinaryPrimitives.WriteUInt16LittleEndian(lines.AsSpan(line * 14 + 6), (ushort)action);
+            BinaryPrimitives.WriteUInt16LittleEndian(lines.AsSpan(line * 14 + 8), (ushort)tag);
+        }
+        Action(8, special);
+        if (busy) Action(7, mode == "busy-door" ? 2 : mode == "busy-crusher" ? 25 : mode == "partial-busy" ? 38 : 58);
+        if (mode == "floor-door") { Action(7, special); Action(8, 2); }
+        byte[] sides = map.Single(l => l.Name == "SIDEDEFS").Data;
+        int right = BinaryPrimitives.ReadUInt16LittleEndian(lines.AsSpan(8 * 14 + 10));
+        Encoding.ASCII.GetBytes("SW1BRCOM").CopyTo(sides, right * 30 + 20);
+        if (mode == "back")
+            BinaryPrimitives.WriteUInt16LittleEndian(map.Single(l => l.Name == "THINGS").Data.AsSpan(4), 180);
+        if (mode == "no-neighbor")
+        {
+            BinaryPrimitives.WriteUInt16LittleEndian(map.Single(l => l.Name == "SECTORS").Data.AsSpan(3 * 26 + 24), 0);
+            Append("SECTORS", Pack(w => Sector(w, 64, 256, 0, tag)));
+        }
+        if (mode == "self-ref")
+        {
+            int vertex = map.Single(l => l.Name == "VERTEXES").Data.Length / 4;
+            int side = sides.Length / 30, line = lines.Length / 14;
+            Append("VERTEXES", Shorts(128, 64, 160, 64));
+            Append("SIDEDEFS", Pack(w => { Side(w, 3, true); Side(w, 3, true); }));
+            Append("LINEDEFS", Shorts(vertex, vertex + 1, 4, 0, 0, side, side + 1));
+            int blockmap = map.FindIndex(l => l.Name == "BLOCKMAP");
+            byte[] block = map[blockmap].Data;
+            map[blockmap] = new("BLOCKMAP", block.AsSpan(0, block.Length - 2).ToArray().Concat(Shorts(line, 65535)).ToArray());
+        }
+        return map;
+
+        void Append(string name, byte[] bytes)
+        {
+            int index = map.FindIndex(l => l.Name == name);
+            map[index] = new(name, map[index].Data.Concat(bytes).ToArray());
+        }
     }
 
     static byte[] SwitchTextures(bool missing) => Pack(w =>

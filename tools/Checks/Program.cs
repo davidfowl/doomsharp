@@ -7,9 +7,9 @@ using System.Text.RegularExpressions;
 using DoomSharp;
 using DoomSharp.Tools;
 
-if (args.Length != 5 || args[0] is not ("headless" or "native" or "engine" or "all"))
+if (args.Length != 5 || args[0] is not ("headless" or "native" or "engine" or "all" or "floor-engine" or "floor-native"))
 {
-    Console.Error.WriteLine("Usage: DoomSharp.Checks <headless|native|engine|all> <executable> <fixtures> <new-output-directory> <source-commit>");
+    Console.Error.WriteLine("Usage: DoomSharp.Checks <headless|native|engine|all|floor-engine|floor-native> <executable> <fixtures> <new-output-directory> <source-commit>");
     return 2;
 }
 string mode = args[0], executable = Path.GetFullPath(args[1]), fixtures = Path.GetFullPath(args[2]),
@@ -56,6 +56,135 @@ try
         }
         var missing = await ProcessCheck.Run(executable, ["--wad", Path.Combine(output, "does-not-exist.wad"), "--headless"]);
         Check("reject-missing-wad", missing.Code == 1 && missing.Text.Contains("DoomSharp:", StringComparison.Ordinal), missing);
+    }
+    if (mode is "floor-engine" or "engine" or "all")
+    {
+        foreach (int special in new[] { 19, 45, 83, 102 })
+        {
+            bool walk = special is 19 or 83, repeat = special is 45 or 83;
+            void ActivateHighest(Game game) => Tick(game, walk ? Buttons.Forward : Buttons.Use, walk ? 8 : 1);
+            foreach (string variant in new[] { "highest", "negative", "equal", "higher", "no-neighbor",
+                "self-ref", "no-tag", "zero-tag", "multiple", "back" })
+            {
+                string name = $"floor-highest-{special}-{variant}";
+                Game game = Load(name);
+                bool allowed = variant is not ("no-tag" or "zero-tag" or "equal") && (variant != "back" || walk);
+                int targetIndex = variant == "no-neighbor" ? 6 : 3;
+                double target = variant == "negative" ? -24 : variant == "higher" ? 96 :
+                    variant == "no-neighbor" ? -32000 : 24;
+                string texture = game.Map.Sectors[targetIndex].FloorTexture;
+                int sectorSpecial = game.Map.Sectors[targetIndex].Special;
+                List<string> sounds = []; game.PlaySound = sounds.Add;
+                ActivateHighest(game);
+                Sector sector = game.Map.Sectors[targetIndex];
+                Check(name + "-target", allowed ? sector.FloorTarget == target : sector.Floor == 64 && sector.FloorDirection == 0,
+                    new { sector.Floor, sector.FloorTarget, sector.FloorDirection });
+                Check(name + "-consumption", game.Map.Lines[8].Special == (allowed && !repeat ? 0 : special));
+                Check(name + "-feedback", game.Map.Sides[game.Map.Lines[8].Right].Middle ==
+                    (allowed && !walk ? "SW2BRCOM" : "SW1BRCOM") &&
+                    sounds.Count(s => s == "SWTCHN") == (allowed && !walk ? 1 : 0), sounds);
+                if (variant == "higher")
+                    Check(name + "-instant-opposite-direction", sector.Floor == 96 && sector.FloorDirection == 0);
+                if (variant is "no-tag" or "zero-tag")
+                    Check(name + "-diagnostic", game.Message == "FLOOR HAS NO TAGGED SECTOR", game.Message);
+                if (allowed && variant is not ("higher" or "back"))
+                {
+                    double before = sector.Floor; Tick(game);
+                    Check(name + "-one-unit-per-tick", sector.Floor == before - 1);
+                }
+                Tick(game, count: variant == "no-neighbor" ? 32100 : 180);
+                Check(name + "-endpoint", sector.Floor == (allowed ? target : 64) && sector.FloorDirection == 0,
+                    new { sector.Floor, sector.FloorDirection });
+                Check(name + "-properties", sector.FloorTexture == texture && sector.Special == sectorSpecial && !sector.Lift);
+                if (variant == "multiple")
+                    Check(name + "-independent-tagged-target", game.Map.Sectors[5].Floor == -16);
+                if (variant == "equal")
+                {
+                    if (walk) Tick(game, Buttons.Back, 8);
+                    game.Map.Sectors[2].Floor = 24;
+                    game.Map.Sectors[4].Floor = -16;
+                    Tick(game); ActivateHighest(game);
+                    Check(name + "-no-motion-retry", sector.FloorTarget == 24 && sector.FloorDirection == -1);
+                }
+                if (variant == "highest")
+                {
+                    Check(name + "-non-neighbor-unchanged", game.Map.Sectors[5].Floor == 128);
+                    if (walk) Tick(game, Buttons.Back, 8);
+                    game.Map.Sectors[2].Floor = 8;
+                    Tick(game); ActivateHighest(game); Tick(game, count: 40);
+                    Check(name + "-repeat-or-once", sector.Floor == (repeat ? 8 : 24) &&
+                        game.Map.Lines[8].Special == (repeat ? special : 0), sector.Floor);
+                    Tick(game, Buttons.Restart);
+                    Check(name + "-restart", game.Map.Sectors[3].Floor == 64 && game.Map.Lines[8].Special == special &&
+                        game.Map.Sides[game.Map.Lines[8].Right].Middle == "SW1BRCOM");
+                }
+            }
+            Game wrong = Load($"floor-highest-{special}-highest");
+            Tick(wrong, walk ? Buttons.Use : Buttons.Forward, walk ? 1 : 8);
+            Check($"floor-highest-{special}-wrong-trigger", wrong.Map.Sectors[3].Floor == 64 && wrong.Map.Lines[8].Special == special);
+            Game snapshot = Load($"floor-highest-{special}-highest"); ActivateHighest(snapshot);
+            snapshot.Map.Sectors[2].Floor = 8;
+            Tick(snapshot, count: 80);
+            Check($"floor-highest-{special}-target-snapshot", snapshot.Map.Sectors[3].Floor == 24);
+            Game floorDoor = Load($"floor-highest-{special}-floor-door");
+            if (!walk) Tick(floorDoor, Buttons.Use);
+            Tick(floorDoor, Buttons.Forward, 23);
+            Check($"floor-highest-{special}-denies-door-takeover", floorDoor.Map.Sectors[3].FloorTarget == 24 &&
+                floorDoor.Map.Sectors[3].FloorDirection == -1 && floorDoor.Map.Sectors[3].DoorDirection == 0 &&
+                floorDoor.Map.Sectors[3].Ceiling == 128 && floorDoor.Map.Lines[8].Special == 2 &&
+                floorDoor.Message == "SECTOR IS CONTROLLED BY A FLOOR");
+            foreach (string owner in new[] { "floor", "door", "crusher" })
+            {
+                Game busy = Load($"floor-highest-{special}-busy-{owner}");
+                Tick(busy, Buttons.Forward, 15);
+                Sector sector = busy.Map.Sectors[3];
+                double originalTarget = sector.FloorTarget;
+                ActivateHighest(busy);
+                Check($"floor-highest-{special}-busy-{owner}", busy.Map.Lines[8].Special == special &&
+                    sector.FloorTarget == originalTarget &&
+                    busy.Map.Sides[busy.Map.Lines[8].Right].Middle == "SW1BRCOM" &&
+                    busy.Message == "FLOOR SECTOR IS BUSY OR HAS NO MOTION",
+                    new { sector.FloorTarget, sector.FloorDirection, sector.DoorDirection, sector.CrusherDirection, busy.Message });
+                if (owner == "floor")
+                {
+                    Tick(busy, count: 40);
+                    if (walk) Tick(busy, Buttons.Back, 8);
+                    Tick(busy); ActivateHighest(busy);
+                    Check($"floor-highest-{special}-busy-retry", sector.FloorTarget == 24 && sector.FloorDirection == -1 &&
+                        busy.Map.Lines[8].Special == (repeat ? special : 0));
+                }
+            }
+            Game partial = Load($"floor-highest-{special}-partial-busy");
+            Tick(partial, Buttons.Forward, 15);
+            Tick(partial, count: 80);
+            ActivateHighest(partial);
+            Check($"floor-highest-{special}-partial-success", partial.Map.Sectors[3].FloorTarget == 24 &&
+                partial.Map.Sectors[5].FloorTarget == -16 && partial.Map.Sectors[5].FloorDirection == -1 &&
+                partial.Map.Lines[8].Special == (repeat ? special : 0));
+            Game rider = Load($"floor-highest-{special}-occupied");
+            if (!walk) Tick(rider, Buttons.Forward, 4);
+            ActivateHighest(rider); Tick(rider, count: 35);
+            Check($"floor-highest-{special}-rider", rider.Health == 100 && rider.Feet == 40 && rider.Map.Sectors[2].Floor == 40,
+                new { rider.Feet, rider.Health, rider.Position });
+            Game blocked = Load($"floor-highest-{special}-blocked");
+            if (!walk) Tick(blocked, Buttons.Forward, 4);
+            ActivateHighest(blocked); Tick(blocked, count: 35);
+            Check($"floor-highest-{special}-headroom", blocked.Map.Sectors[2].Floor == 0 &&
+                blocked.Map.Sectors[2].FloorDirection == -1 && blocked.Health == 100);
+            Tick(blocked, Buttons.Back, 16); Tick(blocked, count: 35);
+            Check($"floor-highest-{special}-headroom-resumes", blocked.Map.Sectors[2].Floor == 24 &&
+                blocked.Map.Sectors[2].FloorDirection == 0 && blocked.Health == 100);
+        }
+        Game button = Load("floor-highest-45-highest"); Tick(button, Buttons.Use);
+        List<string> clicks = []; button.PlaySound = clicks.Add;
+        Tick(button, count: 5); Tick(button, Buttons.Use);
+        Check("floor-highest-button-busy-retrigger", button.Map.Sides[button.Map.Lines[8].Right].Middle == "SW2BRCOM" &&
+            !clicks.Contains("SWTCHN"));
+        Tick(button, count: 28);
+        Check("floor-highest-button-before-deadline", button.Map.Sides[button.Map.Lines[8].Right].Middle == "SW2BRCOM");
+        Tick(button);
+        Check("floor-highest-button-original-deadline", button.Map.Sides[button.Map.Lines[8].Right].Middle == "SW1BRCOM" &&
+            clicks.Count(s => s == "SWTCHN") == 1);
     }
     if (mode is "engine" or "all")
     {
@@ -495,6 +624,38 @@ try
             Check("rocket-" + name + "-cleanup", game.Projectiles.All(p => !p.Rocket) && (name == "miss" || game.Health == health),
                 new { game.Health, projectiles = game.Projectiles.Count });
         }
+    }
+    if (mode is "floor-native" or "native" or "all")
+    {
+        if (!OperatingSystem.IsLinux()) throw new PlatformNotSupportedException("Native floor checks require Linux/X11/XTest.");
+        foreach (int special in new[] { 19, 45, 83, 102 })
+            foreach (bool tagged in new[] { true, false })
+            {
+                bool walk = special is 19 or 83;
+                string name = $"floor-highest-{special}-{(tagged ? "highest" : "no-tag")}";
+                using NativeGame game = await NativeGame.Start(executable, ["--wad", Path.Combine(fixtures, name + ".wad")],
+                    Path.Combine(output, "native-" + name), source, audio: special == 45 && tagged);
+                Frame before = game.Capture("initial");
+                game.Hold(walk ? "w" : "e", walk ? .25 : .06);
+                Thread.Sleep(100);
+                Frame active = game.Capture("activated");
+                Thread.Sleep(1500);
+                Frame settled = game.Capture("settled");
+                game.Hold("w", 1.8);
+                game.Capture("traversal");
+                string text = await game.Quit();
+                double x = ProcessCheck.Position(text).X;
+                Check("native-" + name + "-route", tagged ? x > 208 : x is >= 72 and <= 80, new { x, text });
+                if (!walk)
+                {
+                    Check("native-" + name + "-feedback", before.SwitchPixels(false) > 500 &&
+                        (tagged ? active.SwitchPixels(true) > 500 : active.SwitchPixels(true) == 0));
+                    Check("native-" + name + "-reset-or-latch", tagged && special == 102 ?
+                        settled.SwitchPixels(true) > 500 : settled.SwitchPixels(true) == 0 && settled.SwitchPixels(false) > 500);
+                }
+                if (special == 45 && tagged)
+                    Check("native-floor-highest-PCM", Regex.IsMatch(text, @"Audio: [1-9]\d* sound events, [1-9]\d* PCM samples submitted"), text);
+            }
     }
     if (mode is "native" or "all")
     {

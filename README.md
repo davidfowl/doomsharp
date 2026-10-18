@@ -297,6 +297,36 @@ use do not falsely consume S1 actions or change textures. Manual doors and
 crossing actions do not toggle switch textures. This adds feedback to existing
 dispatch, not new action families or full door/mover/gameplay parity.
 
+### Lower floor to highest neighbor (branch only)
+
+`feat/classic-lower-to-highest-floors` extends the preserved switch implementation
+with 19 (walk once), 45 (repeatable use), 83 (repeatable walk) and 102 (use once).
+All eligible nonzero-tagged sectors target the highest adjacent floor, excluding
+the sector itself and self-referencing lines, at 35 units/second (one unit/tick).
+One-sided boundaries and nonadjacent sectors do not contribute. Targets are
+captured at activation; these are not lowest-floor or next-lower-floor actions.
+No neighbor gives the documented -32000 destination. A target above the starting
+floor is reached in one mover update, subject to non-crushing headroom checks.
+Floor textures and sector specials are unchanged; these floors do not return.
+
+Existing floor, door and active/paused crusher owners are preserved; doors
+also cannot take over a sector while its floor is moving. Each free
+tagged sector can start independently; an all-busy, missing/zero-tag or no-motion
+activation reports failure and remains retryable. This follows the engine's
+success-only consumption policy, **not every original vanilla failure/no-op
+consumption quirk**. Once-only actions consume on successful motion; repeatable
+actions can choose a fresh target after completion. Use is front-side only.
+45 uses the existing 35-tick button reset; 102 latches; crossings never toggle.
+Occupied upward snaps wait without damage and resume after the obstruction leaves.
+
+The behavior is based on the
+[pinned BOOM reference, sections 2 and 13](https://github.com/fabiangreffrath/woof/blob/75353fc800a52a21a3400e43cc73061237d2b215/docs/boomref.txt)
+and [editor action definitions](https://github.com/UltimateDoomBuilder/UltimateDoomBuilder/blob/master/Assets/Common/Configurations/Includes/Doom_linedefs.cfg),
+not copied engine implementation. The bundled Freedoom inventory is 82 uses
+across 16 maps (19:69, 45:2, 83:0, 102:11). Dispatch coverage and synthetic checks
+do not establish traversal of those maps, full vanilla edge-case parity,
+physical-device behavior or complete campaign compatibility.
+
 ### Compatibility
 
 Implemented: classic IWAD/PWAD directory/geometry/BSP validation; textured

@@ -70,6 +70,26 @@ The browser runner uses the same fixtures for visible S1/SR/key-denied controls
 and verifies that pausing preserves an active button for more than one second.
 Real-time host checks complement, not replace, exact engine tick assertions.
 
+The 68 `floor-highest-<special>-<variant>` fixtures add actions 19/45/83/102
+without changing any of the earlier 343 WADs. They distinguish highest from
+lowest/next-lower/nonadjacent floors, signed heights, equal/higher destinations,
+an isolated tagged sector, self-reference, missing/zero/multiple tags, earlier
+floor/door/crusher owners, door takeover denial, partial success, trigger side/type, riding players
+and blocked upward snaps. Exact engine checks include speed, endpoints, stable
+targets, failure/retry, consumption, unchanged floor properties, reset deadlines
+and restart. A few explicit neighbor-height changes test later activation and
+snapshot behavior; mover ownership and obstructions start through ordinary input.
+
+`floor-engine` and `floor-native` select only this increment's checks; `engine`,
+`native` and `all` also include them. Use the same five runner arguments shown
+above, with a fresh evidence directory. Eight native processes activate each
+action and its missing-tag control: the lowered route must reach X>208, whereas
+the original 40-unit obstruction must stop at 72<=X<=80. Use surfaces also check
+visible success/denial and reset/latch behavior; SR45 submits ALSA-null PCM.
+The browser runner adds visible SR45/S1-102/missing-tag controls and pauses SR45
+across its reset deadline. These host checks are synthetic, not a Freedoom
+campaign playthrough or bit-exact classic-engine comparison.
+
 The production project excludes tools and browser sources explicitly. Tool
 projects compile their own sources; no `.cs.txt` workaround or Python is needed.
 Fixture generator outputs stay under `.build`, keeping the source tree clean.

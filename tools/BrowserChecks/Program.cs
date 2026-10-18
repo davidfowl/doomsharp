@@ -259,11 +259,13 @@ try
     await Hold("r", 100);
     Check("browser-live-restart", (await Hud(355, 0xffdb8a)).Contains("AMMO 50  PISTOL", StringComparison.Ordinal));
     await page.Keyboard.PressAsync("Escape");
-    foreach (var scenario in new[] { (29, "middle"), (99, "middle"), (99, "no-key") })
+    foreach (var scenario in new[] { (29, "middle"), (99, "middle"), (99, "no-key"),
+        (45, "highest"), (102, "highest"), (45, "no-tag") })
     {
         int special = scenario.Item1;
-        string variant = scenario.Item2, name = $"switch-{special}-{variant}";
-        bool changed = variant != "no-key", repeat = special == 99 && changed;
+        string variant = scenario.Item2, name = special is 45 or 102 ?
+            $"floor-highest-{special}-{variant}" : $"switch-{special}-{variant}";
+        bool changed = variant is not ("no-key" or "no-tag"), repeat = special is 45 or 99 && changed;
         await page.WaitForFunctionAsync("document.pointerLockElement === null");
         await page.WaitForTimeoutAsync(200);
         await page.Locator("input[type=file]").SetInputFilesAsync(Path.Combine(fixtures, name + ".wad"));

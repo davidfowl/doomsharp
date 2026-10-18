@@ -381,7 +381,7 @@ public sealed class Game
     {
         int special = line.Special;
         bool useSwitch = !crossing && special is 7 or 127 or 11 or 51 or
-            18 or 21 or 23 or 60 or 62 or 69 or 122 or 123 or
+            18 or 21 or 23 or 45 or 60 or 62 or 69 or 102 or 122 or 123 or
             29 or 63 or 99 or 103 or 111 or 112 or 113 or 133 or 134 or 135 or 136 or 137;
         if (useSwitch && Vec.Cross(Map.Vertices[line.B] - Map.Vertices[line.A],
             Position - Map.Vertices[line.A]) > 0) { PlaySound?.Invoke("NOWAY"); return; }
@@ -409,12 +409,13 @@ public sealed class Game
         IEnumerable<int> targets = manual
             ? line.Left == 65535 ? [] : [Map.Sides[line.Left].Sector]
             : TaggedSectors(line);
-        bool targeted = false, activated = false, crusherBlocked = false;
+        bool targeted = false, activated = false, crusherBlocked = false, floorBlocked = false;
         foreach (int s in targets)
         {
             targeted = true;
             Sector sector = Map.Sectors[s];
             if (sector.CrusherDirection != 0) { crusherBlocked = true; continue; }
+            if (sector.FloorDirection != 0) { floorBlocked = true; continue; }
             if (!manual && sector.DoorDirection != 0) continue;
             sector.DoorDirection = crossing && special is 3 or 16 ? -1 : 1;
             sector.DoorTime = lockedSwitch || special is 2 or 31 or 32 or 33 or 34 or 103 or 112 ? -1 : 4;
@@ -424,6 +425,7 @@ public sealed class Game
         }
         if (!manual && !targeted) { Say("DOOR HAS NO TAGGED SECTOR"); PlaySound?.Invoke("NOWAY"); }
         if (crusherBlocked && !activated) { Say("CEILING IS CONTROLLED BY A CRUSHER"); PlaySound?.Invoke("NOWAY"); }
+        if (floorBlocked && !activated) { Say("SECTOR IS CONTROLLED BY A FLOOR"); PlaySound?.Invoke("NOWAY"); }
         if (useSwitch && activated) ChangeSwitch(line, special is 63 or 99 or 134 or 136);
         if (activated &&
             special is 2 or 3 or 4 or 16 or 29 or 31 or 32 or 33 or 34 or 103 or 111 or 112 or 113 or 133 or 135 or 137)
@@ -592,37 +594,40 @@ public sealed class Game
         int special = line.Special;
         bool lift = crossing ? special is 10 or 88 or 120 or 121 : special is 21 or 62 or 122 or 123;
         bool lower = crossing ? special is 38 or 82 : special is 23 or 60;
+        bool lowerHighest = crossing ? special is 19 or 83 : special is 45 or 102;
         bool raiseNext = crossing ? special is 119 or 128 : special is 18 or 69;
         bool raise24 = crossing && special is 58 or 92;
-        if (!lift && !lower && !raiseNext && !raise24) return false;
+        if (!lift && !lower && !lowerHighest && !raiseNext && !raise24) return false;
         bool targeted = false, activated = false;
         foreach (int i in TaggedSectors(line))
         {
             targeted = true;
             Sector sector = Map.Sectors[i];
-            if (sector.FloorDirection != 0) continue;
+            if (sector.FloorDirection != 0 || lowerHighest && sector.DoorDirection != 0) continue;
             double[] heights = Neighbors(i).Select(n => Map.Sectors[n].Floor).ToArray();
-            double target = raise24 ? sector.Floor + 24 : raiseNext
+            double target = lowerHighest ? heights.DefaultIfEmpty(-32000).Max() : raise24 ? sector.Floor + 24 : raiseNext
                 ? heights.Where(h => h > sector.Floor).DefaultIfEmpty(sector.Floor).Min()
                 : heights.Append(sector.Floor).Min();
             activated |= StartFloor(sector, target, lift,
-                special is 120 or 121 or 122 or 123 ? 140 : lift ? 70 : 35);
+                special is 120 or 121 or 122 or 123 ? 140 : lift ? 70 : 35, lowerHighest ? -1 : 0);
         }
         if (activated)
         {
-            if (!crossing) ChangeSwitch(line, special is 60 or 62 or 69 or 123);
+            if (!crossing) ChangeSwitch(line, special is 45 or 60 or 62 or 69 or 123);
             PlaySound?.Invoke("PSTART");
-            if (special is 10 or 21 or 120 or 122 or 38 or 23 or 119 or 18 or 58) line.Special = 0;
+            if (special is 10 or 21 or 120 or 122 or 38 or 23 or 119 or 18 or 58 or 19 or 102) line.Special = 0;
         }
         if (!targeted) { Say("FLOOR HAS NO TAGGED SECTOR"); PlaySound?.Invoke("NOWAY"); }
+        else if (lowerHighest && !activated) { Say("FLOOR SECTOR IS BUSY OR HAS NO MOTION"); PlaySound?.Invoke("NOWAY"); }
         return true;
     }
 
-    static bool StartFloor(Sector sector, double target, bool lift, double speed)
+    static bool StartFloor(Sector sector, double target, bool lift, double speed, int direction = 0)
     {
         if (sector.FloorDirection != 0 || sector.CrusherDirection != 0 || target == sector.Floor) return false;
         sector.FloorOrigin = sector.Floor; sector.FloorTarget = target;
-        sector.FloorDirection = target > sector.Floor ? 1 : -1;
+        // A fixed classic direction snaps opposite-side targets on the next tick.
+        sector.FloorDirection = direction != 0 ? direction : target > sector.Floor ? 1 : -1;
         sector.Lift = lift; sector.LiftWait = 3; sector.FloorSpeed = speed;
         return true;
     }
