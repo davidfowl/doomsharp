@@ -132,8 +132,11 @@ documented below.
 WASD moves/strafes; arrows turn (up/down also move). Click once to capture the
 mouse, then move it to turn. Ctrl or left click fires; E/Space uses; Shift runs.
 1 selects the pistol, 2 an acquired shotgun, 4 an acquired chaingun, and 5 an
-acquired rocket launcher. Tab toggles the automap; R restarts. Esc quits desktop
-or pauses the browser. Losing focus clears input and releases mouse capture.
+acquired rocket launcher. Tab toggles the automap; R restarts. F1 opens an
+in-game menu (Resume, New Game, Options, Quit Game; arrows navigate, E/Space/
+fire selects, left/right adjusts mouse sensitivity and toggles messages in
+Options). Esc quits desktop or pauses the browser. Losing focus clears input
+and releases mouse capture.
 
 Use/fire advances after an exit where a next map exists. Living players retain
 health/inventory; dead players start fresh. Episode finales offer replay.
@@ -213,12 +216,16 @@ walls/floors/ceilings, sky, masked walls and sprites; collision, sliding and
 pickups, keys, armor, simplified enemies/barrels; common doors, tagged locks,
 lifts/floors, teleports, damaging floors, secrets, exits and map progression;
 E1M8 last-Baron/tag666 floors; DMX effects, MUS/Standard-MIDI music playback
-(approximate software synthesis, see [PROGRESS.md](PROGRESS.md)), HUD and automap.
+(approximate software synthesis, see [PROGRESS.md](PROGRESS.md)), HUD, automap
+and an in-game pause/options menu (F1).
 
 Still incomplete: other weapons/powerups, exact monster states/AI/physics/RNG,
 stairs/crushers and every moving-sector/switch special, other boss actions,
-animated textures, menus, saves, multiplayer and original visual/timing/audio
-parity. No PWAD overlay stacking, Hexen/UDMF, extended nodes, Boom/MBF/DEHACKED or
+animated textures, saves, multiplayer and original visual/timing/audio
+parity. A basic in-game menu (Resume/New Game/Options/Quit, with mouse
+sensitivity and a messages toggle) is implemented; it does not persist
+settings, does not offer episode/skill selection, and has no save/load entries
+yet. No PWAD overlay stacking, Hexen/UDMF, extended nodes, Boom/MBF/DEHACKED or
 mod compatibility. Only medium-skill single-player flags are selected. Missing
 assets/types produce explicit diagnostics; missing textures use a diagnostic
 pattern. These gaps can block campaign progression. Loading/rendering all maps

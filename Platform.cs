@@ -33,6 +33,7 @@ static class Platform
         '4' => Buttons.Chaingun,
         '5' => Buttons.RocketLauncher,
         '\t' => Buttons.Map,
+        0xffbe => Buttons.Menu,
         _ => Buttons.None
     };
 }
@@ -227,7 +228,7 @@ sealed unsafe class WindowsPlatform : IPlatform
                 Buttons button = key switch
                 {
                     38 => Buttons.Forward, 40 => Buttons.Back, 37 => Buttons.TurnLeft, 39 => Buttons.TurnRight,
-                    16 => Buttons.Run, 17 => Buttons.Fire, _ => Platform.Key(key)
+                    16 => Buttons.Run, 17 => Buttons.Fire, 0x70 => Buttons.Menu, _ => Platform.Key(key)
                 };
                 input.Set(button, down); return 0;
             }

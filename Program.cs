@@ -32,7 +32,7 @@ static class Program
                   --demo-wad path.wad                      Write the original demo WAD
                 Controls: WASD move, arrows turn, mouse aim, Ctrl/click fire, E/Space use,
                           Shift run, 1 pistol, 2 shotgun, 4 chaingun, 5 rocket launcher,
-                          Tab automap, R restart, Esc quit.
+                          Tab automap, R restart, F1 menu, Esc quit.
                 Click the window once to capture the mouse. No proprietary assets included.
                 """);
             return 0;

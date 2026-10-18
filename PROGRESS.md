@@ -57,7 +57,8 @@ Build/publish output includes the Phase 1 WAD, BSD license and credits.
 | DMX decoding and sound-effects mixer | Partial | Native Linux playthrough submits effects to ALSA null; exact resampling/audio comparison, audible playback and Windows/macOS audio unverified |
 | Remaining weapons/powerups, stairs/crushers, switch textures and other boss actions | Not implemented | Required for original gameplay/campaign parity |
 | Music/MUS and Standard MIDI File playback | Partial | Clean-room MUS and SMF parsers decode bundled Freedoom `D_*` lumps into looping PCM mixed by the native audio thread and WebAudio on the browser target; verified via native ALSA-null submission and Chromium/WebKit WebAudio-after-click checks below; uses an approximate additive-harmonic/noise synth, not a General MIDI soundfont, so exact timbre/original parity is not claimed |
-| Saves, menus, multiplayer and extended maps/mods | Not implemented | No end-to-end capability claimed |
+| Saves, multiplayer and extended maps/mods | Not implemented | No end-to-end capability claimed |
+| In-game pause/options menu | Partial | `F1` opens a keyboard-driven menu (Resume/New Game/Options/Quit, mouse-sensitivity slider and a messages toggle); freezes simulation while open; no episode/skill selection, no save/load entries and settings do not persist across runs |
 | Complete authentic WAD campaigns | Unverified | Map rendering alone is not campaign completion; missing behaviors can block progression |
 
 ## In-flight work and known limits
@@ -69,8 +70,21 @@ branch-only work separate from merged-main status.
 Remaining compatibility work includes stairs/crushers, remaining mover variants,
 all vanilla map specials and switch textures, other boss actions, exact monster states
 and attacks/infighting, remaining weapons/powerups, telefragging, original physics,
-saves, menus and multiplayer. These gaps can block complete
+saves and multiplayer. These gaps can block complete
 authentic WAD campaigns. Extended maps/mod formats are not implemented.
+
+An in-game menu (`Game.cs` `MenuScreen`/`HandleMenu`, rendered by
+`Renderer.DrawMenu`) is now implemented: `F1` toggles a Main menu with
+Resume/New Game/Options/Quit Game, navigated with the existing
+movement/turn buttons (also arrows) and selected with Use/Fire; opening it
+pauses simulation (`Tick` returns before any world update). Options exposes
+an adjustable mouse-sensitivity multiplier and an on/off messages toggle
+(suppresses `Say()` HUD text, default on so existing message-content checks
+are unaffected). Quit Game asks for confirmation before setting `Input.Quit`.
+This does not implement a pre-level main menu, episode/skill selection, or
+settings persistence, and has no save/load menu entries (see the separate
+unmerged save/load branch). Native/browser input plumbing adds `F1` to
+`Platform.Key`, `WindowsPlatform`, `MacPlatform` and `Browser/App.razor`.
 
 Music/MUS and Standard MIDI File playback (`Music.cs`) is now partially
 implemented: a clean-room event-stream parser for both id Software's native MUS
@@ -84,6 +98,7 @@ pitch bend or SMPTE-divisioned MIDI files (falls back to a default PPQ). See
 the "Built vs. runtime-tested" verification below for exact evidence.
 Sector-11 exit handling and E1M8's last-Baron/tag666 floor action are implemented;
 other original finale boss actions remain absent. Damaging-floor timing is approximate.
+
 
 ## Built vs. runtime-tested
 
