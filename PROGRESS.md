@@ -56,7 +56,8 @@ Build/publish output includes the Phase 1 WAD, BSD license and credits.
 | Native window presentation | Working | Bounded actual-engine desktop smoke runs pass on three OSes; interactive input coverage differs by platform below |
 | DMX decoding and sound-effects mixer | Partial | Native Linux playthrough submits effects to ALSA null; exact resampling/audio comparison, audible playback and Windows/macOS audio unverified |
 | Remaining weapons/powerups, stairs/crushers, switch textures and other boss actions | Not implemented | Required for original gameplay/campaign parity |
-| Music/MUS, saves, menus, multiplayer and extended maps/mods | Not implemented | No end-to-end capability claimed |
+| Music/MUS and Standard MIDI File playback | Partial | Clean-room MUS and SMF parsers decode bundled Freedoom `D_*` lumps into looping PCM mixed by the native audio thread and WebAudio on the browser target; verified via native ALSA-null submission and Chromium/WebKit WebAudio-after-click checks below; uses an approximate additive-harmonic/noise synth, not a General MIDI soundfont, so exact timbre/original parity is not claimed |
+| Saves, menus, multiplayer and extended maps/mods | Not implemented | No end-to-end capability claimed |
 | Complete authentic WAD campaigns | Unverified | Map rendering alone is not campaign completion; missing behaviors can block progression |
 
 ## In-flight work and known limits
@@ -68,8 +69,19 @@ branch-only work separate from merged-main status.
 Remaining compatibility work includes stairs/crushers, remaining mover variants,
 all vanilla map specials and switch textures, other boss actions, exact monster states
 and attacks/infighting, remaining weapons/powerups, telefragging, original physics,
-music/MUS playback, saves, menus and multiplayer. These gaps can block complete
+saves, menus and multiplayer. These gaps can block complete
 authentic WAD campaigns. Extended maps/mod formats are not implemented.
+
+Music/MUS and Standard MIDI File playback (`Music.cs`) is now partially
+implemented: a clean-room event-stream parser for both id Software's native MUS
+format and Standard MIDI Files (needed because the bundled Freedoom WAD ships
+`D_*` music lumps as SMF, not MUS) feeds a small additive-harmonic/noise-burst
+software synthesizer, producing looping PCM mixed into the existing native
+audio thread (`Audio.cs`) and the browser's WebAudio graph (`host.js`/`App.razor`)
+alongside the existing one-shot SFX voices. This is an approximation of General
+MIDI timbres, not a soundfont-accurate renderer, and does not model per-note
+pitch bend or SMPTE-divisioned MIDI files (falls back to a default PPQ). See
+the "Built vs. runtime-tested" verification below for exact evidence.
 Sector-11 exit handling and E1M8's last-Baron/tag666 floor action are implemented;
 other original finale boss actions remain absent. Damaging-floor timing is approximate.
 
@@ -360,6 +372,30 @@ license and archive checksum checked. This worker-reported corpus result is
 not reproduced by CI; no downloaded assets are bundled. Map parser/renderer
 coverage is **not** proof of original-map gameplay or campaign completion.
 
+Music/MUS and Standard MIDI File playback (`Music.cs`, wired through
+`Assets.Music`, `Game.PlayMusic`/`StartMusic`/`MusicLumpName` and the native
+`Audio.PlayMusic` loop-mixer plus the browser `host.js`/`App.razor` WebAudio
+path) was worker-reported against this build. `dotnet build` succeeded for all
+six project files with zero warnings/errors. The bundled Freedoom WAD's
+`D_E1M1`/`D_E1M8`/`D_E1M9` lumps (Standard MIDI, not MUS) decoded to plausible
+PCM (100-186s, near-100% nonzero samples). The `tools/Checks` suite passed
+`headless` (all PASS) and `engine` (121 PASS) unchanged, and `native`
+(22/22 PASS, Xvfb/ALSA null device) including the demo/restart/chaingun/rocket
+scenarios; a live Linux run against the bundled WAD showed
+`Audio: 0 sound events, 226304 PCM samples submitted, 1 music changes.` on
+entering E1M1, confirming the music track decoded and was mixed into real
+output. Browser Playwright checks passed 36/36 on Chromium and 35/35 on WebKit
+(including `autoplay-remains-silent`, `autoplay-does-not-request-audio-or-pointer`
+and `Freedoom-WebAudio-after-click`, confirming music still only touches WebAudio
+after a user gesture, matching the existing SFX autoplay contract). Firefox's
+Playwright run reproducibly hung waiting for `AudioContext` to reach `running`
+after a click on this build **and** on an unmodified main checkout in this same
+environment, so it is a pre-existing environment/headless-audio limitation, not
+a regression from this change. The synthesizer is a small additive-harmonic/
+noise-burst approximation (no General MIDI soundfont or OPL emulation), does not
+model per-note pitch bend or SMPTE-divisioned MIDI timing, and audible/perceptual
+quality versus the original soundtrack is unverified.
+
 ## Reproduce
 
 Run from the repository with the .NET 10 SDK. The demo contains original assets;
@@ -403,6 +439,9 @@ Owning a proprietary WAD does not permit redistribution; none is bundled.
 
 - Complete vanilla map-special dispatch, mover variants, switches and boss actions.
 - Implement remaining combat/weapon/powerup behavior and original gameplay semantics.
-- Add music, saves and menus, then verify full campaigns with lawful user-supplied WADs.
+- Add saves and menus, then verify full campaigns with lawful user-supplied WADs.
+- Improve music fidelity (General MIDI soundfont/OPL-quality synthesis) beyond the
+  current approximate additive-harmonic renderer; verify audible playback on
+  physical Windows/Linux/macOS systems.
 - Verify interactive input and audible audio on physical Windows/Linux/macOS systems,
   and validate other CPU architectures separately.

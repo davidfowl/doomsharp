@@ -79,10 +79,13 @@ the first publish is slower and needs the `wasm-tools` workload.
 The renderer is software-based; frame rate depends on map complexity and browser.
 Clicking enables audio and requests pointer lock. Keyboard controls still work
 when pointer lock is unavailable. Esc, loss of focus or a hidden tab pauses the
-game and clears held input; click to resume. **Mute** suppresses new sound effects.
+game and clears held input; click to resume. **Mute** suppresses new sound effects
+and stops music; unchecking it resumes the current track.
 Wheel input over the active game does not scroll the page. Press Esc to pause
 and scroll normally; scrolling outside the game remains available during play.
-Mobile/touch controls, music, gamepads and persistent saves are not implemented.
+Mobile/touch controls, gamepads and persistent saves are not implemented. Music
+plays via a clean-room MUS/Standard-MIDI decoder and an approximate software
+synthesizer; see [PROGRESS.md](PROGRESS.md).
 
 Publish a static site:
 
@@ -209,11 +212,12 @@ walls/floors/ceilings, sky, masked walls and sprites; collision, sliding and
 24-unit steps; pistol, shotgun, chaingun and swept rocket/explosion combat;
 pickups, keys, armor, simplified enemies/barrels; common doors, tagged locks,
 lifts/floors, teleports, damaging floors, secrets, exits and map progression;
-E1M8 last-Baron/tag666 floors; DMX effects, HUD and automap.
+E1M8 last-Baron/tag666 floors; DMX effects, MUS/Standard-MIDI music playback
+(approximate software synthesis, see [PROGRESS.md](PROGRESS.md)), HUD and automap.
 
 Still incomplete: other weapons/powerups, exact monster states/AI/physics/RNG,
 stairs/crushers and every moving-sector/switch special, other boss actions,
-animated textures, music/MUS, menus, saves, multiplayer and original visual/timing
+animated textures, menus, saves, multiplayer and original visual/timing/audio
 parity. No PWAD overlay stacking, Hexen/UDMF, extended nodes, Boom/MBF/DEHACKED or
 mod compatibility. Only medium-skill single-player flags are selected. Missing
 assets/types produce explicit diagnostics; missing textures use a diagnostic
