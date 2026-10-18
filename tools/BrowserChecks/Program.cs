@@ -261,13 +261,15 @@ try
     await page.Keyboard.PressAsync("Escape");
     foreach (var scenario in new[] { (29, "middle"), (99, "middle"), (99, "no-key"),
         (45, "highest"), (102, "highest"), (45, "no-tag"),
-        (64, "ceiling"), (101, "ceiling"), (24, "ceiling"), (24, "no-tag") })
+        (64, "ceiling"), (101, "ceiling"), (24, "ceiling"), (24, "no-tag"),
+        (70, "highest"), (71, "highest"), (70, "no-tag") })
     {
         int special = scenario.Item1;
-        string variant = scenario.Item2, name = special is 24 or 64 or 101 ?
+        string variant = scenario.Item2, name = special is 70 or 71 ?
+            $"floor-turbo-{special}-{variant}" : special is 24 or 64 or 101 ?
             $"floor-ceiling-{special}-{variant}" : special is 45 or 102 ?
             $"floor-highest-{special}-{variant}" : $"switch-{special}-{variant}";
-        bool changed = variant is not ("no-key" or "no-tag"), repeat = special is 45 or 64 or 99 && changed;
+        bool changed = variant is not ("no-key" or "no-tag"), repeat = special is 45 or 64 or 70 or 99 && changed;
         await page.WaitForFunctionAsync("document.pointerLockElement === null");
         await page.WaitForTimeoutAsync(200);
         await page.Locator("input[type=file]").SetInputFilesAsync(Path.Combine(fixtures, name + ".wad"));

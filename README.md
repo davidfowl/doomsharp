@@ -357,6 +357,47 @@ not copied implementation. Bundled Freedoom has nine uses across six maps
 (5:7, 24:1, 64:0, 91:0, 101:1). Original synthetic engine/native/browser
 fixtures exercise this slice; map inventory is not campaign traversal evidence.
 
+### Turbo lower floor (branch only)
+
+`feat/classic-turbo-lower-floors`, based on the preserved raise-to-ceiling tip,
+adds 36 (walk once), 70 (repeatable use), 71 (use once) and 98 (repeatable walk).
+Each eligible nonzero-tagged floor captures the highest adjacent floor,
+excluding itself and self-referencing lines. The classic search starts at
+-500: absent neighbors, or neighbors all below -500, leave that search value.
+If the result equals the current floor, no eight-unit offset is applied;
+otherwise the destination is eight units above that result. Thus a neighbor
+eight units below the floor is also a no-motion case. An isolated floor
+normally targets -492, not the BOOM reference's generalized -31992 description.
+This classic sentinel is specific to these four actions; earlier floor families
+retain their documented behavior.
+
+The mover's direction remains down at 140 units/second (four units per 35-Hz
+tick). A destination above the starting floor snaps up on the first update.
+Non-crushing player/solid-actor headroom can block that snap; ownership is
+retained until the obstruction leaves or is removed. Nonsolid pickups do not
+block it. Existing floor/door and active or paused crusher owners are preserved;
+other eligible tagged sectors can still start independently. Floor textures,
+sector specials and ceilings do not change, and these floors do not return.
+
+Use is front-side only; crossing works from either direction, including retry
+on the return crossing. Successful 70 buttons use the existing independent
+35-tick reset without extending a pending deadline. 71 latches; crossings and
+firing never change switch textures. Successful one-shot actions consume;
+missing/zero tags, all-busy and no-motion cases report failure and remain
+retryable under the repository's success-only policy. This differs from
+vanilla W1 failure/no-op consumption and does not claim its extra completion
+tic, exact entity clipping/collision quirks or demo synchronization. Restart
+and map transition discard old mover/button state.
+
+Mapping and speed are checked against the pinned BOOM reference above.
+The equal-height exception and classic search bound are additionally documented
+in [pinned classic mover comparison notes](https://github.com/alaskahoffman/leandoom/blob/dd795d67c075b3c3d1149494ddec6aff756e2a64/README.md#L1008-L1026)
+and the [behavioral destination table](https://github.com/GusEllerm/doom/blob/a7b9e8bba9b7fca824aab3b29340b835996a64c1/docs/research/05-specials.md#L372-L380).
+The implementation and fixtures here are original, not copied engine code.
+Bundled Freedoom has 78 uses across 15 maps (36:54, 70:0, 71:24, 98:0).
+Synthetic input/render checks and that inventory are not campaign traversal,
+full original-engine parity, or physical-device qualification.
+
 ### Compatibility
 
 Implemented: classic IWAD/PWAD directory/geometry/BSP validation; textured

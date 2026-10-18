@@ -381,7 +381,7 @@ public sealed class Game
     {
         int special = line.Special;
         bool useSwitch = !crossing && special is 7 or 127 or 11 or 51 or
-            18 or 21 or 23 or 45 or 60 or 62 or 64 or 69 or 101 or 102 or 122 or 123 or
+            18 or 21 or 23 or 45 or 60 or 62 or 64 or 69 or 70 or 71 or 101 or 102 or 122 or 123 or
             29 or 63 or 99 or 103 or 111 or 112 or 113 or 133 or 134 or 135 or 136 or 137;
         if (useSwitch && Vec.Cross(Map.Vertices[line.B] - Map.Vertices[line.A],
             Position - Map.Vertices[line.A]) > 0) { PlaySound?.Invoke("NOWAY"); return; }
@@ -596,33 +596,39 @@ public sealed class Game
         bool lift = crossing ? special is 10 or 88 or 120 or 121 : special is 21 or 62 or 122 or 123;
         bool lower = crossing ? special is 38 or 82 : special is 23 or 60;
         bool lowerHighest = crossing ? special is 19 or 83 : special is 45 or 102;
+        bool turboLower = crossing ? special is 36 or 98 : special is 70 or 71;
         bool raiseCeiling = shooting ? special == 24 : crossing ? special is 5 or 91 : special is 64 or 101;
         bool raiseNext = crossing ? special is 119 or 128 : special is 18 or 69;
         bool raise24 = crossing && special is 58 or 92;
-        if (!lift && !lower && !lowerHighest && !raiseCeiling && !raiseNext && !raise24) return false;
+        if (!lift && !lower && !lowerHighest && !turboLower && !raiseCeiling && !raiseNext && !raise24) return false;
         bool targeted = false, activated = false;
         foreach (int i in TaggedSectors(line))
         {
             targeted = true;
             Sector sector = Map.Sectors[i];
-            if (sector.FloorDirection != 0 || (lowerHighest || raiseCeiling) && sector.DoorDirection != 0) continue;
+            if (sector.FloorDirection != 0 || (lowerHighest || turboLower || raiseCeiling) && sector.DoorDirection != 0) continue;
             int[] neighbors = Neighbors(i).ToArray();
             double[] heights = neighbors.Select(n => Map.Sectors[n].Floor).ToArray();
-            double target = raiseCeiling ? neighbors.Select(n => Map.Sectors[n].Ceiling).Append(sector.Ceiling).Min() :
+            // Classic turbo lowering preserves the -500 search floor and equal-height exception.
+            double target = turboLower ? heights.Append(-500).Max() :
+                raiseCeiling ? neighbors.Select(n => Map.Sectors[n].Ceiling).Append(sector.Ceiling).Min() :
                 lowerHighest ? heights.DefaultIfEmpty(-32000).Max() : raise24 ? sector.Floor + 24 : raiseNext
                 ? heights.Where(h => h > sector.Floor).DefaultIfEmpty(sector.Floor).Min()
                 : heights.Append(sector.Floor).Min();
+            if (turboLower && target != sector.Floor) target += 8;
             activated |= StartFloor(sector, target, lift,
-                special is 120 or 121 or 122 or 123 ? 140 : lift ? 70 : 35, lowerHighest ? -1 : raiseCeiling ? 1 : 0);
+                turboLower || special is 120 or 121 or 122 or 123 ? 140 : lift ? 70 : 35,
+                lowerHighest || turboLower ? -1 : raiseCeiling ? 1 : 0);
         }
         if (activated)
         {
-            if (!crossing) ChangeSwitch(line, special is 45 or 60 or 62 or 64 or 69 or 123);
+            if (!crossing) ChangeSwitch(line, special is 45 or 60 or 62 or 64 or 69 or 70 or 123);
             PlaySound?.Invoke("PSTART");
-            if (special is 10 or 21 or 120 or 122 or 38 or 23 or 119 or 18 or 58 or 19 or 102 or 5 or 24 or 101) line.Special = 0;
+            if (special is 10 or 21 or 120 or 122 or 38 or 23 or 119 or 18 or 58 or 19 or 102 or 5 or 24 or 101 or 36 or 71)
+                line.Special = 0;
         }
         if (!targeted) { Say("FLOOR HAS NO TAGGED SECTOR"); PlaySound?.Invoke("NOWAY"); }
-        else if ((lowerHighest || raiseCeiling) && !activated) { Say("FLOOR SECTOR IS BUSY OR HAS NO MOTION"); PlaySound?.Invoke("NOWAY"); }
+        else if ((lowerHighest || turboLower || raiseCeiling) && !activated) { Say("FLOOR SECTOR IS BUSY OR HAS NO MOTION"); PlaySound?.Invoke("NOWAY"); }
         return true;
     }
 

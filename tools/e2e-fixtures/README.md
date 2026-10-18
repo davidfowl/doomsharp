@@ -112,6 +112,32 @@ and missing-tag gun controls; SR64 is paused across its reset deadline.
 These are bounded generated scenarios, not original-engine/campaign parity,
 physical-device input/audio, or proof of every host's gameplay behavior.
 
+The 100 `floor-turbo-<special>-<variant>` fixtures cover 36/70/71/98 without
+altering any of the 508 prior WADs. The focused engine suite distinguishes
+highest from lowest/nonadjacent floors, the conditional eight-unit offset,
+equal and offset-equal no-motion cases, near/higher instantaneous destinations,
+signed heights, the classic -500 search floor, isolated sectors and self-lines.
+It also checks four-unit ticks, stable targets, nonzero/multiple tags,
+active floor/door and paused/active crusher ownership, partial eligibility,
+both crossing directions versus front-only use, firing rejection, retry,
+riding/headroom, barrel removal and nonblocking pickups.
+
+One-shot/repeatable consumption follows the repository's success-only policy,
+not every original W1 failure/no-op quirk. Button tests distinguish busy and
+successful retriggers, original deadlines, duplicate timers and pending-reset
+restart. Four two-map fixtures verify exit/map transition with old state
+discarded. Explicit neighbor changes exercise snapshot/retrigger behavior;
+owners, obstructions and transitions otherwise use ordinary public input.
+
+`turbo-floor-engine` and `turbo-floor-native` select this increment; regular
+`engine`/`native`/`all` modes include it. Eight native processes exercise every
+action and a missing-tag control: lowered routes must reach X>208, while the
+initial 40-unit obstruction must stop controls at 72<=X<=80. Use surfaces
+require visible activation/reset/latch, and one SR70 process requires nonzero
+ALSA-null PCM. Browser checks add SR70/S1-71/missing-tag controls, including
+pause across SR70's deadline. All host checks remain bounded synthetic
+observations, not campaign, physical-device or original-engine acceptance.
+
 The production project excludes tools and browser sources explicitly. Tool
 projects compile their own sources; no `.cs.txt` workaround or Python is needed.
 Fixture generator outputs stay under `.build`, keeping the source tree clean.

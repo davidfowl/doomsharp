@@ -7,9 +7,9 @@ using System.Text.RegularExpressions;
 using DoomSharp;
 using DoomSharp.Tools;
 
-if (args.Length != 5 || args[0] is not ("headless" or "native" or "engine" or "all" or "floor-engine" or "floor-native" or "ceiling-floor-engine" or "ceiling-floor-native"))
+if (args.Length != 5 || args[0] is not ("headless" or "native" or "engine" or "all" or "floor-engine" or "floor-native" or "ceiling-floor-engine" or "ceiling-floor-native" or "turbo-floor-engine" or "turbo-floor-native"))
 {
-    Console.Error.WriteLine("Usage: DoomSharp.Checks <headless|native|engine|all|floor-engine|floor-native|ceiling-floor-engine|ceiling-floor-native> <executable> <fixtures> <new-output-directory> <source-commit>");
+    Console.Error.WriteLine("Usage: DoomSharp.Checks <headless|native|engine|all|floor-engine|floor-native|ceiling-floor-engine|ceiling-floor-native|turbo-floor-engine|turbo-floor-native> <executable> <fixtures> <new-output-directory> <source-commit>");
     return 2;
 }
 string mode = args[0], executable = Path.GetFullPath(args[1]), fixtures = Path.GetFullPath(args[2]),
@@ -56,6 +56,176 @@ try
         }
         var missing = await ProcessCheck.Run(executable, ["--wad", Path.Combine(output, "does-not-exist.wad"), "--headless"]);
         Check("reject-missing-wad", missing.Code == 1 && missing.Text.Contains("DoomSharp:", StringComparison.Ordinal), missing);
+    }
+    if (mode is "turbo-floor-engine" or "engine" or "all")
+    {
+        foreach (int special in new[] { 36, 70, 71, 98 })
+        {
+            bool walk = special is 36 or 98, repeat = special is 70 or 98;
+            void ActivateTurbo(Game game) => Tick(game, walk ? Buttons.Forward : Buttons.Use, walk ? 8 : 1);
+            foreach (string variant in new[] { "highest", "negative", "equal", "offset-equal", "near", "higher",
+                "no-neighbor", "below-sentinel", "sentinel-equal", "sentinel-higher", "self-ref",
+                "no-tag", "zero-tag", "multiple", "back" })
+            {
+                string name = $"floor-turbo-{special}-{variant}";
+                Game game = Load(name);
+                bool allowed = variant is not ("equal" or "offset-equal" or "sentinel-equal" or "no-tag" or "zero-tag") &&
+                    (variant != "back" || walk);
+                int index = variant == "no-neighbor" ? 7 : 3;
+                Sector sector = game.Map.Sectors[index];
+                double origin = sector.Floor, ceiling = sector.Ceiling;
+                double target = variant == "negative" ? -16 : variant == "near" ? 68 : variant == "higher" ? 104 :
+                    variant is "no-neighbor" or "below-sentinel" or "sentinel-higher" ? -492 : 32;
+                List<string> sounds = []; game.PlaySound = sounds.Add;
+                ActivateTurbo(game);
+                Check(name + "-target", allowed ? sector.FloorTarget == target : sector.Floor == origin && sector.FloorDirection == 0,
+                    new { origin, sector.Floor, sector.FloorTarget, sector.FloorDirection });
+                Check(name + "-consumption", game.Map.Lines[9].Special == (allowed && !repeat ? 0 : special));
+                Check(name + "-feedback", game.Map.Sides[game.Map.Lines[9].Right].Middle ==
+                    (allowed && !walk ? "SW2BRCOM" : "SW1BRCOM") &&
+                    sounds.Count(s => s == "SWTCHN") == (allowed && !walk ? 1 : 0));
+                if (variant is "near" or "higher" or "sentinel-higher")
+                    Check(name + "-instant-upward-snap", sector.Floor == target && sector.FloorDirection == 0);
+                if (variant is "no-tag" or "zero-tag" or "equal" or "offset-equal" or "sentinel-equal")
+                    Check(name + "-diagnostic", game.Message == (variant is "no-tag" or "zero-tag" ?
+                        "FLOOR HAS NO TAGGED SECTOR" : "FLOOR SECTOR IS BUSY OR HAS NO MOTION"), game.Message);
+                if (allowed && target < origin && variant != "back")
+                {
+                    double before = sector.Floor; Tick(game);
+                    Check(name + "-four-units-per-tick", sector.Floor == before - 4);
+                }
+                Tick(game, count: 180);
+                Check(name + "-endpoint", sector.Floor == (allowed ? target : origin) && sector.FloorDirection == 0, sector.Floor);
+                Check(name + "-properties", sector.FloorTexture == "QLFLOOR" && sector.Special == 0 &&
+                    sector.Ceiling == ceiling && !sector.Lift);
+                if (variant == "multiple")
+                    Check(name + "-independent-target", game.Map.Sectors[5].Floor == -8);
+                if (variant == "highest")
+                {
+                    Check(name + "-non-neighbor-unchanged", game.Map.Sectors[5].Floor == 128);
+                    if (walk) Tick(game, Buttons.Back, 8);
+                    game.Map.Sectors[2].Floor = 8;
+                    Tick(game); ActivateTurbo(game); Tick(game, count: 40);
+                    Check(name + "-repeat-or-once", sector.Floor == (repeat ? 16 : 32) &&
+                        game.Map.Lines[9].Special == (repeat ? special : 0));
+                    Tick(game, Buttons.Restart);
+                    Check(name + "-restart", game.Map.Sectors[3].Floor == 64 && game.Map.Lines[9].Special == special &&
+                        game.Map.Sides[game.Map.Lines[9].Right].Middle == "SW1BRCOM");
+                }
+                if (variant is "equal" or "offset-equal" or "sentinel-equal")
+                {
+                    game.Map.Sectors[2].Floor = 24; game.Map.Sectors[4].Floor = -16;
+                    Tick(game);
+                    if (walk) Tick(game, Buttons.Back, 8);
+                    else ActivateTurbo(game);
+                    Check(name + "-no-motion-retry", sector.FloorTarget == 32 &&
+                        sector.FloorDirection == (walk || 32 > origin ? 0 : -1) &&
+                        game.Map.Lines[9].Special == (repeat ? special : 0),
+                        new { game.Position, game.Feet, sector.Floor, sector.FloorTarget, sector.FloorDirection, special = game.Map.Lines[9].Special });
+                }
+            }
+            foreach (Buttons wrongButton in new[] { Buttons.Use, Buttons.Forward, Buttons.Fire }
+                .Where(b => b != (walk ? Buttons.Forward : Buttons.Use)))
+            {
+                Game wrong = Load($"floor-turbo-{special}-highest");
+                Tick(wrong, wrongButton, wrongButton == Buttons.Forward ? 8 : 1);
+                Check($"floor-turbo-{special}-reject-{wrongButton}", wrong.Map.Sectors[3].Floor == 64 &&
+                    wrong.Map.Lines[9].Special == special);
+            }
+            Game snapshot = Load($"floor-turbo-{special}-highest"); ActivateTurbo(snapshot);
+            snapshot.Map.Sectors[2].Floor = 8; Tick(snapshot, count: 40);
+            Check($"floor-turbo-{special}-snapshot", snapshot.Map.Sectors[3].Floor == 32);
+            foreach (string owner in new[] { "floor", "door", "crusher" })
+            {
+                Game busy = Load($"floor-turbo-{special}-busy-{owner}");
+                Tick(busy, Buttons.Forward, 15);
+                Sector sector = busy.Map.Sectors[3]; double originalTarget = sector.FloorTarget;
+                ActivateTurbo(busy);
+                Check($"floor-turbo-{special}-busy-{owner}", busy.Map.Lines[9].Special == special &&
+                    sector.FloorTarget == originalTarget && busy.Map.Sides[busy.Map.Lines[9].Right].Middle == "SW1BRCOM" &&
+                    busy.Message == "FLOOR SECTOR IS BUSY OR HAS NO MOTION",
+                    new { sector.FloorTarget, sector.FloorDirection, sector.DoorDirection, sector.CrusherDirection, busy.Message });
+                if (owner == "floor")
+                {
+                    Tick(busy, count: 40);
+                    if (walk) Tick(busy, Buttons.Back, 8);
+                    else { Tick(busy); ActivateTurbo(busy); }
+                    Check($"floor-turbo-{special}-busy-retry", sector.FloorTarget == 32 && sector.FloorDirection == -1,
+                        new { busy.Position, busy.Feet, sector.Floor, sector.FloorTarget, sector.FloorDirection, special = busy.Map.Lines[9].Special });
+                }
+            }
+            Game paused = Load($"floor-turbo-{special}-paused-crusher");
+            Tick(paused, Buttons.Forward, 31); double pausedCeiling = paused.Map.Sectors[3].Ceiling;
+            Tick(paused, walk ? Buttons.Forward : Buttons.Use, walk ? 14 : 1); Tick(paused, count: 35);
+            Check($"floor-turbo-{special}-paused-crusher-ownership", paused.Map.Sectors[3].CrusherPaused &&
+                paused.Map.Sectors[3].Ceiling == pausedCeiling && paused.Map.Sectors[3].Floor == 0 &&
+                paused.Map.Sectors[3].FloorDirection == 0 && paused.Map.Lines[10].Special == special);
+            Game partial = Load($"floor-turbo-{special}-partial-busy");
+            Tick(partial, Buttons.Forward, 15); Tick(partial, count: 45); ActivateTurbo(partial);
+            Check($"floor-turbo-{special}-partial-success", partial.Map.Sectors[3].FloorTarget == -16 &&
+                partial.Map.Sectors[3].FloorDirection == -1 && partial.Map.Sectors[5].Floor == 16 &&
+                partial.Map.Sectors[5].FloorDirection == 0 && partial.Map.Lines[9].Special == (repeat ? special : 0));
+            Game rider = Load($"floor-turbo-{special}-occupied");
+            if (!walk) Tick(rider, Buttons.Forward, 4);
+            ActivateTurbo(rider); Tick(rider, count: 35);
+            Check($"floor-turbo-{special}-rider", rider.Health == 100 && rider.Feet == 48 && rider.Map.Sectors[2].Floor == 48,
+                new { rider.Feet, rider.Health, rider.Position });
+            Game blocked = Load($"floor-turbo-{special}-blocked");
+            if (!walk) Tick(blocked, Buttons.Forward, 4);
+            ActivateTurbo(blocked); Tick(blocked, count: 35);
+            Check($"floor-turbo-{special}-headroom", blocked.Health == 100 && blocked.Map.Sectors[2].Floor == 0 &&
+                blocked.Map.Sectors[2].FloorDirection == -1);
+            Tick(blocked, Buttons.Back, 16); Tick(blocked, count: 35);
+            Check($"floor-turbo-{special}-unblocked-resumes", blocked.Health == 100 && blocked.Map.Sectors[2].Floor == 32 &&
+                blocked.Map.Sectors[2].FloorDirection == 0);
+            foreach (bool solid in new[] { true, false })
+            {
+                Game body = Load($"floor-turbo-{special}-{(solid ? "actor" : "pickup")}");
+                ActivateTurbo(body); Tick(body, count: 35);
+                Check($"floor-turbo-{special}-{(solid ? "actor" : "pickup")}-headroom", body.Map.Sectors[3].Floor == (solid ? 0 : 32) &&
+                    body.Map.Sectors[3].FloorDirection == (solid ? -1 : 0) &&
+                    body.Actors.All(a => !solid || a.Type != 2035 || a.Health == 20));
+                if (solid)
+                {
+                    if (walk) Tick(body, Buttons.Back, 8);
+                    Actor barrel = body.Actors.Single(a => a.Type == 2035);
+                    Vec relative = barrel.Position - body.Position;
+                    body.Tick(new() { MouseX = -Math.Atan2(relative.Y, relative.X) / .003 }, 1.0 / 35);
+                    Tick(body, Buttons.Fire, 80);
+                    Check($"floor-turbo-{special}-actor-removal-resumes", barrel.Removed &&
+                        body.Map.Sectors[3].Floor == 32 && body.Map.Sectors[3].FloorDirection == 0 && body.Health == 100,
+                        new { body.Position, body.Feet, playerHealth = body.Health, barrel.Removed, barrelHealth = barrel.Health });
+                }
+            }
+            Game carry = Load($"floor-turbo-{special}-carry"); ActivateTurbo(carry);
+            Tick(carry, Buttons.Forward, 20); Tick(carry, Buttons.Use);
+            Check($"floor-turbo-{special}-exit", carry.Finished);
+            Tick(carry); Tick(carry, Buttons.Use); Tick(carry, count: 40);
+            Check($"floor-turbo-{special}-map-transition", carry.Map.Name == "E1M2" &&
+                carry.Map.Sides.Length == 4 && carry.Map.Sides.All(s => s.Middle == "QLWALL"));
+        }
+        Game button = Load("floor-turbo-70-highest"); Tick(button, Buttons.Use);
+        List<string> clicks = []; button.PlaySound = clicks.Add;
+        Tick(button, count: 5); Tick(button, Buttons.Use); Tick(button, count: 28);
+        Check("floor-turbo-button-busy-keeps-original-deadline", button.Map.Sides[button.Map.Lines[9].Right].Middle == "SW2BRCOM" &&
+            !clicks.Contains("SWTCHN"));
+        Tick(button);
+        Check("floor-turbo-button-restores-original-deadline", button.Map.Sides[button.Map.Lines[9].Right].Middle == "SW1BRCOM" &&
+            clicks.Count(s => s == "SWTCHN") == 1);
+        Game retrigger = Load("floor-turbo-70-highest"); clicks.Clear(); retrigger.PlaySound = clicks.Add;
+        Tick(retrigger, Buttons.Use); Tick(retrigger, count: 9); retrigger.Map.Sectors[2].Floor = 8; Tick(retrigger, Buttons.Use);
+        Check("floor-turbo-button-successful-retrigger", retrigger.Map.Sectors[3].FloorTarget == 16 &&
+            retrigger.Map.Sides[retrigger.Map.Lines[9].Right].Middle == "SW1BRCOM" && clicks.Count(s => s == "SWTCHN") == 2);
+        Tick(retrigger, count: 24);
+        Check("floor-turbo-button-retrigger-before-reset", clicks.Count(s => s == "SWTCHN") == 2);
+        Tick(retrigger);
+        Check("floor-turbo-button-retrigger-original-reset", clicks.Count(s => s == "SWTCHN") == 3);
+        Tick(retrigger, count: 35);
+        Check("floor-turbo-button-no-duplicate-reset", clicks.Count(s => s == "SWTCHN") == 3);
+        Game restarted = Load("floor-turbo-70-highest"); Tick(restarted, Buttons.Use); Tick(restarted, count: 5);
+        Tick(restarted, Buttons.Restart); Tick(restarted, count: 40);
+        Check("floor-turbo-button-restart-discards-reset", restarted.Map.Sectors[3].Floor == 64 &&
+            restarted.Map.Lines[9].Special == 70 && restarted.Map.Sides[restarted.Map.Lines[9].Right].Middle == "SW1BRCOM");
     }
     if (mode is "ceiling-floor-engine" or "engine" or "all")
     {
@@ -778,6 +948,38 @@ try
             Check("rocket-" + name + "-cleanup", game.Projectiles.All(p => !p.Rocket) && (name == "miss" || game.Health == health),
                 new { game.Health, projectiles = game.Projectiles.Count });
         }
+    }
+    if (mode is "turbo-floor-native" or "native" or "all")
+    {
+        if (!OperatingSystem.IsLinux()) throw new PlatformNotSupportedException("Native floor checks require Linux/X11/XTest.");
+        foreach (int special in new[] { 36, 70, 71, 98 })
+            foreach (bool tagged in new[] { true, false })
+            {
+                bool walk = special is 36 or 98;
+                string name = $"floor-turbo-{special}-{(tagged ? "highest" : "no-tag")}";
+                using NativeGame game = await NativeGame.Start(executable, ["--wad", Path.Combine(fixtures, name + ".wad")],
+                    Path.Combine(output, "native-" + name), source, audio: special == 70 && tagged);
+                Frame before = game.Capture("initial");
+                game.Hold(walk ? "w" : "e", walk ? .25 : .06);
+                Thread.Sleep(100);
+                Frame active = game.Capture("activated");
+                Thread.Sleep(1500);
+                Frame settled = game.Capture("settled");
+                game.Hold("w", 1.8);
+                game.Capture("route");
+                string text = await game.Quit();
+                double x = ProcessCheck.Position(text).X;
+                Check("native-" + name + "-lowered-route", tagged ? x > 208 : x is >= 72 and <= 80, new { x, text });
+                if (!walk)
+                {
+                    Check("native-" + name + "-feedback", before.SwitchPixels(false) > 500 &&
+                        (tagged ? active.SwitchPixels(true) > 500 : active.SwitchPixels(true) == 0));
+                    Check("native-" + name + "-reset-or-latch", tagged && special == 71 ?
+                        settled.SwitchPixels(true) > 500 : settled.SwitchPixels(true) == 0 && settled.SwitchPixels(false) > 500);
+                }
+                if (special == 70 && tagged)
+                    Check("native-floor-turbo-PCM", Regex.IsMatch(text, @"Audio: [1-9]\d* sound events, [1-9]\d* PCM samples submitted"), text);
+            }
     }
     if (mode is "ceiling-floor-native" or "native" or "all")
     {
