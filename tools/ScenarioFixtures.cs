@@ -111,6 +111,88 @@ public static class ScenarioFixtures
                 "busy-crusher", "partial-busy", "floor-door", "back", "occupied", "blocked" })
                 yield return ($"floor-highest-{special}-{mode}", Write(switchAssets
                     .Append(new("TEXTURE2", SwitchTextures(false))).Concat(LowerHighest(special, mode))));
+        foreach (int special in new[] { 5, 24, 64, 91, 101 })
+            foreach (string mode in new[] { "ceiling", "own-ceiling", "negative", "equal", "no-neighbor",
+                "no-tag", "zero-tag", "multiple", "busy-floor", "busy-door", "busy-crusher", "paused-crusher",
+                "partial-busy", "back", "occupied", "actor", "pickup" })
+                yield return ($"floor-ceiling-{special}-{mode}", Write(switchAssets
+                    .Append(new("TEXTURE2", SwitchTextures(false))).Concat(RaiseCeiling(special, mode))));
+        foreach (string mode in new[] { "gun-wall", "gun-closed", "gun-actor-before", "gun-actor-after", "gun-actor-overlap",
+            "gun-shotgun", "gun-chaingun", "gun-rocket", "gun-empty", "gun-multiple", "gun-one-sided", "gun-range" })
+            yield return ($"floor-ceiling-24-{mode}", Write(switchAssets
+                .Append(new("TEXTURE2", SwitchTextures(false))).Concat(RaiseCeiling(24, mode))));
+    }
+
+    static List<Lump> RaiseCeiling(int special, string mode)
+    {
+        int[] floors = [0, 0, 0, 0, 0, 0];
+        int[] ceilings = [128, 128, 128, 160, 96, 32];
+        int tag = mode == "zero-tag" ? 0 : 7;
+        int[] tags = [0, 0, 0, mode == "no-tag" ? 8 : tag, 0, 0];
+        if (mode == "own-ceiling") ceilings[3] = 64;
+        if (mode == "negative") { floors[4] = -96; ceilings[4] = -16; }
+        if (mode == "equal") floors[3] = 96;
+        if (mode == "busy-door") ceilings[3] = 0;
+        if (mode is "multiple" or "partial-busy") tags[5] = tag;
+        if (mode == "partial-busy") { floors[3] = 128; floors[5] = 24; }
+        if (mode == "occupied") { tags[3] = 0; tags[2] = tag; }
+        if (mode == "actor") ceilings[3] = 128;
+        bool busy = mode.StartsWith("busy-", StringComparison.Ordinal) || mode == "partial-busy";
+        int x = mode == "gun-range" ? -2200 : busy || mode is "gun-closed" or "paused-crusher" ? -96 : mode == "back" ? 32 : -32;
+        List<(int X, int Y, int Type)> things = [(x, 0, 1)];
+        if (mode is "actor" or "pickup") things.Add((144, 128, mode == "actor" ? 2035 : 2007));
+        if (mode.StartsWith("gun-actor-", StringComparison.Ordinal))
+            things.Add((mode == "gun-actor-before" ? -16 : mode == "gun-actor-overlap" ? 8 : 64, 0, 2035));
+        if (mode is "gun-shotgun" or "gun-chaingun" or "gun-rocket")
+            things.Add((x, 0, mode == "gun-shotgun" ? 2001 : mode == "gun-chaingun" ? 2002 : 2003));
+        if (mode == "gun-closed") ceilings[1] = 32;
+        var map = Corridor("E1M1", [mode == "gun-range" ? -2304 : -192, -64, 0, 96, 192, 320, 448],
+            floors, ceilings, tags, things);
+        byte[] lines = map.Single(l => l.Name == "LINEDEFS").Data;
+        void Action(int line, int action)
+        {
+            BinaryPrimitives.WriteUInt16LittleEndian(lines.AsSpan(line * 14 + 6), (ushort)action);
+            BinaryPrimitives.WriteUInt16LittleEndian(lines.AsSpan(line * 14 + 8), (ushort)tag);
+        }
+        Action(8, special);
+        if (busy) Action(7, mode == "busy-door" ? 2 : mode == "busy-crusher" ? 25 : mode == "partial-busy" ? 38 : 58);
+        if (mode == "paused-crusher") { Action(7, 25); Action(8, 74); Action(9, special); }
+        if (mode == "gun-multiple") Action(9, 24);
+        byte[] sides = map.Single(l => l.Name == "SIDEDEFS").Data;
+        int right = BinaryPrimitives.ReadUInt16LittleEndian(lines.AsSpan((mode == "paused-crusher" ? 9 : 8) * 14 + 10));
+        Encoding.ASCII.GetBytes("SW1BRCOM").CopyTo(sides, right * 30 + 20);
+        if (mode == "back")
+            BinaryPrimitives.WriteUInt16LittleEndian(map.Single(l => l.Name == "THINGS").Data.AsSpan(4), 180);
+        if (mode == "no-neighbor")
+        {
+            BinaryPrimitives.WriteUInt16LittleEndian(map.Single(l => l.Name == "SECTORS").Data.AsSpan(3 * 26 + 24), 0);
+            Append("SECTORS", Pack(w => Sector(w, 0, 80, 0, tag)));
+        }
+        if (mode is "gun-wall" or "gun-one-sided")
+        {
+            int vertex = map.Single(l => l.Name == "VERTEXES").Data.Length / 4;
+            int side = sides.Length / 30, line = lines.Length / 14;
+            int wallX = mode == "gun-wall" ? -16 : 0;
+            if (mode == "gun-one-sided") Action(8, 0);
+            Append("VERTEXES", Shorts(wallX, 256, wallX, -256));
+            Append("SIDEDEFS", Pack(w => Side(w, 1, false)));
+            Append("LINEDEFS", Shorts(vertex, vertex + 1, 1, mode == "gun-one-sided" ? 24 : 0, tag, side, 65535));
+            if (mode == "gun-one-sided")
+            {
+                byte[] updatedSides = map.Single(l => l.Name == "SIDEDEFS").Data;
+                Encoding.ASCII.GetBytes("SW1BRCOM").CopyTo(updatedSides, side * 30 + 20);
+            }
+            int blockmap = map.FindIndex(l => l.Name == "BLOCKMAP");
+            byte[] block = map[blockmap].Data;
+            map[blockmap] = new("BLOCKMAP", block.AsSpan(0, block.Length - 2).ToArray().Concat(Shorts(line, 65535)).ToArray());
+        }
+        return map;
+
+        void Append(string name, byte[] bytes)
+        {
+            int index = map.FindIndex(l => l.Name == name);
+            map[index] = new(name, map[index].Data.Concat(bytes).ToArray());
+        }
     }
 
     static List<Lump> LowerHighest(int special, string mode)

@@ -90,6 +90,28 @@ The browser runner adds visible SR45/S1-102/missing-tag controls and pauses SR45
 across its reset deadline. These host checks are synthetic, not a Freedoom
 campaign playthrough or bit-exact classic-engine comparison.
 
+The 97 `floor-ceiling-<special>-<variant>` fixtures cover 5/24/64/91/101.
+They distinguish adjacent ceilings from floors and nonadjacent ceilings,
+own-ceiling caps, signed/equal/isolated destinations, missing/zero/multiple
+tags, floor/door/active-and-paused-crusher ownership, partial success,
+side/trigger restrictions, riding/headroom, solid actors and nonsolid pickups.
+The engine checks snapshot targets, exact speed/endpoints, failure/retry,
+repeat/once, unchanged properties, restart and SR64's original reset deadline.
+Explicit ceiling changes test snapshot/retrigger behavior; other movers start
+through ordinary input. Gun tests cover pistol/shotgun/chaingun, rocket and
+dry-fire rejection, range, aimed misses, one-sided walls, blocked portals,
+actors before/after/overlapping a trigger, multiple lines and preserved damage.
+
+`ceiling-floor-engine` and `ceiling-floor-native` select this increment;
+the regular `engine`/`native`/`all` modes include it too. Ten fresh native
+processes activate all five actions and missing-tag controls. Raised floors
+must block the route at 72<=X<=80; missing-tag controls must reach X>208.
+Use/gun controls also require visible toggle/reset/latch, and one gun process
+requires nonzero ALSA-null PCM. Chromium checks use SR64/S1-101/G1-24
+and missing-tag gun controls; SR64 is paused across its reset deadline.
+These are bounded generated scenarios, not original-engine/campaign parity,
+physical-device input/audio, or proof of every host's gameplay behavior.
+
 The production project excludes tools and browser sources explicitly. Tool
 projects compile their own sources; no `.cs.txt` workaround or Python is needed.
 Fixture generator outputs stay under `.build`, keeping the source tree clean.

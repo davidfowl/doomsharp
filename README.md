@@ -327,6 +327,36 @@ across 16 maps (19:69, 45:2, 83:0, 102:11). Dispatch coverage and synthetic chec
 do not establish traversal of those maps, full vanilla edge-case parity,
 physical-device behavior or complete campaign compatibility.
 
+### Raise floor to lowest ceiling (branch only)
+
+`feat/classic-raise-to-ceiling-floors`, based on the preserved lower-to-highest
+floor tip, adds 5 (walk once), 24 (gun once), 64 (repeatable use),
+91 (repeatable walk) and 101 (use once). Each eligible nonzero-tagged floor
+targets the lowest adjacent ceiling, capped by its own ceiling, at one unit per
+35-Hz tick. An isolated sector therefore targets its own ceiling. Destinations
+below the starting floor snap down on the first mover update. Targets are
+captured on activation; floor textures and sector specials do not change.
+Living bodies block upward movement without damage, retaining mover ownership
+until they leave. Floor/door and active or paused crusher owners are preserved.
+Independent free targets still start when another tagged sector is busy.
+
+Successful 64 buttons restore their front texture after 35 subsequent gameplay
+ticks; 101 and gun-24 feedback latch. Use is front-side only; walk and gun
+activation work from either side. Pistol, shotgun and chaingun hitscans can
+activate 24, including on a one-sided wall or an open two-sided line. The trace
+is bounded to 2048 units and the first hit actor's collision surface, stops at
+solid walls or height-blocked portals, and preserves ordinary actor damage.
+Misses, dry firing and rocket/projectile impacts do not activate it.
+
+Failure/no-motion consumption and retries follow the existing success-only
+policy described above, not every original vanilla quirk. The hitscan remains
+the engine's simplified horizontal, fixed-eye-height trace: original autoaim,
+slopes, exact actor targeting/RNG and all gun-special families are not claimed.
+Behavioral targets/mapping/speed come from the same pinned BOOM documentation,
+not copied implementation. Bundled Freedoom has nine uses across six maps
+(5:7, 24:1, 64:0, 91:0, 101:1). Original synthetic engine/native/browser
+fixtures exercise this slice; map inventory is not campaign traversal evidence.
+
 ### Compatibility
 
 Implemented: classic IWAD/PWAD directory/geometry/BSP validation; textured

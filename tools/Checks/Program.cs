@@ -7,9 +7,9 @@ using System.Text.RegularExpressions;
 using DoomSharp;
 using DoomSharp.Tools;
 
-if (args.Length != 5 || args[0] is not ("headless" or "native" or "engine" or "all" or "floor-engine" or "floor-native"))
+if (args.Length != 5 || args[0] is not ("headless" or "native" or "engine" or "all" or "floor-engine" or "floor-native" or "ceiling-floor-engine" or "ceiling-floor-native"))
 {
-    Console.Error.WriteLine("Usage: DoomSharp.Checks <headless|native|engine|all|floor-engine|floor-native> <executable> <fixtures> <new-output-directory> <source-commit>");
+    Console.Error.WriteLine("Usage: DoomSharp.Checks <headless|native|engine|all|floor-engine|floor-native|ceiling-floor-engine|ceiling-floor-native> <executable> <fixtures> <new-output-directory> <source-commit>");
     return 2;
 }
 string mode = args[0], executable = Path.GetFullPath(args[1]), fixtures = Path.GetFullPath(args[2]),
@@ -56,6 +56,160 @@ try
         }
         var missing = await ProcessCheck.Run(executable, ["--wad", Path.Combine(output, "does-not-exist.wad"), "--headless"]);
         Check("reject-missing-wad", missing.Code == 1 && missing.Text.Contains("DoomSharp:", StringComparison.Ordinal), missing);
+    }
+    if (mode is "ceiling-floor-engine" or "engine" or "all")
+    {
+        foreach (int special in new[] { 5, 24, 64, 91, 101 })
+        {
+            bool walk = special is 5 or 91, gun = special == 24, repeat = special is 64 or 91;
+            void ActivateCeiling(Game game) => Tick(game, walk ? Buttons.Forward : gun ? Buttons.Fire : Buttons.Use, walk ? 8 : 1);
+            foreach (string variant in new[] { "ceiling", "own-ceiling", "negative", "equal", "no-neighbor",
+                "no-tag", "zero-tag", "multiple", "back" })
+            {
+                string name = $"floor-ceiling-{special}-{variant}";
+                Game game = Load(name);
+                bool allowed = variant is not ("no-tag" or "zero-tag" or "equal") && (variant != "back" || walk || gun);
+                int index = variant == "no-neighbor" ? 6 : 3;
+                Sector sector = game.Map.Sectors[index];
+                double target = variant == "own-ceiling" ? 64 : variant == "negative" ? -16 :
+                    variant == "no-neighbor" ? 80 : 96;
+                List<string> sounds = []; game.PlaySound = sounds.Add;
+                ActivateCeiling(game);
+                Check(name + "-target", allowed ? sector.FloorTarget == target :
+                    sector.Floor == (variant == "equal" ? 96 : 0) && sector.FloorDirection == 0,
+                    new { sector.Floor, sector.FloorTarget, sector.FloorDirection });
+                Check(name + "-consumption", game.Map.Lines[8].Special == (allowed && !repeat ? 0 : special));
+                Check(name + "-feedback", game.Map.Sides[game.Map.Lines[8].Right].Middle ==
+                    (allowed && !walk ? "SW2BRCOM" : "SW1BRCOM") &&
+                    sounds.Count(s => s == "SWTCHN") == (allowed && !walk ? 1 : 0));
+                if (variant == "negative")
+                    Check(name + "-instant-downward-snap", sector.Floor == -16 && sector.FloorDirection == 0);
+                if (variant is "no-tag" or "zero-tag")
+                    Check(name + "-diagnostic", game.Message == "FLOOR HAS NO TAGGED SECTOR", game.Message);
+                if (allowed && variant is not ("negative" or "back"))
+                {
+                    double before = sector.Floor; Tick(game);
+                    Check(name + "-one-unit-per-tick", sector.Floor == before + 1);
+                }
+                Tick(game, count: 180);
+                Check(name + "-endpoint", sector.Floor == (allowed ? target : variant == "equal" ? 96 : 0) &&
+                    sector.FloorDirection == 0, sector.Floor);
+                Check(name + "-properties", sector.FloorTexture == "QLFLOOR" && sector.Special == 0 && !sector.Lift);
+                if (variant == "multiple")
+                    Check(name + "-independent-target", game.Map.Sectors[5].Floor == 32);
+                if (variant == "ceiling")
+                {
+                    Check(name + "-non-neighbor-unchanged", game.Map.Sectors[5].Floor == 0);
+                    if (walk) Tick(game, Buttons.Back, 8);
+                    game.Map.Sectors[4].Ceiling = 112;
+                    Tick(game); ActivateCeiling(game); Tick(game, count: 40);
+                    Check(name + "-repeat-or-once", sector.Floor == (repeat ? 112 : 96) &&
+                        game.Map.Lines[8].Special == (repeat ? special : 0));
+                    Tick(game, Buttons.Restart);
+                    Check(name + "-restart", game.Map.Sectors[3].Floor == 0 && game.Map.Lines[8].Special == special &&
+                        game.Map.Sides[game.Map.Lines[8].Right].Middle == "SW1BRCOM");
+                }
+                if (variant == "equal")
+                {
+                    if (walk) Tick(game, Buttons.Back, 8);
+                    game.Map.Sectors[4].Ceiling = 112;
+                    Tick(game); ActivateCeiling(game);
+                    Check(name + "-no-motion-retry", sector.FloorTarget == 112 && sector.FloorDirection == 1);
+                }
+            }
+            foreach (Buttons wrongButton in new[] { Buttons.Use, Buttons.Forward, Buttons.Fire }
+                .Where(b => b != (walk ? Buttons.Forward : gun ? Buttons.Fire : Buttons.Use)))
+            {
+                Game wrong = Load($"floor-ceiling-{special}-ceiling");
+                Tick(wrong, wrongButton, wrongButton == Buttons.Forward ? 8 : 1);
+                Check($"floor-ceiling-{special}-reject-{wrongButton}", wrong.Map.Sectors[3].Floor == 0 &&
+                    wrong.Map.Lines[8].Special == special);
+            }
+            Game snapshot = Load($"floor-ceiling-{special}-ceiling"); ActivateCeiling(snapshot);
+            snapshot.Map.Sectors[4].Ceiling = 112; Tick(snapshot, count: 160);
+            Check($"floor-ceiling-{special}-snapshot", snapshot.Map.Sectors[3].Floor == 96);
+            Game paused = Load($"floor-ceiling-{special}-paused-crusher");
+            Tick(paused, Buttons.Forward, 31);
+            double pausedCeiling = paused.Map.Sectors[3].Ceiling;
+            Tick(paused, walk ? Buttons.Forward : gun ? Buttons.Fire : Buttons.Use, walk ? 14 : 1);
+            Tick(paused, count: 35);
+            Check($"floor-ceiling-{special}-paused-crusher-ownership", paused.Map.Sectors[3].CrusherPaused &&
+                paused.Map.Sectors[3].Ceiling == pausedCeiling && paused.Map.Sectors[3].Floor == 0 &&
+                paused.Map.Sectors[3].FloorDirection == 0 && paused.Map.Lines[9].Special == special);
+            foreach (string owner in new[] { "floor", "door", "crusher" })
+            {
+                Game busy = Load($"floor-ceiling-{special}-busy-{owner}");
+                Tick(busy, Buttons.Forward, 15);
+                Sector sector = busy.Map.Sectors[3]; double originalTarget = sector.FloorTarget;
+                ActivateCeiling(busy);
+                Check($"floor-ceiling-{special}-busy-{owner}", busy.Map.Lines[8].Special == special &&
+                    sector.FloorTarget == originalTarget && busy.Map.Sides[busy.Map.Lines[8].Right].Middle == "SW1BRCOM" &&
+                    busy.Message == "FLOOR SECTOR IS BUSY OR HAS NO MOTION",
+                    new { sector.FloorTarget, sector.DoorDirection, sector.CrusherDirection, busy.Message });
+                if (owner == "floor")
+                {
+                    Tick(busy, count: 40);
+                    if (walk) Tick(busy, Buttons.Back, 8);
+                    Tick(busy); ActivateCeiling(busy);
+                    Check($"floor-ceiling-{special}-busy-retry", sector.FloorTarget == 96 && sector.FloorDirection == 1);
+                }
+            }
+            Game partial = Load($"floor-ceiling-{special}-partial-busy");
+            Tick(partial, Buttons.Forward, 15); Tick(partial, count: 40); ActivateCeiling(partial);
+            Check($"floor-ceiling-{special}-partial-success", partial.Map.Sectors[3].FloorTarget == 0 &&
+                partial.Map.Sectors[3].FloorDirection == -1 && partial.Map.Sectors[5].FloorTarget == 32 &&
+                partial.Map.Sectors[5].FloorDirection == 1 && partial.Map.Lines[8].Special == (repeat ? special : 0));
+            Game occupied = Load($"floor-ceiling-{special}-occupied");
+            if (!walk) Tick(occupied, Buttons.Forward, 4);
+            ActivateCeiling(occupied); Tick(occupied, count: 160);
+            Check($"floor-ceiling-{special}-headroom-and-rider", occupied.Feet == 72 && occupied.Health == 100 &&
+                occupied.Map.Sectors[2].Floor == 72 && occupied.Map.Sectors[2].FloorDirection == 1,
+                new { occupied.Feet, occupied.Health, occupied.Position });
+            Tick(occupied, Buttons.Back, 32); Tick(occupied, count: 160);
+            Check($"floor-ceiling-{special}-unblocked-resumes", occupied.Map.Sectors[2].Floor == 128 &&
+                occupied.Map.Sectors[2].FloorDirection == 0);
+            foreach (bool solid in new[] { true, false })
+            {
+                Game body = Load($"floor-ceiling-{special}-{(solid ? "actor" : "pickup")}");
+                ActivateCeiling(body); Tick(body, count: 160);
+                Check($"floor-ceiling-{special}-{(solid ? "actor" : "pickup")}-headroom",
+                    body.Map.Sectors[3].Floor == (solid ? 72 : 96) &&
+                    body.Map.Sectors[3].FloorDirection == (solid ? 1 : 0) &&
+                    body.Actors.All(a => !solid || a.Type != 2035 || a.Health == 20));
+            }
+        }
+        foreach (string variant in new[] { "gun-wall", "gun-closed", "gun-actor-before", "gun-actor-after", "gun-actor-overlap",
+            "gun-shotgun", "gun-chaingun", "gun-rocket", "gun-empty", "gun-multiple", "gun-one-sided", "gun-range" })
+        {
+            Game gun = Load("floor-ceiling-24-" + variant); Tick(gun);
+            if (variant == "gun-empty")
+            {
+                Input turn = new() { MouseX = Math.PI / .003 };
+                gun.Tick(turn, 1.0 / 35);
+                Tick(gun, Buttons.Fire, 600); Tick(gun, count: 20);
+                turn.MouseX = Math.PI / .003;
+                gun.Tick(turn, 1.0 / 35);
+            }
+            Tick(gun, Buttons.Fire);
+            if (variant == "gun-rocket") Tick(gun, count: 120);
+            bool allowed = variant is not ("gun-wall" or "gun-closed" or "gun-actor-before" or "gun-actor-overlap" or
+                "gun-rocket" or "gun-empty" or "gun-range");
+            Check("floor-ceiling-24-" + variant, (gun.Map.Sectors[3].FloorDirection == 1) == allowed &&
+                (variant == "gun-one-sided" ? gun.Map.Lines[^1].Special : gun.Map.Lines[8].Special) == (allowed ? 0 : 24),
+                new { gun.Bullets, gun.SelectedWeapon, gun.Map.Sectors[3].FloorTarget, gun.Map.Sectors[3].FloorDirection });
+            if (variant == "gun-actor-after")
+                Check("floor-ceiling-gun-still-damages-target", gun.Actors.Any(a => a.Type == 2035 && a.Health < 20));
+            if (variant == "gun-multiple")
+                Check("floor-ceiling-gun-second-line-busy-retained", gun.Map.Lines[9].Special == 24);
+        }
+        Game miss = Load("floor-ceiling-24-ceiling");
+        miss.Tick(new() { Held = Buttons.Fire, MouseX = Math.PI / 2 / .003 }, 1.0 / 35);
+        Check("floor-ceiling-gun-aimed-miss", miss.Map.Lines[8].Special == 24 && miss.Map.Sectors[3].FloorDirection == 0);
+        Game button = Load("floor-ceiling-64-ceiling"); Tick(button, Buttons.Use);
+        Tick(button, count: 5); Tick(button, Buttons.Use); Tick(button, count: 28);
+        Check("floor-ceiling-button-before-original-deadline", button.Map.Sides[button.Map.Lines[8].Right].Middle == "SW2BRCOM");
+        Tick(button);
+        Check("floor-ceiling-button-restores-original-deadline", button.Map.Sides[button.Map.Lines[8].Right].Middle == "SW1BRCOM");
     }
     if (mode is "floor-engine" or "engine" or "all")
     {
@@ -624,6 +778,38 @@ try
             Check("rocket-" + name + "-cleanup", game.Projectiles.All(p => !p.Rocket) && (name == "miss" || game.Health == health),
                 new { game.Health, projectiles = game.Projectiles.Count });
         }
+    }
+    if (mode is "ceiling-floor-native" or "native" or "all")
+    {
+        if (!OperatingSystem.IsLinux()) throw new PlatformNotSupportedException("Native floor checks require Linux/X11/XTest.");
+        foreach (int special in new[] { 5, 24, 64, 91, 101 })
+            foreach (bool tagged in new[] { true, false })
+            {
+                bool walk = special is 5 or 91;
+                string name = $"floor-ceiling-{special}-{(tagged ? "ceiling" : "no-tag")}";
+                using NativeGame game = await NativeGame.Start(executable, ["--wad", Path.Combine(fixtures, name + ".wad")],
+                    Path.Combine(output, "native-" + name), source, audio: special == 24 && tagged);
+                Frame before = game.Capture("initial");
+                game.Hold(walk ? "w" : special == 24 ? "Control_L" : "e", walk ? .25 : .06);
+                Thread.Sleep(100);
+                Frame active = game.Capture("activated");
+                Thread.Sleep(3100);
+                Frame settled = game.Capture("settled");
+                game.Hold("w", 1.8);
+                game.Capture("route");
+                string text = await game.Quit();
+                double x = ProcessCheck.Position(text).X;
+                Check("native-" + name + "-raised-barrier", tagged ? x is >= 72 and <= 80 : x > 208, new { x, text });
+                if (!walk)
+                {
+                    Check("native-" + name + "-feedback", before.SwitchPixels(false) > 500 &&
+                        (tagged ? active.SwitchPixels(true) > 500 : active.SwitchPixels(true) == 0));
+                    Check("native-" + name + "-reset-or-latch", tagged && special != 64 ?
+                        settled.SwitchPixels(true) > 500 : settled.SwitchPixels(true) == 0 && settled.SwitchPixels(false) > 500);
+                }
+                if (special == 24 && tagged)
+                    Check("native-floor-ceiling-gun-PCM", Regex.IsMatch(text, @"Audio: [1-9]\d* sound events, [1-9]\d* PCM samples submitted"), text);
+            }
     }
     if (mode is "floor-native" or "native" or "all")
     {
