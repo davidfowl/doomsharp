@@ -92,6 +92,7 @@ public sealed class Game
     public List<Actor> Actors { get; } = [];
     public List<Projectile> Projectiles { get; } = [];
     public Action<string>? PlaySound;
+    public Action<string?>? PlayMusic;
     readonly Random random = new(1993);
     readonly HashSet<int> foundSecrets = [];
     Buttons previous;
@@ -891,9 +892,34 @@ public sealed class Game
         return $"MAP{(number is 31 or 32 ? 16 : number + 1):D2}";
     }
 
+    /// <summary>Starts (or restarts) music for the current map. Call once after wiring <see cref="PlayMusic"/>.</summary>
+    public void StartMusic() => PlayMusic?.Invoke(MusicLumpName(Map.Name));
+
+    /// <summary>
+    /// Maps a map name to its classic "D_*" music lump name: episode/level-based for E#M# maps, and the
+    /// well-known fixed per-level table for MAP## maps (matching the original engine's level-to-track order).
+    /// </summary>
+    public static string MusicLumpName(string map)
+    {
+        if (map.Length == 4 && map[0] == 'E') return $"D_E{map[1]}M{map[3]}";
+        if (map.StartsWith("MAP", StringComparison.Ordinal) &&
+            int.TryParse(map.AsSpan(3), out int level) && level is >= 1 and <= 32)
+            return "D_" + Map32MusicNames[level - 1];
+        return "D_" + map;
+    }
+
+    static readonly string[] Map32MusicNames =
+    [
+        "RUNNIN", "STALKS", "COUNTD", "BETWEE", "DOOM", "THE_DA", "SHAWN", "DDTBLU", "IN_CIT", "DEAD",
+        "STLKS2", "THEDA2", "DOOM2", "DDTBL2", "RUNNI2", "DEAD2", "STLKS3", "ROMERO", "SHAWN2", "MESSAG",
+        "COUNT2", "DDTBL3", "AMPIE", "THEDA3", "ADRIAN", "MESSG2", "ROMER2", "TENSE", "SHAWN3", "OPENIN",
+        "EVIL", "ULTIMA"
+    ];
+
     void Load(string name, bool reset)
     {
         Map = new(Wad, name); Assets = new(Wad, name);
+        PlayMusic?.Invoke(MusicLumpName(name));
         if (reset || Health <= 0)
         {
             Health = 100; Armor = 0; Bullets = 50; Shells = 0; Rockets = 0;

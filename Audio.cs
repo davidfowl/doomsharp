@@ -7,6 +7,7 @@ public sealed class Audio : IDisposable
     public const int SampleRate = Assets.SoundSampleRate;
     readonly Assets assets;
     readonly Dictionary<string, short[]?> sounds = new(StringComparer.Ordinal);
+    readonly Dictionary<string, short[]?> music = new(StringComparer.Ordinal);
     readonly List<(short[] Samples, int Position)> voices = [];
     readonly object gate = new();
     readonly Thread worker;
@@ -14,8 +15,12 @@ public sealed class Audio : IDisposable
     volatile bool stop;
     volatile Exception? failure;
     long submittedSamples;
+    short[]? currentMusic;
+    int musicPosition;
+    string? currentMusicName;
     public long SubmittedSamples => Interlocked.Read(ref submittedSamples);
     public int PlayedSounds { get; private set; }
+    public int MusicChanges { get; private set; }
 
     public Audio(Assets assets)
     {
@@ -42,6 +47,21 @@ public sealed class Audio : IDisposable
             voices.Add((sound, 0));
         }
     }
+
+    /// <summary>Starts looping a map's music track, or stops music entirely when <paramref name="name"/> is null.</summary>
+    public void PlayMusic(string? name)
+    {
+        if (failure != null) throw new InvalidOperationException("Audio playback failed; use --no-audio if no audio device is available.", failure);
+        if (name == currentMusicName) return;
+        if (name == null) { lock (gate) { currentMusic = null; musicPosition = 0; currentMusicName = null; } return; }
+        if (!music.TryGetValue(name, out short[]? pcm))
+        {
+            pcm = assets.Music(name); music[name] = pcm;
+            if (pcm == null) Console.Error.WriteLine($"Missing or unsupported music {name}; no track will play.");
+        }
+        MusicChanges++;
+        lock (gate) { currentMusic = pcm; musicPosition = 0; currentMusicName = name; }
+    }
     void Run()
     {
         try
@@ -61,6 +81,18 @@ public sealed class Audio : IDisposable
                         position += count;
                         if (position == samples.Length) voices.RemoveAt(v);
                         else voices[v] = (samples, position);
+                    }
+                    if (currentMusic is { Length: > 0 } track)
+                    {
+                        int remaining = output.Length, outPosition = 0;
+                        while (remaining > 0)
+                        {
+                            int count = Math.Min(remaining, track.Length - musicPosition);
+                            for (int i = 0; i < count; i++)
+                                output[outPosition + i] = (short)Math.Clamp(output[outPosition + i] + track[musicPosition + i], short.MinValue, short.MaxValue);
+                            musicPosition += count; outPosition += count; remaining -= count;
+                            if (musicPosition == track.Length) musicPosition = 0; // loop the track, like the original engine's music
+                        }
                     }
                 }
                 device.Write(output);

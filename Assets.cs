@@ -155,4 +155,7 @@ public sealed class Assets
         for (int i = 0; i < pcm.Length; i++) pcm[i] = (short)((b[start + (int)((long)i * rate / SoundSampleRate)] - 128) * 128);
         return pcm;
     }
+
+    /// <summary>Decodes a "D_*" music lump (MUS or Standard MIDI File) into one loop's worth of PCM, or null if absent/unsupported.</summary>
+    public short[]? Music(string lumpName) => DoomSharp.Music.Render(wad.Find(lumpName), SoundSampleRate);
 }

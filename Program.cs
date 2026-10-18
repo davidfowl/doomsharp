@@ -96,7 +96,7 @@ static class Program
         {
             using IPlatform platform = Platform.Open(renderer.Width, renderer.Height);
             using Audio? audio = args.Contains("--no-audio") ? null : new(game.Assets);
-            if (audio != null) game.PlaySound = audio.Play;
+            if (audio != null) { game.PlaySound = audio.Play; game.PlayMusic = audio.PlayMusic; game.StartMusic(); }
             Stopwatch clock = Stopwatch.StartNew();
             double previous = clock.Elapsed.TotalSeconds, accumulator = 0;
             for (int i = 0; i < frames && !input.Quit; i++)
@@ -110,7 +110,7 @@ static class Program
                 rendered++;
                 Thread.Sleep(1);
             }
-            if (audio != null) Console.WriteLine($"Audio: {audio.PlayedSounds} sound events, {audio.SubmittedSamples} PCM samples submitted.");
+            if (audio != null) Console.WriteLine($"Audio: {audio.PlayedSounds} sound events, {audio.SubmittedSamples} PCM samples submitted, {audio.MusicChanges} music changes.");
         }
         if (Value("--output") is string output) renderer.SavePpm(output);
         Console.WriteLine($"Rendered {rendered} frames; wall={renderer.VisibleWallPixels}, " +
