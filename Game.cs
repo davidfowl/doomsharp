@@ -83,6 +83,12 @@ public sealed class Game
     public double FireTime { get; private set; }
     public double DamageFlash { get; private set; }
     public double PickupFlash { get; private set; }
+    public double InvulnerabilityTime { get; private set; }
+    public double InvisibilityTime { get; private set; }
+    public double RadiationSuitTime { get; private set; }
+    public double LightAmpTime { get; private set; }
+    public bool HasComputerMap { get; private set; }
+    public bool HasBerserk { get; private set; }
     public double WalkTime { get; private set; }
     public double Bob { get; private set; }
     public bool Automap { get; private set; }
@@ -95,6 +101,8 @@ public sealed class Game
     public Action<string?>? PlayMusic;
     readonly Random random = new(1993);
     readonly HashSet<int> foundSecrets = [];
+    public IReadOnlySet<int> VisitedSectors => visitedSectors;
+    readonly HashSet<int> visitedSectors = [];
     Buttons previous;
     double damageTick, messageTime;
     public int UnsupportedThings { get; private set; }
@@ -116,7 +124,7 @@ public sealed class Game
         if (start == null) throw new InvalidDataException($"{Map.Name} has no player-one start.");
         Position = start.Value.Position; Angle = start.Value.Angle * Math.PI / 180;
         Feet = Map.FloorAt(Position, 16);
-        Actors.Clear(); Projectiles.Clear(); foundSecrets.Clear();
+        Actors.Clear(); Projectiles.Clear(); foundSecrets.Clear(); visitedSectors.Clear();
         bossDeathActivated = false;
         UnsupportedThings = 0;
         foreach (Thing thing in Map.Things)
@@ -167,6 +175,11 @@ public sealed class Game
         2019 => new(t, "ARM2", false, false, 16, 1),
         2013 => new(t, "SOUL", false, false, 16, 1),
         2023 => new(t, "PSTR", false, false, 16, 1),
+        2022 => new(t, "PINV", false, false, 16, 1),
+        2024 => new(t, "PINS", false, false, 16, 1),
+        2025 => new(t, "SUIT", false, false, 16, 1),
+        2026 => new(t, "PMAP", false, false, 16, 1),
+        2045 => new(t, "PVIS", false, false, 16, 1),
         5 or 40 => new(t, t.Type == 5 ? "BKEY" : "BSKU", false, false, 16, 1),
         6 or 39 => new(t, t.Type == 6 ? "YKEY" : "YSKU", false, false, 16, 1),
         13 or 38 => new(t, t.Type == 13 ? "RKEY" : "RSKU", false, false, 16, 1),
@@ -223,6 +236,10 @@ public sealed class Game
         if (ChaingunFlashTicks > 0) ChaingunFlashTicks--;
         if (RocketFireTicks > 0) RocketFireTicks--;
         DamageFlash = Math.Max(0, DamageFlash - dt); PickupFlash = Math.Max(0, PickupFlash - dt);
+        InvulnerabilityTime = Math.Max(0, InvulnerabilityTime - dt);
+        InvisibilityTime = Math.Max(0, InvisibilityTime - dt);
+        RadiationSuitTime = Math.Max(0, RadiationSuitTime - dt);
+        LightAmpTime = Math.Max(0, LightAmpTime - dt);
         messageTime -= dt;
         if (messageTime <= 0) Message = "";
         Buttons pressed = input.Held & ~previous;
@@ -260,13 +277,16 @@ public sealed class Game
             Sector sector = Map.Sectors[Map.FindSector(Position)];
             Feet = Map.FloorAt(Position, 16);
             bool onSectorFloor = Feet == sector.Floor;
+            visitedSectors.Add(Map.FindSector(Position));
             if (onSectorFloor && sector.Special == 9 && foundSecrets.Add(Map.FindSector(Position))) { Secrets++; Say("SECRET FOUND"); }
             damageTick += dt;
             if (damageTick >= 1)
             {
                 damageTick = 0;
-                if (onSectorFloor && sector.Special is 4 or 5 or 7 or 11 or 16)
-                    Damage(sector.Special switch { 7 => 5, 11 => 20, _ => 10 });
+                if (onSectorFloor && sector.Special is 4 or 5 or 7 or 16 && RadiationSuitTime <= 0)
+                    Damage(sector.Special switch { 7 => 5, _ => 10 });
+                else if (onSectorFloor && sector.Special == 11)
+                    Damage(20);
             }
             if (onSectorFloor && sector.Special == 11 && Health <= 10)
             {
@@ -725,11 +745,12 @@ public sealed class Game
         if (actor.Cooldown <= 0 && (distance < 64 || actor.Type is not (3002 or 58) && distance < 800))
         {
             actor.Cooldown = 1.1 + random.NextDouble();
-            if (distance < 64) Damage(random.Next(3, 9) * 3);
+            double invisibility = InvisibilityTime > 0 ? .25 : 1;
+            if (distance < 64) { if (random.NextDouble() < invisibility) Damage(random.Next(3, 9) * 3); }
             else if (actor.Type is 3004 or 9 or 65 or 7)
             {
                 PlaySound?.Invoke(actor.Type == 9 ? "SHOTGN" : "PISTOL");
-                if (random.NextDouble() < Math.Clamp(1 - distance / 1200, .15, .9))
+                if (random.NextDouble() < Math.Clamp(1 - distance / 1200, .15, .9) * invisibility)
                     Damage(random.Next(1, 5) * (actor.Type == 9 ? 5 : 3));
             }
             else
@@ -808,6 +829,7 @@ public sealed class Game
 
     void Damage(int amount)
     {
+        if (InvulnerabilityTime > 0) return;
         int absorb = Math.Min(Armor, amount / 3); Armor -= absorb; Health = Math.Max(0, Health - amount + absorb);
         DamageFlash = .3; PlaySound?.Invoke(Health > 0 ? "PLPAIN" : "PLDETH");
         if (Health == 0) Say("YOU DIED - PRESS R TO RESTART");
@@ -848,7 +870,12 @@ public sealed class Game
             case 2018: if (Armor >= 100) taken = false; else Armor = 100; break;
             case 2019: if (Armor >= 200) taken = false; else Armor = 200; break;
             case 2013: Health = Math.Min(200, Health + 100); break;
-            case 2023: Health = Math.Max(100, Health); break;
+            case 2023: HasBerserk = true; Health = Math.Max(100, Health); break;
+            case 2022: InvulnerabilityTime = 30; break;
+            case 2024: InvisibilityTime = 60; break;
+            case 2025: RadiationSuitTime = 60; break;
+            case 2026: HasComputerMap = true; break;
+            case 2045: LightAmpTime = 120; break;
             case 5: case 40: Keys |= 1; break;
             case 6: case 39: Keys |= 2; break;
             case 13: case 38: Keys |= 4; break;
@@ -929,6 +956,8 @@ public sealed class Game
         Keys = 0; Kills = 0; Secrets = 0; Time = 0; FireTime = 0; Finished = false; secretExit = false;
         CompletionPrompt = "";
         DamageFlash = 0; PickupFlash = 0; damageTick = 0; WalkTime = 0;
+        InvulnerabilityTime = 0; InvisibilityTime = 0; RadiationSuitTime = 0; LightAmpTime = 0;
+        HasComputerMap = false; HasBerserk = false;
         chaingunTicks = 0; chaingunFollowup = false; chaingunRefiring = false; pendingWeapon = null;
         ChaingunFrame = 0; ChaingunFlashFrame = 0; ChaingunFlashTicks = 0;
         RocketFireTicks = 0;

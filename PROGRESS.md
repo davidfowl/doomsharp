@@ -55,8 +55,9 @@ Build/publish output includes the Phase 1 WAD, BSD license and credits.
 | HUD, weapon overlays and automap | Partial | Actual executable exports HUD/weapon frames; local Linux native Tab on/off plus W/Ctrl controls qualify automap input, not original visuals or other-platform interactive behavior |
 | Native window presentation | Working | Bounded actual-engine desktop smoke runs pass on three OSes; interactive input coverage differs by platform below |
 | DMX decoding and sound-effects mixer | Partial | Native Linux playthrough submits effects to ALSA null; exact resampling/audio comparison, audible playback and Windows/macOS audio unverified |
-| Remaining weapons/powerups, stairs/crushers, switch textures and other boss actions | Not implemented | Required for original gameplay/campaign parity |
+| Remaining weapons, stairs/crushers, switch textures and other boss actions | Not implemented | Required for original gameplay/campaign parity |
 | Music/MUS and Standard MIDI File playback | Partial | Clean-room MUS and SMF parsers decode bundled Freedoom `D_*` lumps into looping PCM mixed by the native audio thread and WebAudio on the browser target; verified via native ALSA-null submission and Chromium/WebKit WebAudio-after-click checks below; uses an approximate additive-harmonic/noise synth, not a General MIDI soundfont, so exact timbre/original parity is not claimed |
+| Powerup items (Berserk, Invulnerability, Partial Invisibility, Radiation Suit, Computer Area Map, Light Amplification Visor) | Partial | All six classic powerup pickups (types2022-2026,2045) are recognized, timed per vanilla durations (30/60/60/120s) and reset each level per original `P_SetupLevel` semantics; Invulnerability blocks all damage (floor/explosion/monster) and inverts the view, the Radiation Suit blocks types4/5/7/16 floor damage (type11 always damages, matching original `P_PlayerInSpecialSector`), Partial Invisibility reduces monster hit chance, the Light Amplification Visor renders at full brightness, and the Computer Area Map reveals the full automap instead of only visited sectors (fog-of-war automap is new in this change); engine scenario WADs confirm pickup, timers, invulnerability/radsuit immunity, computer-map reveal and HUD status text below; Berserk's vanilla melee-damage bonus is not claimed because no fist/melee weapon exists yet |
 | Saves, menus, multiplayer and extended maps/mods | Not implemented | No end-to-end capability claimed |
 | Complete authentic WAD campaigns | Unverified | Map rendering alone is not campaign completion; missing behaviors can block progression |
 
@@ -68,9 +69,10 @@ branch-only work separate from merged-main status.
 
 Remaining compatibility work includes stairs/crushers, remaining mover variants,
 all vanilla map specials and switch textures, other boss actions, exact monster states
-and attacks/infighting, remaining weapons/powerups, telefragging, original physics,
-saves, menus and multiplayer. These gaps can block complete
-authentic WAD campaigns. Extended maps/mod formats are not implemented.
+and attacks/infighting, remaining weapons (fist, chainsaw, plasma gun, BFG9000),
+telefragging, original physics, saves, menus and multiplayer. These gaps can
+block complete authentic WAD campaigns. Extended maps/mod formats are not
+implemented.
 
 Music/MUS and Standard MIDI File playback (`Music.cs`) is now partially
 implemented: a clean-room event-stream parser for both id Software's native MUS
@@ -84,6 +86,24 @@ pitch bend or SMPTE-divisioned MIDI files (falls back to a default PPQ). See
 the "Built vs. runtime-tested" verification below for exact evidence.
 Sector-11 exit handling and E1M8's last-Baron/tag666 floor action are implemented;
 other original finale boss actions remain absent. Damaging-floor timing is approximate.
+
+Powerup items (`Game.cs`/`Renderer.cs`) add the six classic timed/persistent
+pickups: Berserk (types2023), Invulnerability (2022, 30s), Partial Invisibility
+(2024, 60s), Radiation Suit (2025, 60s), Computer Area Map (2026, persistent)
+and Light Amplification Visor (2045, 120s). Timers tick down per frame and, like
+keys/kills/secrets, reset at every level load (matching the original engine's
+per-level `player->powers` reset). Invulnerability makes `Damage` a no-op (so it
+also blocks explosion/monster/floor damage) and inverts the rendered view; the
+Radiation Suit exempts floor-damage sector specials4/5/7/16 (type11 always
+damages and can still end the level, matching `P_PlayerInSpecialSector`);
+Partial Invisibility reduces monster hit-chance by75%; the Light Amplification
+Visor disables distance/sector-light dimming; and the Computer Area Map switches
+the automap from a new fog-of-war mode (only sectors the player has stood in are
+drawn) to revealing every line. Verified with engine-level scenario WADs
+(pickup/timer values, invulnerability and radiation-suit floor-damage immunity)
+and the full headless/engine/native/browser suites below. Berserk's vanilla
+super-punch melee bonus is not modeled because this engine has no fist/melee
+weapon yet.
 
 ## Built vs. runtime-tested
 
