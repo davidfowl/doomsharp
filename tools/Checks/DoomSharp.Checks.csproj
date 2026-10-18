@@ -8,6 +8,6 @@
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
   </PropertyGroup>
   <ItemGroup>
-    <Compile Include="../../Assets.cs;../../Demo.cs;../../Font.cs;../../Game.cs;../../Music.cs;../../Renderer.cs;../../Wad.cs" Link="Engine/%(Filename)%(Extension)" />
+    <Compile Include="../../Assets.cs;../../Demo.cs;../../Font.cs;../../Game.cs;../../Music.cs;../../Renderer.cs;../../Save.cs;../../Wad.cs" Link="Engine/%(Filename)%(Extension)" />
   </ItemGroup>
 </Project>

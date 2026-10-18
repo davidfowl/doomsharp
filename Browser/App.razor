@@ -13,12 +13,14 @@
     <label>Local WAD <InputFile OnChange="LoadFile" accept=".wad" disabled="@loading" /></label>
     <label>Map <input @bind="map" aria-label="Map" size="8" /></label>
     <label><input type="checkbox" checked="@muted" @onchange="ToggleMute" /> Mute</label>
+    <button @onclick="TriggerSave" disabled="@loading">Save Game</button>
+    <button @onclick="TriggerLoad" disabled="@loading">Load Game</button>
 </div>
 <p id="status" role="status">@status</p>
 <canvas id="game" width="640" height="400" tabindex="0" aria-label="DoomSharp game"></canvas>
 <p>Freedoom starts automatically without sound. Click the game to enable sound and capture the mouse. WASD moves, arrows turn,
 Ctrl/click fires, E/Space uses, Shift runs, 1/2/4/5 selects weapons, Tab maps,
-R restarts. Esc releases the pointer and pauses. Click to resume.</p>
+R restarts, F5/Save Game saves, F9/Load Game loads. Esc releases the pointer and pauses. Click to resume.</p>
 <p>Local WADs stay on your device (64 MiB limit). Map defaults to the first map.
 No proprietary assets included. <a href="assets/freedoom/COPYING.txt">Freedoom license</a>,
 <a href="assets/freedoom/CREDITS.txt">credits</a>,
@@ -88,6 +90,8 @@ No proprietary assets included. <a href="assets/freedoom/COPYING.txt">Freedoom l
             game = new(wad, selected);
             game.PlaySound = QueueSound;
             game.PlayMusic = QueueMusic;
+            game.SaveGame = SaveToStorage;
+            game.LoadGame = LoadFromStorage;
             game.StartMusic();
             await host!.InvokeVoidAsync("start");
             status = $"Playing {selected}. Click the game to enable sound and mouse capture.";
@@ -115,6 +119,16 @@ No proprietary assets included. <a href="assets/freedoom/COPYING.txt">Freedoom l
         }
         if (bytes != null) sounds.Add(bytes);
     }
+
+    void SaveToStorage(string json)
+    {
+        if (JS is IJSInProcessRuntime sync) sync.InvokeVoid("saveGame", json);
+    }
+
+    string? LoadFromStorage() => JS is IJSInProcessRuntime sync ? sync.Invoke<string?>("loadGame") : null;
+
+    void TriggerSave() { inputEvents.Enqueue((Buttons.Save, true)); inputEvents.Enqueue((Buttons.Save, false)); }
+    void TriggerLoad() { inputEvents.Enqueue((Buttons.Load, true)); inputEvents.Enqueue((Buttons.Load, false)); }
 
     void QueueMusic(string? name)
     {
@@ -215,6 +229,7 @@ No proprietary assets included. <a href="assets/freedoom/COPYING.txt">Freedoom l
             "Digit1" => Buttons.Pistol, "Digit2" => Buttons.Shotgun,
             "Digit4" => Buttons.Chaingun, "Digit5" => Buttons.RocketLauncher,
             "Tab" => Buttons.Map, "KeyR" => Buttons.Restart,
+            "F5" => Buttons.Save, "F9" => Buttons.Load,
             _ => Buttons.None
         };
         if (button != Buttons.None) inputEvents.Enqueue((button, down));
