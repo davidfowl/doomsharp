@@ -86,24 +86,31 @@ try
                     Check($"tagged-consumption-{special}-{key}", action == (special is 99 or 134 or 136 ? special : 0), action);
                 }
             }
-        foreach (string prefix in new[] { "chaingun", "rocket" })
+        foreach (var (prefix, weapon, selectButton, hasWeapon, pickupAmmo, tapCost, capacityCap) in
+            new (string, Weapon, Buttons, Func<Game, bool>, int, int, int)[]
+            {
+                ("chaingun", Weapon.Chaingun, Buttons.Chaingun, g => g.HasChaingun, 70, 2, 200),
+                ("rocket", Weapon.RocketLauncher, Buttons.RocketLauncher, g => g.HasRocketLauncher, 2, 1, 50),
+                ("plasma", Weapon.PlasmaRifle, Buttons.PlasmaRifle, g => g.HasPlasmaRifle, 40, 1, 300),
+                ("bfg", Weapon.BFG9000, Buttons.BFG9000, g => g.HasBFG9000, 40, 40, 300),
+            })
         {
-            bool rocket = prefix == "rocket";
             Game game = Load(prefix + "-pickup");
             Tick(game);
-            Check(prefix + "-pickup", rocket ? game.HasRocketLauncher && game.Rockets == 2 && game.SelectedWeapon == Weapon.RocketLauncher :
-                game.HasChaingun && game.Bullets == 70 && game.SelectedWeapon == Weapon.Chaingun);
+            Check(prefix + "-pickup", hasWeapon(game) && game.Ammo == pickupAmmo && game.SelectedWeapon == weapon,
+                new { game.Ammo, game.SelectedWeapon });
             int initial = game.Ammo;
             Tick(game, Buttons.Fire);
             Tick(game, count: 20);
-            Check(prefix + "-tap-cadence", game.Ammo == initial - (rocket ? 1 : 2), new { initial, game.Ammo });
+            Check(prefix + "-tap-cadence", game.Ammo == initial - tapCost, new { initial, game.Ammo });
             game = Load(prefix + "-capacity"); Tick(game);
-            Check(prefix + "-capacity", game.Ammo == (rocket ? 50 : 200), game.Ammo);
+            Check(prefix + "-capacity", game.Ammo == capacityCap, game.Ammo);
             game = Load(prefix + "-empty"); Tick(game);
             Tick(game, Buttons.Fire, 1000);
-            Check(prefix + "-empty-no-underflow", game.Ammo == 0 && game.Projectiles.All(p => !p.Rocket || p.Exploded), game.Ammo);
+            Check(prefix + "-empty-no-underflow",
+                game.Ammo == 0 && game.Projectiles.All(p => !(p.Rocket || p.Plasma || p.Bfg) || p.Exploded), game.Ammo);
             game = Load(prefix + "-unowned");
-            Tick(game, rocket ? Buttons.RocketLauncher : Buttons.Chaingun);
+            Tick(game, selectButton);
             Check(prefix + "-unowned", game.SelectedWeapon == Weapon.Pistol && game.Message.Contains("NOT OWNED", StringComparison.Ordinal), game.Message);
             game = Load(prefix + "-combat"); Tick(game); Tick(game, Buttons.Fire, 350);
             Check(prefix + "-combat", game.Kills == 1, new { game.Kills, game.Ammo });
@@ -113,10 +120,26 @@ try
             game = Load(prefix + "-carry"); Tick(game); Tick(game, Buttons.Forward, 50); Tick(game, Buttons.Use);
             Check(prefix + "-exit", game.Finished);
             Tick(game); Tick(game, Buttons.Use);
-            Check(prefix + "-map-carry", game.Map.Name == "E1M2" && (rocket ? game.HasRocketLauncher : game.HasChaingun),
+            Check(prefix + "-map-carry", game.Map.Name == "E1M2" && hasWeapon(game),
                 new { game.Map.Name, game.SelectedWeapon, game.Ammo });
             game = Load(prefix + "-death"); Tick(game, count: 800);
             Check(prefix + "-death", game.Health == 0, game.Health);
+        }
+        // The chainsaw has no ammo; it exercises a cut-down version of the ranged-weapon fixture set above.
+        {
+            Game game = Load("chainsaw-pickup"); Tick(game);
+            Check("chainsaw-pickup", game.HasChainsaw && game.SelectedWeapon == Weapon.Chainsaw && game.WeaponHasNoAmmo);
+            game = Load("chainsaw-unowned");
+            Tick(game, Buttons.Chainsaw);
+            Check("chainsaw-unowned", game.SelectedWeapon == Weapon.Pistol && game.Message.Contains("NOT OWNED", StringComparison.Ordinal), game.Message);
+            game = Load("chainsaw-combat"); Tick(game); Tick(game, Buttons.Fire, 350);
+            Check("chainsaw-combat", game.Kills == 1, game.Kills);
+            game = Load("chainsaw-carry"); Tick(game); Tick(game, Buttons.Forward, 50); Tick(game, Buttons.Use);
+            Check("chainsaw-exit", game.Finished);
+            Tick(game); Tick(game, Buttons.Use);
+            Check("chainsaw-map-carry", game.Map.Name == "E1M2" && game.HasChainsaw, new { game.Map.Name, game.SelectedWeapon });
+            game = Load("chainsaw-death"); Tick(game, count: 800);
+            Check("chainsaw-death", game.Health == 0, game.Health);
         }
         foreach (string name in new[] { "last-baron", "two-barons", "knight", "mixed", "wrong-map", "no-tag" })
         {

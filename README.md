@@ -211,7 +211,9 @@ input, audible sound, original-game parity, mobile support or campaign completio
 
 Implemented: classic IWAD/PWAD directory/geometry/BSP validation; textured
 walls/floors/ceilings, sky, masked walls and sprites; collision, sliding and
-24-unit steps; pistol, shotgun, chaingun and swept rocket/explosion combat;
+24-unit steps; pistol, shotgun, chaingun, chainsaw, plasma rifle, BFG9000 and
+swept rocket/explosion combat (see [PROGRESS.md](PROGRESS.md) for the BFG's
+documented simplification versus classic tracer-spray);
 pickups, keys, armor, simplified enemies/barrels; common doors, tagged locks,
 lifts/floors, teleports, damaging floors, secrets, exits and map progression;
 E1M8 last-Baron/tag666 floors; DMX effects, MUS/Standard-MIDI music playback
@@ -219,7 +221,7 @@ E1M8 last-Baron/tag666 floors; DMX effects, MUS/Standard-MIDI music playback
 and a single-slot JSON save/load (F5/F9, see [PROGRESS.md](PROGRESS.md) for
 scope and verification; in-flight projectiles are not preserved).
 
-Still incomplete: other weapons/powerups, exact monster states/AI/physics/RNG,
+Still incomplete: powerups, exact monster states/AI/physics/RNG,
 stairs/crushers and every moving-sector/switch special, other boss actions,
 animated textures, menus, multiplayer and original visual/timing/audio
 parity. No PWAD overlay stacking, Hexen/UDMF, extended nodes, Boom/MBF/DEHACKED or

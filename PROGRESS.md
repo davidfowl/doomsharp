@@ -48,6 +48,7 @@ Build/publish output includes the Phase 1 WAD, BSD license and credits.
 | Basic pistol/shotgun loop | Partial | Native demo observes shotgun pickup/kill/live restart; no current exact damage/RNG or complete pistol/all-weapon acceptance |
 | Chaingun pickup/fire/inventory | Partial | Type2002 and chaingunner drop, key4, shared bullets, four-tick shots/two-shot pairs and supplied body/flash patches; dedicated Linux executable scenarios below, not exact original timing/RNG/visual parity or broad platform gameplay |
 | Rocket launcher/inventory/projectiles | Partial | Type2003/key5, separate2010/2046 ammo/cap50, real20-unit/tick swept missiles, direct/occluded radial damage and supplied weapon/flight/explosion patches; bounded native scenarios described below, not exact original autoaim/windup/RNG/visual or campaign parity |
+| Chainsaw, plasma rifle and BFG9000 | Partial | Type2005/key3 melee saw (64-unit reach, no ammo), type2004/key6 plasma rifle (shared cell ammo, 1-cell/shot, direct-hit-only projectile, no splash), type2006/key7 BFG9000 (40-cell/shot, big direct hit plus wide-radius splash via the existing generalized blast helper, not the original per-monster tracer spray); separate2047/17 cell ammo/cap300; 29 dedicated engine scenarios (pickup/tap-cadence/capacity/empty/unowned/combat/restart/map-carry/death for plasma and bfg, pickup/unowned/combat/map-carry/death for the ammo-less chainsaw) below, not exact original timing/RNG/visual parity |
 | Movement, collision and sector actions | Partial | Native door/lift paths and selected boundaries; tagged locked fast-door99/133-137 action scope has dedicated executable scenarios below, not every mover/trigger |
 | Map progression and damaging exits | Partial | Native Linux input observes E1M1 to E1M2 with inventory/health retained; local classic-map scenarios qualify sector-11 damage/exit, fresh dead-player next-map state and finale/missing-map stop; not original campaign completion |
 | E1M8 Baron/tag666 floor action | Partial | Last living type3003 with a live player, all eligible tagged floors lower to lowest neighbors through shared movers;14 synthetic native cases below, not original E1M8/campaign or exact death-state timing |
@@ -55,7 +56,7 @@ Build/publish output includes the Phase 1 WAD, BSD license and credits.
 | HUD, weapon overlays and automap | Partial | Actual executable exports HUD/weapon frames; local Linux native Tab on/off plus W/Ctrl controls qualify automap input, not original visuals or other-platform interactive behavior |
 | Native window presentation | Working | Bounded actual-engine desktop smoke runs pass on three OSes; interactive input coverage differs by platform below |
 | DMX decoding and sound-effects mixer | Partial | Native Linux playthrough submits effects to ALSA null; exact resampling/audio comparison, audible playback and Windows/macOS audio unverified |
-| Remaining weapons/powerups, stairs/crushers, switch textures and other boss actions | Not implemented | Required for original gameplay/campaign parity |
+| Powerups, stairs/crushers, switch textures and other boss actions | Not implemented | Required for original gameplay/campaign parity |
 | Music/MUS and Standard MIDI File playback | Partial | Clean-room MUS and SMF parsers decode bundled Freedoom `D_*` lumps into looping PCM mixed by the native audio thread and WebAudio on the browser target; verified via native ALSA-null submission and Chromium/WebKit WebAudio-after-click checks below; uses an approximate additive-harmonic/noise synth, not a General MIDI soundfont, so exact timbre/original parity is not claimed |
 | Save/load game state | Partial | F5 saves and F9 loads a JSON snapshot (map, position/angle, health/armor/ammo/weapons, keys, kills/secrets/time, found-secret sectors and per-actor removed/health) via a source-generated `System.Text.Json` context; desktop persists to a `doomsharp.sav` file next to the executable, the browser persists to `localStorage` via a Save/Load button pair; verified end-to-end natively with real X11 key input (F5 produced a real save, F9 restored player position after movement) and with an in-process harness covering successful load plus rejection of bad-version/unknown-map/malformed JSON; headless (108/108), engine (121/121) and native (22/22) checks remain green; in-flight projectiles are not preserved across a save/load cycle |
 | Menus, multiplayer and extended maps/mods | Not implemented | No end-to-end capability claimed |
@@ -69,9 +70,33 @@ branch-only work separate from merged-main status.
 
 Remaining compatibility work includes stairs/crushers, remaining mover variants,
 all vanilla map specials and switch textures, other boss actions, exact monster states
-and attacks/infighting, remaining weapons/powerups, telefragging, original physics,
+and attacks/infighting, powerups, telefragging, original physics,
 menus and multiplayer. These gaps can block complete
 authentic WAD campaigns. Extended maps/mod formats are not implemented.
+
+Chainsaw, plasma rifle and BFG9000 (`Game.cs`/`Renderer.cs`) are now partially
+implemented alongside the existing pistol/shotgun/chaingun/rocket launcher.
+The chainsaw (type2005, key3) is a melee-only weapon with a 64-unit reach that
+reuses the existing hitscan aiming-cone geometry and calls `Hurt()` directly,
+with no ammo cost. The plasma rifle (type2004, key6) and BFG9000 (type2006,
+key7) share the existing cell ammo pool (separate2047/17 pickups, cap300) with
+the plasma rifle costing 1 cell/shot and the BFG costing 40 cells/shot
+(matching the original's cost). Both fire a fast player-owned projectile
+through the existing swept-projectile pipeline generalized from the rocket
+launcher's `Rocket`-only handling to a shared `Plasma`/`Bfg` flag set: the
+plasma rifle direct-hits with no splash (faithful to the original, unlike the
+rocket's explosion), while the BFG does a large direct hit plus a wide-radius
+splash through the existing `Blast()` helper, generalized with optional
+radius/max-damage parameters that default to the original rocket-splash
+values. This is a documented simplification of the original BFG, which instead
+re-damages every monster visible in the player's view cone via a tracer spray;
+that mechanic is not implemented. Saves made before this change load
+correctly: the new fields are trailing optional `SaveGameState` record
+parameters that default when absent from older JSON, and the save-format
+version was bumped to 2 while the loader still accepts version1. 26 new
+engine-mode checks below cover pickup/tap-cadence/capacity/empty-no-underflow/
+unowned/combat/restart/map-carry/death scenarios for the plasma rifle and BFG,
+plus pickup/unowned/combat/map-carry/death for the ammo-less chainsaw.
 
 Save/load (`Save.cs`) is now partially implemented: F5/F9 (desktop keyboard,
 X11/Windows/macOS) and a Save/Load button pair (browser) capture or restore a
@@ -441,6 +466,38 @@ is unrelated pre-existing flakiness. In-flight projectiles are discarded rather
 than restored across a save/load cycle, and the feature does not yet have a
 scripted native/browser regression test in the shared `tools/Checks`/
 `tools/BrowserChecks` harnesses.
+
+Chainsaw, plasma rifle and BFG9000 (`Game.cs`, `Renderer.cs`, `Save.cs`,
+`Platform.cs`/`MacPlatform.cs`/`Browser/App.razor` key3/6/7, and extended
+synthetic fixtures in `tools/ScenarioFixtures.cs`) were worker-reported against
+this build (branch `feat/remaining-weapons` on top of merged main
+`bc8a55563c97e80da5cf69e1b9c6bb7eed845232`, which includes save/load but
+predates the unmerged stairs/crushers/switch-textures, powerups, in-game-menu
+and floor-special branches). `dotnet build -c Release` succeeded with zero
+warnings/errors for the root project, `tools/Checks` and
+`tools/e2e-fixtures/FixtureGenerator`. The `tools/Checks` suite, run against a
+fresh `dotnet publish -c Release -r linux-x64` executable, passed `headless`
+127/127, `engine` 147/147 (26 of which are the new plasma/BFG/chainsaw
+pickup/tap-cadence/capacity/empty/unowned/combat/restart/map-carry/death
+scenarios; all pre-existing chaingun/rocket/door/lift/boss/tagged-lock checks
+are unchanged and still pass), and `native` 22/22 (Xvfb/ALSA null device,
+including the existing demo/restart/chaingun/rocket/door scenarios unchanged).
+Browser Playwright checks against a fresh `dotnet publish` of the Blazor WASM
+target passed 38/38 on Chromium, 37/37 on WebKit (one pointer-lock scenario is
+skipped there as with prior runs) and 38/38 on Firefox once a working
+PulseAudio null sink was exported via `PULSE_SERVER`, confirming this build
+does not regress the pre-existing Firefox `AudioContext`-under-headless-sandbox
+limitation when audio is actually available; without a configured audio sink
+Firefox fails at the unrelated `Freedoom-WebAudio-after-click` wait exactly as
+on an unmodified main checkout, reproducing the same pre-existing environment
+limitation described above for music playback, not a regression from this
+change. The BFG implementation is a documented simplification: it performs a
+large direct hit plus a wide-radius splash through the existing `Blast()`
+helper (generalized with optional radius/max-damage parameters that default to
+the original rocket-splash values), not the original's per-monster
+tracer-spray re-damage mechanic. New `SaveGameState` fields are trailing
+optional record parameters so version1 saves continue to load unchanged; the
+save format version was bumped to 2 and the loader accepts both.
 
 ## Reproduce
 

@@ -61,7 +61,8 @@ sealed unsafe class MacPlatform : IPlatform
                         13 => Buttons.Forward, 1 => Buttons.Back, 0 => Buttons.Left, 2 => Buttons.Right,
                         123 => Buttons.TurnLeft, 124 => Buttons.TurnRight, 126 => Buttons.Forward, 125 => Buttons.Back,
                         49 or 14 => Buttons.Use, 15 => Buttons.Restart, 18 => Buttons.Pistol, 19 => Buttons.Shotgun,
-                        21 => Buttons.Chaingun, 23 => Buttons.RocketLauncher, 48 => Buttons.Map,
+                        20 => Buttons.Chainsaw, 21 => Buttons.Chaingun, 23 => Buttons.RocketLauncher,
+                        22 => Buttons.PlasmaRifle, 26 => Buttons.BFG9000, 48 => Buttons.Map,
                         96 => Buttons.Save, 101 => Buttons.Load, _ => Buttons.None
                     };
                     input.Set(button, type == 10);

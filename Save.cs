@@ -13,7 +13,8 @@ public sealed record SaveGameState(
     int Health, int Armor, int Bullets, int Shells, int Rockets,
     bool HasShotgun, bool HasChaingun, bool HasRocketLauncher, Weapon SelectedWeapon,
     int Keys, int Kills, int Secrets, double Time, int[] FoundSecretSectors,
-    bool[] ActorRemoved, int[] ActorHealth);
+    bool[] ActorRemoved, int[] ActorHealth,
+    int Cells = 0, bool HasChainsaw = false, bool HasPlasmaRifle = false, bool HasBFG9000 = false);
 
 [JsonSerializable(typeof(SaveGameState))]
 public sealed partial class SaveJsonContext : JsonSerializerContext;

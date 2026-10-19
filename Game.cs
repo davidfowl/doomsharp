@@ -7,10 +7,11 @@ public enum Buttons
 {
     None = 0, Forward = 1, Back = 2, Left = 4, Right = 8, TurnLeft = 16, TurnRight = 32,
     Fire = 64, Use = 128, Run = 256, Restart = 512, Pistol = 1024, Shotgun = 2048, Map = 4096,
-    Chaingun = 8192, RocketLauncher = 16384, Save = 32768, Load = 65536
+    Chaingun = 8192, RocketLauncher = 16384, Save = 32768, Load = 65536,
+    Chainsaw = 131072, PlasmaRifle = 262144, BFG9000 = 524288
 }
 
-public enum Weapon { Pistol, Shotgun, Chaingun, RocketLauncher }
+public enum Weapon { Pistol, Shotgun, Chaingun, RocketLauncher, Chainsaw, PlasmaRifle, BFG9000 }
 
 public sealed class Input
 {
@@ -46,7 +47,7 @@ public sealed class Projectile
 {
     public Vec Position, Velocity;
     public double Z, Time = 5;
-    public bool Rocket, Exploded;
+    public bool Rocket, Plasma, Bfg, Exploded;
     public int ExplosionTicks;
 }
 
@@ -64,18 +65,27 @@ public sealed class Game
     public int Bullets { get; private set; } = 50;
     public int Shells { get; private set; }
     public int Rockets { get; private set; }
+    public int Cells { get; private set; }
     public bool HasShotgun { get; private set; }
     public bool HasChaingun { get; private set; }
     public bool HasRocketLauncher { get; private set; }
+    public bool HasChainsaw { get; private set; }
+    public bool HasPlasmaRifle { get; private set; }
+    public bool HasBFG9000 { get; private set; }
     public Weapon SelectedWeapon { get; private set; }
     public bool ShotgunSelected => SelectedWeapon == Weapon.Shotgun;
     public int ChaingunFrame { get; private set; }
     public int ChaingunFlashFrame { get; private set; }
     public int ChaingunFlashTicks { get; private set; }
     public int RocketFireTicks { get; private set; }
+    public int PlasmaFlashTicks { get; private set; }
+    public int BFGFlashTicks { get; private set; }
+    /// <summary>Has no magazine; shows a dash in the HUD like the classic chainsaw/fist slots.</summary>
+    public bool WeaponHasNoAmmo => SelectedWeapon == Weapon.Chainsaw;
     public int Ammo => SelectedWeapon switch
     {
-        Weapon.Shotgun => Shells, Weapon.RocketLauncher => Rockets, _ => Bullets
+        Weapon.Shotgun => Shells, Weapon.RocketLauncher => Rockets,
+        Weapon.PlasmaRifle or Weapon.BFG9000 => Cells, Weapon.Chainsaw => 0, _ => Bullets
     };
     public int Keys { get; private set; }
     public int Kills { get; private set; }
@@ -159,12 +169,17 @@ public sealed class Game
         2001 => new(t, "SHOT", false, false, 16, 1),
         2002 => new(t, "MGUN", false, false, 16, 1),
         2003 => new(t, "LAUN", false, false, 16, 1),
+        2004 => new(t, "PLAS", false, false, 16, 1),
+        2005 => new(t, "CSAW", false, false, 16, 1),
+        2006 => new(t, "BFUG", false, false, 16, 1),
         2010 => new(t, "ROCK", false, false, 16, 1),
         2046 => new(t, "BROK", false, false, 16, 1),
         2007 => new(t, "CLIP", false, false, 16, 1),
         2048 => new(t, "AMMO", false, false, 16, 1),
         2008 => new(t, "SHEL", false, false, 16, 1),
         2049 => new(t, "SBOX", false, false, 16, 1),
+        2047 => new(t, "CELL", false, false, 16, 1),
+        17 => new(t, "CELP", false, false, 16, 1),
         2011 => new(t, "STIM", false, false, 16, 1),
         2012 => new(t, "MEDI", false, false, 16, 1),
         2014 => new(t, "BON1", false, false, 16, 1),
@@ -228,6 +243,8 @@ public sealed class Game
         if (chaingunTicks > 0) chaingunTicks--;
         if (ChaingunFlashTicks > 0) ChaingunFlashTicks--;
         if (RocketFireTicks > 0) RocketFireTicks--;
+        if (PlasmaFlashTicks > 0) PlasmaFlashTicks--;
+        if (BFGFlashTicks > 0) BFGFlashTicks--;
         DamageFlash = Math.Max(0, DamageFlash - dt); PickupFlash = Math.Max(0, PickupFlash - dt);
         messageTime -= dt;
         if (messageTime <= 0) Message = "";
@@ -254,6 +271,9 @@ public sealed class Game
             if ((pressed & Buttons.Shotgun) != 0) SelectWeapon(Weapon.Shotgun);
             if ((pressed & Buttons.Chaingun) != 0) SelectWeapon(Weapon.Chaingun);
             if ((pressed & Buttons.RocketLauncher) != 0) SelectWeapon(Weapon.RocketLauncher);
+            if ((pressed & Buttons.Chainsaw) != 0) SelectWeapon(Weapon.Chainsaw);
+            if ((pressed & Buttons.PlasmaRifle) != 0) SelectWeapon(Weapon.PlasmaRifle);
+            if ((pressed & Buttons.BFG9000) != 0) SelectWeapon(Weapon.BFG9000);
             Angle += (((input.Held & Buttons.TurnLeft) != 0 ? 1 : 0) -
                 ((input.Held & Buttons.TurnRight) != 0 ? 1 : 0)) * dt * 2.4 - input.MouseX * .003;
             Angle = Math.IEEERemainder(Angle, Math.Tau);
@@ -556,10 +576,16 @@ public sealed class Game
     void SelectWeapon(Weapon weapon)
     {
         if (weapon == Weapon.Shotgun && !HasShotgun || weapon == Weapon.Chaingun && !HasChaingun ||
-            weapon == Weapon.RocketLauncher && !HasRocketLauncher)
+            weapon == Weapon.RocketLauncher && !HasRocketLauncher || weapon == Weapon.Chainsaw && !HasChainsaw ||
+            weapon == Weapon.PlasmaRifle && !HasPlasmaRifle || weapon == Weapon.BFG9000 && !HasBFG9000)
         {
-            Say(weapon == Weapon.RocketLauncher ? "ROCKET LAUNCHER NOT OWNED" :
-                $"{weapon.ToString().ToUpperInvariant()} NOT OWNED");
+            Say(weapon switch
+            {
+                Weapon.RocketLauncher => "ROCKET LAUNCHER NOT OWNED",
+                Weapon.PlasmaRifle => "PLASMA RIFLE NOT OWNED",
+                Weapon.BFG9000 => "BFG9000 NOT OWNED",
+                _ => $"{weapon.ToString().ToUpperInvariant()} NOT OWNED"
+            });
             return;
         }
         if (SelectedWeapon == Weapon.Chaingun && (chaingunTicks > 0 || chaingunFollowup) ||
@@ -604,6 +630,9 @@ public sealed class Game
             if (fire && FireTime == 0)
             {
                 if (SelectedWeapon == Weapon.RocketLauncher) ShootRocket();
+                else if (SelectedWeapon == Weapon.PlasmaRifle) ShootPlasma();
+                else if (SelectedWeapon == Weapon.BFG9000) ShootBfg();
+                else if (SelectedWeapon == Weapon.Chainsaw) Saw();
                 else Shoot();
             }
             return;
@@ -668,6 +697,51 @@ public sealed class Game
         PlaySound?.Invoke("RLAUNC");
     }
 
+    void ShootPlasma()
+    {
+        if (Cells == 0) { Say("OUT OF AMMO"); FireTime = .3; return; }
+        Cells--;
+        FireTime = .1;
+        PlasmaFlashTicks = 4;
+        Projectiles.Add(new()
+        {
+            Plasma = true, Position = Position, Z = Feet + 32,
+            Velocity = new Vec(Math.Cos(Angle), Math.Sin(Angle)) * 1000
+        });
+        PlaySound?.Invoke("PLASMA");
+    }
+
+    void ShootBfg()
+    {
+        // The classic BFG9000 costs 40 cells per shot.
+        if (Cells < 40) { Say("OUT OF AMMO"); FireTime = .3; return; }
+        Cells -= 40;
+        FireTime = .8;
+        BFGFlashTicks = 10;
+        Projectiles.Add(new()
+        {
+            Bfg = true, Position = Position, Z = Feet + 32,
+            Velocity = new Vec(Math.Cos(Angle), Math.Sin(Angle)) * 400
+        });
+        PlaySound?.Invoke("BFG");
+    }
+
+    void Saw()
+    {
+        FireTime = .1;
+        Vec direction = new(Math.Cos(Angle), Math.Sin(Angle));
+        Actor? target = null; double nearest = 64;
+        foreach (Actor actor in Actors)
+        {
+            if (actor.Removed || actor.Health <= 0 || (!actor.Enemy && actor.Type != 2035)) continue;
+            Vec relative = actor.Position - Position;
+            double distance = Vec.Dot(relative, direction), off = Math.Abs(Vec.Cross(relative, direction));
+            if (distance > 0 && distance < nearest && off < actor.Radius + 20) { target = actor; nearest = distance; }
+        }
+        if (target != null) { Hurt(target, random.Next(1, 11) * 2); PlaySound?.Invoke("SAWFUL"); }
+        else PlaySound?.Invoke("SAWIDL");
+    }
+
     void Hitscan(double angle)
     {
         Vec direction = new(Math.Cos(angle), Math.Sin(angle));
@@ -711,18 +785,19 @@ public sealed class Game
         }
     }
 
-    void Blast(Vec origin, double z, bool rocket)
+    void Blast(Vec origin, double z, bool rocket, double radius = 128, double maxDamage = 128)
     {
         foreach (Actor other in Actors.ToArray())
             if (!other.Removed && other.Health > 0 && (other.Enemy || other.Type == 2035))
             {
                 double distance = Math.Max(0, (other.Position - origin).Length - (rocket ? other.Radius : 0));
-                if (distance < 128 && Map.ClearSight(origin, other.Position, z))
-                    Hurt(other, Math.Max(1, (int)(128 - distance)));
+                if (distance < radius && Map.ClearSight(origin, other.Position, z))
+                    Hurt(other, Math.Max(1, (int)(maxDamage - distance * (maxDamage / radius))));
             }
         double playerDistance = Math.Max(0, (Position - origin).Length - (rocket ? 16 : 0));
-        if (playerDistance < 128 && Map.ClearSight(origin, Position, rocket ? z : Eye))
-            Damage(rocket ? Math.Max(1, (int)(128 - playerDistance)) : (int)(128 - playerDistance));
+        if (playerDistance < radius && Map.ClearSight(origin, Position, rocket ? z : Eye))
+            Damage(rocket ? Math.Max(1, (int)(maxDamage - playerDistance * (maxDamage / radius))) :
+                (int)(maxDamage - playerDistance * (maxDamage / radius)));
     }
 
     void UpdateActor(Actor actor, double dt)
@@ -771,11 +846,14 @@ public sealed class Game
                 p.ExplosionTicks--;
                 continue;
             }
+            // Rockets, plasma balls and BFG balls are all player-fired and seek enemy actors;
+            // anything else is an enemy fireball that only threatens the player.
+            bool playerFired = p.Rocket || p.Plasma || p.Bfg;
             Vec next = p.Position + p.Velocity * dt;
-            double impact = Map.ProjectileImpact(p.Position, next, p.Z, p.Rocket ? 11 : 0, p.Rocket ? 8 : 0);
+            double impact = Map.ProjectileImpact(p.Position, next, p.Z, playerFired ? 11 : 0, playerFired ? 8 : 0);
             Actor? target = null;
             bool playerHit = false;
-            if (p.Rocket)
+            if (playerFired)
             {
                 foreach (Actor actor in Actors)
                 {
@@ -807,6 +885,24 @@ public sealed class Game
                     Blast(p.Position, p.Z, true);
                     PlaySound?.Invoke("BAREXP");
                 }
+                else if (p.Bfg)
+                {
+                    // A simplified but faithful BFG: a big direct hit plus a wide, strong splash.
+                    // (The classic tracer "spray" that re-damages every visible monster is not modeled.)
+                    p.Exploded = true; p.ExplosionTicks = 10;
+                    if (target != null && (target.Enemy || target.Type == 2035))
+                        Hurt(target, random.Next(1, 9) * 15 + 100);
+                    Blast(p.Position, p.Z, true, radius: 256, maxDamage: 200);
+                    PlaySound?.Invoke("RXPLOD");
+                }
+                else if (p.Plasma)
+                {
+                    // Direct-hit only: no splash damage, matching the classic plasma rifle.
+                    p.Exploded = true; p.ExplosionTicks = 4;
+                    if (target != null && (target.Enemy || target.Type == 2035))
+                        Hurt(target, random.Next(1, 8) * 5);
+                    PlaySound?.Invoke("FIRXPL");
+                }
                 else
                 {
                     if (playerHit) { Damage(random.Next(1, 9) * 3); PlaySound?.Invoke("FIRXPL"); }
@@ -816,7 +912,7 @@ public sealed class Game
             }
             p.Position = next;
         }
-        Projectiles.RemoveAll(p => p.Rocket ? p.Exploded && p.ExplosionTicks <= 0 : p.Time <= 0);
+        Projectiles.RemoveAll(p => p.Rocket || p.Plasma || p.Bfg ? p.Exploded && p.ExplosionTicks <= 0 : p.Time <= 0);
     }
 
     void Damage(int amount)
@@ -846,12 +942,33 @@ public sealed class Game
                 Rockets = Math.Min(50, Rockets + 2);
                 if (newLauncher) SelectWeapon(Weapon.RocketLauncher);
                 break;
+            case 2004:
+                if (HasPlasmaRifle && Cells >= 300) { taken = false; break; }
+                bool newPlasma = !HasPlasmaRifle;
+                HasPlasmaRifle = true;
+                Cells = Math.Min(300, Cells + 40);
+                if (newPlasma) SelectWeapon(Weapon.PlasmaRifle);
+                break;
+            case 2006:
+                if (HasBFG9000 && Cells >= 300) { taken = false; break; }
+                bool newBfg = !HasBFG9000;
+                HasBFG9000 = true;
+                Cells = Math.Min(300, Cells + 40);
+                if (newBfg) SelectWeapon(Weapon.BFG9000);
+                break;
+            case 2005:
+                if (HasChainsaw) { taken = false; break; }
+                HasChainsaw = true;
+                SelectWeapon(Weapon.Chainsaw);
+                break;
             case 2010: if (Rockets >= 50) taken = false; else Rockets++; break;
             case 2046: if (Rockets >= 50) taken = false; else Rockets = Math.Min(50, Rockets + 5); break;
             case 2007: if (Bullets >= 200) taken = false; else Bullets = Math.Min(200, Bullets + 10); break;
             case 2048: if (Bullets >= 200) taken = false; else Bullets = Math.Min(200, Bullets + 50); break;
             case 2008: if (Shells >= 50) taken = false; else Shells = Math.Min(50, Shells + 4); break;
             case 2049: if (Shells >= 50) taken = false; else Shells = Math.Min(50, Shells + 20); break;
+            case 2047: if (Cells >= 300) taken = false; else Cells = Math.Min(300, Cells + 20); break;
+            case 17: if (Cells >= 300) taken = false; else Cells = Math.Min(300, Cells + 100); break;
             case 2011: case 2012:
                 if (Health >= 100) taken = false;
                 else Health = Math.Min(100, Health + (actor.Type == 2011 ? 10 : 25));
@@ -935,8 +1052,9 @@ public sealed class Game
         PlayMusic?.Invoke(MusicLumpName(name));
         if (reset || Health <= 0)
         {
-            Health = 100; Armor = 0; Bullets = 50; Shells = 0; Rockets = 0;
+            Health = 100; Armor = 0; Bullets = 50; Shells = 0; Rockets = 0; Cells = 0;
             HasShotgun = false; HasChaingun = false; HasRocketLauncher = false;
+            HasChainsaw = false; HasPlasmaRifle = false; HasBFG9000 = false;
             SelectedWeapon = Weapon.Pistol;
         }
         Keys = 0; Kills = 0; Secrets = 0; Time = 0; FireTime = 0; Finished = false; secretExit = false;
@@ -944,7 +1062,7 @@ public sealed class Game
         DamageFlash = 0; PickupFlash = 0; damageTick = 0; WalkTime = 0;
         chaingunTicks = 0; chaingunFollowup = false; chaingunRefiring = false; pendingWeapon = null;
         ChaingunFrame = 0; ChaingunFlashFrame = 0; ChaingunFlashTicks = 0;
-        RocketFireTicks = 0;
+        RocketFireTicks = 0; PlasmaFlashTicks = 0; BFGFlashTicks = 0;
         Spawn(); Say(name);
     }
 
@@ -953,10 +1071,11 @@ public sealed class Game
     /// In-flight projectiles are not preserved; <see cref="TryLoad"/> always resumes with none airborne.
     /// </summary>
     public string Save() => JsonSerializer.Serialize(new SaveGameState(
-        1, Map.Name, Position.X, Position.Y, Angle, Feet,
+        2, Map.Name, Position.X, Position.Y, Angle, Feet,
         Health, Armor, Bullets, Shells, Rockets, HasShotgun, HasChaingun, HasRocketLauncher, SelectedWeapon,
         Keys, Kills, Secrets, Time, [.. foundSecrets],
-        [.. Actors.Select(a => a.Removed)], [.. Actors.Select(a => a.Health)]),
+        [.. Actors.Select(a => a.Removed)], [.. Actors.Select(a => a.Health)],
+        Cells, HasChainsaw, HasPlasmaRifle, HasBFG9000),
         SaveJsonContext.Default.SaveGameState);
 
     /// <summary>
@@ -972,7 +1091,7 @@ public sealed class Game
         try { state = JsonSerializer.Deserialize(json, SaveJsonContext.Default.SaveGameState); }
         catch (JsonException ex) { error = $"malformed save ({ex.Message})"; return false; }
         if (state == null) { error = "empty save."; return false; }
-        if (state.Version != 1) { error = $"unsupported save version {state.Version}."; return false; }
+        if (state.Version is not (1 or 2)) { error = $"unsupported save version {state.Version}."; return false; }
         if (!Wad.Maps.Contains(state.Map)) { error = $"save references unknown map {state.Map}."; return false; }
         Map = new(Wad, state.Map); Assets = new(Wad, state.Map);
         Spawn();
@@ -989,11 +1108,14 @@ public sealed class Game
         foreach (int sector in state.FoundSecretSectors) foundSecrets.Add(sector);
         Position = new(state.PositionX, state.PositionY); Angle = state.Angle; Feet = state.Feet;
         Health = state.Health; Armor = state.Armor; Bullets = state.Bullets; Shells = state.Shells; Rockets = state.Rockets;
+        Cells = state.Cells;
         HasShotgun = state.HasShotgun; HasChaingun = state.HasChaingun; HasRocketLauncher = state.HasRocketLauncher;
+        HasChainsaw = state.HasChainsaw; HasPlasmaRifle = state.HasPlasmaRifle; HasBFG9000 = state.HasBFG9000;
         SelectedWeapon = state.SelectedWeapon; Keys = state.Keys; Kills = state.Kills; Secrets = state.Secrets; Time = state.Time;
         Finished = false; CompletionPrompt = ""; secretExit = false; DamageFlash = 0; PickupFlash = 0;
         chaingunTicks = 0; chaingunFollowup = false; chaingunRefiring = false; pendingWeapon = null;
         ChaingunFrame = 0; ChaingunFlashFrame = 0; ChaingunFlashTicks = 0; RocketFireTicks = 0;
+        PlasmaFlashTicks = 0; BFGFlashTicks = 0;
         PlayMusic?.Invoke(MusicLumpName(Map.Name));
         error = null; return true;
     }
