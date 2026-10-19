@@ -175,6 +175,18 @@ export function stopMusic() {
     if (musicVoice) { musicVoice.stop(); musicVoice.disconnect(); musicVoice = null; }
 }
 
+const saveKey = "doomsharp-save";
+
+export function saveGame(json) {
+    try { localStorage.setItem(saveKey, json); }
+    catch (error) { console.error(error); }
+}
+
+export function loadGame() {
+    try { return localStorage.getItem(saveKey); }
+    catch (error) { console.error(error); return null; }
+}
+
 export async function dispose() {
     stopped = true;
     cancelAnimationFrame(animation);

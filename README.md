@@ -136,7 +136,9 @@ acquired rocket launcher. Tab toggles the automap; R restarts. F1 opens an
 in-game menu (Resume, New Game, Options, Quit Game; arrows navigate, E/Space/
 fire selects, left/right adjusts mouse sensitivity and toggles messages in
 Options). Esc quits desktop or pauses the browser. Losing focus clears input
-and releases mouse capture.
+and releases mouse capture. F5 saves and F9 loads game state (desktop: a
+`doomsharp.sav` file next to the executable; browser: `localStorage`, also
+reachable via Save/Load buttons).
 
 Use/fire advances after an exit where a next map exists. Living players retain
 health/inventory; dead players start fresh. Episode finales offer replay.
@@ -217,15 +219,18 @@ pickups, keys, armor, simplified enemies/barrels; common doors, tagged locks,
 lifts/floors, teleports, damaging floors, secrets, exits and map progression;
 E1M8 last-Baron/tag666 floors; DMX effects, MUS/Standard-MIDI music playback
 (approximate software synthesis, see [PROGRESS.md](PROGRESS.md)), HUD, automap
-and an in-game pause/options menu (F1).
+and an in-game pause/options menu (F1), plus a single-slot JSON save/load
+(F5/F9, see [PROGRESS.md](PROGRESS.md) for scope and verification; in-flight
+projectiles are not preserved).
 
 Still incomplete: other weapons/powerups, exact monster states/AI/physics/RNG,
 stairs/crushers and every moving-sector/switch special, other boss actions,
-animated textures, saves, multiplayer and original visual/timing/audio
+animated textures, multiplayer and original visual/timing/audio
 parity. A basic in-game menu (Resume/New Game/Options/Quit, with mouse
 sensitivity and a messages toggle) is implemented; it does not persist
 settings, does not offer episode/skill selection, and has no save/load entries
-yet. No PWAD overlay stacking, Hexen/UDMF, extended nodes, Boom/MBF/DEHACKED or
+wired into it yet (the F5/F9 shortcuts work independently). No PWAD overlay
+stacking, Hexen/UDMF, extended nodes, Boom/MBF/DEHACKED or
 mod compatibility. Only medium-skill single-player flags are selected. Missing
 assets/types produce explicit diagnostics; missing textures use a diagnostic
 pattern. These gaps can block campaign progression. Loading/rendering all maps

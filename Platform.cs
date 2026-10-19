@@ -34,6 +34,7 @@ static class Platform
         '5' => Buttons.RocketLauncher,
         '\t' => Buttons.Map,
         0xffbe => Buttons.Menu,
+        0xffc2 or 0x74 => Buttons.Save, 0xffc6 or 0x78 => Buttons.Load,
         _ => Buttons.None
     };
 }
