@@ -115,22 +115,31 @@ try
         await page.WaitForTimeoutAsync(150);
     }
     // Browsers vary in input-to-render latency (notably Firefox under headless WASM), so poll for the
-    // expected switch-texture pixel state instead of relying on a single fixed-delay snapshot.
-    async Task<JsonElement> WaitForSwitchState(bool on, int timeoutMs = 3000)
+    // expected switch-texture pixel state instead of relying on a single fixed-delay snapshot. When
+    // pauseOnSuccess is set, the Escape keydown is dispatched directly from the same in-page poll loop
+    // (not via a follow-up Playwright round trip), so a repeatable button's real-time 35-tick reset
+    // cannot race ahead of the pause while slower browsers finish their own condition check and the
+    // separate IPC call needed to send a synthetic key press.
+    async Task<JsonElement> WaitForSwitchState(bool on, int timeoutMs = 6000, bool pauseOnSuccess = false, string? tag = null)
     {
-        try
-        {
-            await page.WaitForFunctionAsync($$"""
-                () => {
-                    const p = document.querySelector('#game').getContext('2d').getImageData(0, 0, 640, 400).data;
+        bool satisfied = await canvas.EvaluateAsync<bool>($$"""
+            c => new Promise(resolve => {
+                const deadline = Date.now() + {{timeoutMs}};
+                const check = () => {
+                    const p = c.getContext('2d').getImageData(0, 0, 640, 400).data;
                     let switchOn = 0;
                     for (let i = 0; i < 640 * 350 * 4; i += 4)
                         if (p[i + 1] > p[i] * 2 && p[i + 1] > p[i + 2] * 2) switchOn++;
-                    return {{(on ? "switchOn > 500" : "switchOn === 0")}};
-                }
-                """, new PageWaitForFunctionOptions { Timeout = timeoutMs });
-        }
-        catch (TimeoutException) { }
+                    if ({{(on ? "switchOn > 500" : "switchOn === 0")}}) {
+                        {{(pauseOnSuccess ? "c.dispatchEvent(new KeyboardEvent('keydown', { code: 'Escape', bubbles: true }));" : "")}}
+                        resolve(true);
+                    } else if (Date.now() > deadline) resolve(false);
+                    else requestAnimationFrame(check);
+                };
+                check();
+            })
+            """);
+        if (!satisfied) diagnostics.Add($"WaitForSwitchState(tag={tag}, on={on}, pauseOnSuccess={pauseOnSuccess}) timed out after {timeoutMs}ms.");
         return await Pixels();
     }
     async Task<string> Hud(int y, int color, int left = 8, int columns = 52)
@@ -283,28 +292,64 @@ try
         int special = scenario.Item1;
         string variant = scenario.Item2, name = $"switch-{special}-{variant}";
         bool changed = variant != "no-key", repeat = special == 99 && changed;
+        bool needsKey = special is 99 or 133 or 134 or 135 or 136 or 137 && changed;
         await page.WaitForFunctionAsync("document.pointerLockElement === null");
         await page.WaitForTimeoutAsync(200);
         await page.Locator("input[type=file]").SetInputFilesAsync(Path.Combine(fixtures, name + ".wad"));
         await WaitForLoad();
         await WaitForPixels();
         JsonElement before = await Pixels();
-        await canvas.FocusAsync();
+        // A programmatic FocusAsync() does not count as a user gesture to Firefox, so headless Firefox's
+        // background/inactive-tab timer throttling can keep requestAnimationFrame (and therefore every
+        // engine tick) from running at all for several seconds after a WAD swap -- unlike every other
+        // scenario in this file, which always re-clicks the canvas (a real synthetic click event) before
+        // waiting on engine state. Click here too so the key-pickup and switch-toggle waits below are not
+        // racing a throttled, possibly-stalled render loop.
+        await canvas.ClickAsync();
         await page.WaitForTimeoutAsync(100);
-        await Hold("e", 60);
-        JsonElement activated = await WaitForSwitchState(changed);
+        if (needsKey)
+        {
+            // The fixture spawns the player standing on the key it needs, so pickup (processed once per
+            // real-time game tick) normally finishes within a frame or two. But the engine only ticks while
+            // the page considers itself "active", and under headless Firefox that can take an extra moment
+            // to settle after a WAD swap. Pressing "e" before the first active tick has run would reach a
+            // genuinely keyless player and get rejected by the locked-switch check, not because the engine
+            // dropped the keystroke but because the key truly had not been picked up yet. Wait for the HUD's
+            // key count to confirm pickup really happened before testing the switch itself.
+            DateTime deadline = DateTime.UtcNow.AddSeconds(5);
+            while (!(await Hud(373, 0xc0c0c0, 8, 40)).Contains("KEYS 1", StringComparison.Ordinal))
+            {
+                if (DateTime.UtcNow > deadline)
+                {
+                    diagnostics.Add($"{name}: key pickup not observed in HUD within 5s before pressing e.");
+                    break;
+                }
+                await page.WaitForTimeoutAsync(100);
+            }
+        }
+        await Hold("e", 150);
+        // For the repeatable button scenario, dispatch the pausing Escape atomically from inside the
+        // same in-page poll that detects the toggle (see WaitForSwitchState), so there is no gap for the
+        // button's real-time 35-tick reset to slip past the pause. The timeout here is generous: headless
+        // Firefox can throttle requestAnimationFrame (and therefore both the engine's own tick/render loop
+        // and this poll's in-page detection loop, which also relies on rAF) for several seconds at a time.
+        // Retrying the keypress itself is not a safe option here: button 99 fully reopens (DoorDirection
+        // resets to 0) well inside that same window, so a second "e" tap sent while the first one's effect
+        // merely hasn't been painted yet would really re-trigger the repeatable switch and toggle it back
+        // off, trading a flaky pass for a flaky failure instead of fixing either.
+        JsonElement activated = await WaitForSwitchState(changed, 15000, pauseOnSuccess: repeat, tag: name + "-toggle");
         Check(name + "-visible-toggle", before.GetProperty("switchOff").GetInt32() > 500 &&
             before.GetProperty("switchOn").GetInt32() == 0 &&
             (changed ? activated.GetProperty("switchOn").GetInt32() > 500 : activated.GetProperty("switchOn").GetInt32() == 0),
-            new { before, activated, hud = await Hud(355, 0xffdb8a),
+            new { before, activated, hud = await Hud(355, 0xffdb8a), message = await Hud(8, 0xffee90, columns: 32),
                 input = await page.EvaluateAsync<JsonElement>("window.inputTrace") });
         if (repeat)
         {
-            await page.Keyboard.PressAsync("Escape");
-            Check(name + "-pause-preserves-button", (await WaitForSwitchState(true)).GetProperty("switchOn").GetInt32() > 500);
+            JsonElement pausedState = await WaitForSwitchState(true, 15000, tag: name + "-paused");
+            Check(name + "-pause-preserves-button", pausedState.GetProperty("switchOn").GetInt32() > 500, pausedState);
             await canvas.ClickAsync();
         }
-        JsonElement settled = await WaitForSwitchState(repeat || !changed ? false : true, 2000);
+        JsonElement settled = await WaitForSwitchState(repeat || !changed ? false : true, 2000, tag: name + "-settled");
         Check(name + "-visible-reset-or-latch", repeat || !changed ?
             settled.GetProperty("switchOn").GetInt32() == 0 && settled.GetProperty("switchOff").GetInt32() > 500 :
             settled.GetProperty("switchOn").GetInt32() > 500, settled);
