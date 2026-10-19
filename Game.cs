@@ -1,3 +1,5 @@
+using System.Text.Json;
+
 namespace DoomSharp;
 
 [Flags]
@@ -5,7 +7,7 @@ public enum Buttons
 {
     None = 0, Forward = 1, Back = 2, Left = 4, Right = 8, TurnLeft = 16, TurnRight = 32,
     Fire = 64, Use = 128, Run = 256, Restart = 512, Pistol = 1024, Shotgun = 2048, Map = 4096,
-    Chaingun = 8192, RocketLauncher = 16384
+    Chaingun = 8192, RocketLauncher = 16384, Save = 32768, Load = 65536
 }
 
 public enum Weapon { Pistol, Shotgun, Chaingun, RocketLauncher }
@@ -92,6 +94,11 @@ public sealed class Game
     public List<Actor> Actors { get; } = [];
     public List<Projectile> Projectiles { get; } = [];
     public Action<string>? PlaySound;
+    public Action<string?>? PlayMusic;
+    /// <summary>Invoked with a serialized <see cref="SaveGameState"/> whenever the player requests a save.</summary>
+    public Action<string>? SaveGame;
+    /// <summary>Invoked to fetch a previously saved game's JSON on demand; returns null if none exists.</summary>
+    public Func<string?>? LoadGame;
     readonly Random random = new(1993);
     readonly HashSet<int> foundSecrets = [];
     Buttons previous;
@@ -244,6 +251,13 @@ public sealed class Game
         Buttons pressed = input.Held & ~previous;
         previous = input.Held;
         if ((pressed & Buttons.Restart) != 0) { Load(Map.Name, true); return; }
+        if ((pressed & Buttons.Save) != 0 && SaveGame != null && Health > 0 && !Finished) { SaveGame(Save()); Say("GAME SAVED"); }
+        if ((pressed & Buttons.Load) != 0 && LoadGame != null)
+        {
+            string? json = LoadGame();
+            if (json == null) Say("LOAD FAILED: no saved game");
+            else Say(TryLoad(json, out string? error) ? "GAME LOADED" : $"LOAD FAILED: {error}");
+        }
         if (Finished)
         {
             if ((pressed & (Buttons.Use | Buttons.Fire)) != 0) NextMap();
@@ -1104,9 +1118,34 @@ public sealed class Game
         return $"MAP{(number is 31 or 32 ? 16 : number + 1):D2}";
     }
 
+    /// <summary>Starts (or restarts) music for the current map. Call once after wiring <see cref="PlayMusic"/>.</summary>
+    public void StartMusic() => PlayMusic?.Invoke(MusicLumpName(Map.Name));
+
+    /// <summary>
+    /// Maps a map name to its classic "D_*" music lump name: episode/level-based for E#M# maps, and the
+    /// well-known fixed per-level table for MAP## maps (matching the original engine's level-to-track order).
+    /// </summary>
+    public static string MusicLumpName(string map)
+    {
+        if (map.Length == 4 && map[0] == 'E') return $"D_E{map[1]}M{map[3]}";
+        if (map.StartsWith("MAP", StringComparison.Ordinal) &&
+            int.TryParse(map.AsSpan(3), out int level) && level is >= 1 and <= 32)
+            return "D_" + Map32MusicNames[level - 1];
+        return "D_" + map;
+    }
+
+    static readonly string[] Map32MusicNames =
+    [
+        "RUNNIN", "STALKS", "COUNTD", "BETWEE", "DOOM", "THE_DA", "SHAWN", "DDTBLU", "IN_CIT", "DEAD",
+        "STLKS2", "THEDA2", "DOOM2", "DDTBL2", "RUNNI2", "DEAD2", "STLKS3", "ROMERO", "SHAWN2", "MESSAG",
+        "COUNT2", "DDTBL3", "AMPIE", "THEDA3", "ADRIAN", "MESSG2", "ROMER2", "TENSE", "SHAWN3", "OPENIN",
+        "EVIL", "ULTIMA"
+    ];
+
     void Load(string name, bool reset)
     {
         Map = new(Wad, name); Assets = new(Wad, name);
+        PlayMusic?.Invoke(MusicLumpName(name));
         if (reset || Health <= 0)
         {
             Health = 100; Armor = 0; Bullets = 50; Shells = 0; Rockets = 0;
@@ -1120,5 +1159,55 @@ public sealed class Game
         ChaingunFrame = 0; ChaingunFlashFrame = 0; ChaingunFlashTicks = 0;
         RocketFireTicks = 0; crusherTicks = 0;
         Spawn(); Say(name);
+    }
+
+    /// <summary>
+    /// Serializes the current map, player stats/inventory and per-actor removed/health state to JSON.
+    /// In-flight projectiles are not preserved; <see cref="TryLoad"/> always resumes with none airborne.
+    /// </summary>
+    public string Save() => JsonSerializer.Serialize(new SaveGameState(
+        1, Map.Name, Position.X, Position.Y, Angle, Feet,
+        Health, Armor, Bullets, Shells, Rockets, HasShotgun, HasChaingun, HasRocketLauncher, SelectedWeapon,
+        Keys, Kills, Secrets, Time, [.. foundSecrets],
+        [.. Actors.Select(a => a.Removed)], [.. Actors.Select(a => a.Health)]),
+        SaveJsonContext.Default.SaveGameState);
+
+    /// <summary>
+    /// Restores a snapshot produced by <see cref="Save"/>: reloads its map, replays <see cref="Spawn"/> to
+    /// rebuild the deterministic actor list, then reapplies each actor's saved removed/health state by
+    /// index and the player's saved position/stats/inventory. Returns false (with <paramref name="error"/>
+    /// set) for an unreadable, version-mismatched, unknown-map or actor-count-mismatched save, leaving the
+    /// current game state untouched.
+    /// </summary>
+    public bool TryLoad(string json, out string? error)
+    {
+        SaveGameState? state;
+        try { state = JsonSerializer.Deserialize(json, SaveJsonContext.Default.SaveGameState); }
+        catch (JsonException ex) { error = $"malformed save ({ex.Message})"; return false; }
+        if (state == null) { error = "empty save."; return false; }
+        if (state.Version != 1) { error = $"unsupported save version {state.Version}."; return false; }
+        if (!Wad.Maps.Contains(state.Map)) { error = $"save references unknown map {state.Map}."; return false; }
+        Map = new(Wad, state.Map); Assets = new(Wad, state.Map);
+        Spawn();
+        if (state.ActorRemoved.Length != Actors.Count || state.ActorHealth.Length != Actors.Count)
+        {
+            error = "save's actor layout no longer matches this map."; return false;
+        }
+        for (int i = 0; i < Actors.Count; i++)
+        {
+            Actors[i].Removed = state.ActorRemoved[i];
+            Actors[i].Health = state.ActorHealth[i];
+        }
+        foundSecrets.Clear();
+        foreach (int sector in state.FoundSecretSectors) foundSecrets.Add(sector);
+        Position = new(state.PositionX, state.PositionY); Angle = state.Angle; Feet = state.Feet;
+        Health = state.Health; Armor = state.Armor; Bullets = state.Bullets; Shells = state.Shells; Rockets = state.Rockets;
+        HasShotgun = state.HasShotgun; HasChaingun = state.HasChaingun; HasRocketLauncher = state.HasRocketLauncher;
+        SelectedWeapon = state.SelectedWeapon; Keys = state.Keys; Kills = state.Kills; Secrets = state.Secrets; Time = state.Time;
+        Finished = false; CompletionPrompt = ""; secretExit = false; DamageFlash = 0; PickupFlash = 0;
+        chaingunTicks = 0; chaingunFollowup = false; chaingunRefiring = false; pendingWeapon = null;
+        ChaingunFrame = 0; ChaingunFlashFrame = 0; ChaingunFlashTicks = 0; RocketFireTicks = 0;
+        PlayMusic?.Invoke(MusicLumpName(Map.Name));
+        error = null; return true;
     }
 }

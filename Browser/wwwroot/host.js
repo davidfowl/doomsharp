@@ -24,7 +24,7 @@ export function initialize(reference) {
         try {
             audio ??= new AudioContext();
             audioReady = false;
-            const resume = audio.resume().then(() => { audioReady = true; });
+            const resume = audio.resume().then(() => { audioReady = true; startMusicVoice(); });
             const lock = canvas.requestPointerLock();
             await Promise.all([resume, lock]);
         } catch (error) {
@@ -85,6 +85,7 @@ function pause() {
     if (document.pointerLockElement === canvas) document.exitPointerLock();
     for (const voice of voices) voice.stop();
     voices.clear();
+    if (musicVoice) { musicVoice.stop(); musicVoice.disconnect(); musicVoice = null; }
     dotnet.invokeMethodAsync("ResetInput").catch(fail);
 }
 
@@ -122,11 +123,76 @@ export function playSound(bytes, sampleRate) {
     voice.start();
 }
 
+let musicBuffer = null;
+let musicName = null;
+let musicVoice = null;
+let pendingMusicBytes = null;
+let pendingMusicSampleRate = 0;
+
+function decodePendingMusic() {
+    // Autoplay must not touch WebAudio; decoding only happens once a user
+    // gesture has created and resumed the AudioContext.
+    if (!audio || !audioReady || !pendingMusicBytes) return;
+    const bytes = pendingMusicBytes;
+    const sampleRate = pendingMusicSampleRate;
+    pendingMusicBytes = null;
+    musicBuffer = audio.createBuffer(1, bytes.length / 2, sampleRate);
+    const samples = musicBuffer.getChannelData(0);
+    const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+    for (let i = 0; i < samples.length; i++) samples[i] = view.getInt16(i * 2, true) / 32768;
+}
+
+function startMusicVoice() {
+    decodePendingMusic();
+    if (!musicBuffer || !active || !audio || !audioReady) return;
+    if (musicVoice) { musicVoice.stop(); musicVoice.disconnect(); }
+    const voice = audio.createBufferSource();
+    voice.buffer = musicBuffer;
+    voice.loop = true;
+    voice.connect(audio.destination);
+    voice.start();
+    musicVoice = voice;
+}
+
+export function playMusic(name, bytes, sampleRate) {
+    if (name === musicName) { if (!musicVoice) startMusicVoice(); return; }
+    musicName = name;
+    if (musicVoice) { musicVoice.stop(); musicVoice.disconnect(); musicVoice = null; }
+    musicBuffer = null;
+    pendingMusicBytes = null;
+    if (!bytes || bytes.length === 0) return;
+    pendingMusicBytes = bytes;
+    pendingMusicSampleRate = sampleRate;
+    // Mirrors playSound: runs silently until a user gesture enables WebAudio.
+    if (!audio || !audioReady) return;
+    startMusicVoice();
+}
+
+export function stopMusic() {
+    musicName = null;
+    musicBuffer = null;
+    pendingMusicBytes = null;
+    if (musicVoice) { musicVoice.stop(); musicVoice.disconnect(); musicVoice = null; }
+}
+
+const saveKey = "doomsharp-save";
+
+export function saveGame(json) {
+    try { localStorage.setItem(saveKey, json); }
+    catch (error) { console.error(error); }
+}
+
+export function loadGame() {
+    try { return localStorage.getItem(saveKey); }
+    catch (error) { console.error(error); return null; }
+}
+
 export async function dispose() {
     stopped = true;
     cancelAnimationFrame(animation);
     for (const remove of listeners.splice(0)) remove();
     for (const voice of voices) voice.stop();
     voices.clear();
+    if (musicVoice) { musicVoice.stop(); musicVoice.disconnect(); musicVoice = null; }
     if (audio) await audio.close();
 }

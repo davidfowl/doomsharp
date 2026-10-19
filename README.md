@@ -89,10 +89,13 @@ the first publish is slower and needs the `wasm-tools` workload.
 The renderer is software-based; frame rate depends on map complexity and browser.
 Clicking enables audio and requests pointer lock. Keyboard controls still work
 when pointer lock is unavailable. Esc, loss of focus or a hidden tab pauses the
-game and clears held input; click to resume. **Mute** suppresses new sound effects.
+game and clears held input; click to resume. **Mute** suppresses new sound effects
+and stops music; unchecking it resumes the current track.
 Wheel input over the active game does not scroll the page. Press Esc to pause
 and scroll normally; scrolling outside the game remains available during play.
-Mobile/touch controls, music, gamepads and persistent saves are not implemented.
+Mobile/touch controls, gamepads and persistent saves are not implemented. Music
+plays via a clean-room MUS/Standard-MIDI decoder and an approximate software
+synthesizer; see [PROGRESS.md](PROGRESS.md).
 
 Publish a static site:
 
@@ -141,6 +144,8 @@ mouse, then move it to turn. Ctrl or left click fires; E/Space uses; Shift runs.
 1 selects the pistol, 2 an acquired shotgun, 4 an acquired chaingun, and 5 an
 acquired rocket launcher. Tab toggles the automap; R restarts. Esc quits desktop
 or pauses the browser. Losing focus clears input and releases mouse capture.
+F5 saves and F9 loads game state (desktop: a `doomsharp.sav` file next to the
+executable; browser: `localStorage`, also reachable via Save/Load buttons).
 
 Use/fire advances after an exit where a next map exists. Living players retain
 health/inventory; dead players start fresh. Episode finales offer replay.
@@ -305,12 +310,15 @@ walls/floors/ceilings, sky, masked walls and sprites; collision, sliding and
 pickups, keys, armor, simplified enemies/barrels; common doors, tagged locks,
 lifts/floors, tagged stairs and cycling crushers, teleports, damaging floors,
 secrets, exits and map progression;
-E1M8 last-Baron/tag666 floors; DMX effects, HUD and automap.
+E1M8 last-Baron/tag666 floors; DMX effects, MUS/Standard-MIDI music playback
+(approximate software synthesis, see [PROGRESS.md](PROGRESS.md)), HUD, automap
+and a single-slot JSON save/load (F5/F9, see [PROGRESS.md](PROGRESS.md) for
+scope and verification; in-flight projectiles are not preserved).
 The switch-texture branch additionally supplies the bounded feedback above.
 
 Still incomplete: other weapons/powerups, exact monster states/AI/physics/RNG,
 remaining crusher/ceiling and moving-sector/switch specials, other boss actions,
-animated textures, music/MUS, menus, saves, multiplayer and original visual/timing
+animated textures, menus, multiplayer and original visual/timing/audio
 parity. No PWAD overlay stacking, Hexen/UDMF, extended nodes, Boom/MBF/DEHACKED or
 mod compatibility. Only medium-skill single-player flags are selected. Missing
 assets/types produce explicit diagnostics; missing textures use a diagnostic

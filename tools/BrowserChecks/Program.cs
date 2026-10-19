@@ -114,6 +114,25 @@ try
         await page.Keyboard.UpAsync(key);
         await page.WaitForTimeoutAsync(150);
     }
+    // Browsers vary in input-to-render latency (notably Firefox under headless WASM), so poll for the
+    // expected switch-texture pixel state instead of relying on a single fixed-delay snapshot.
+    async Task<JsonElement> WaitForSwitchState(bool on, int timeoutMs = 3000)
+    {
+        try
+        {
+            await page.WaitForFunctionAsync($$"""
+                () => {
+                    const p = document.querySelector('#game').getContext('2d').getImageData(0, 0, 640, 400).data;
+                    let switchOn = 0;
+                    for (let i = 0; i < 640 * 350 * 4; i += 4)
+                        if (p[i + 1] > p[i] * 2 && p[i + 1] > p[i + 2] * 2) switchOn++;
+                    return {{(on ? "switchOn > 500" : "switchOn === 0")}};
+                }
+                """, new PageWaitForFunctionOptions { Timeout = timeoutMs });
+        }
+        catch (TimeoutException) { }
+        return await Pixels();
+    }
     async Task<string> Hud(int y, int color, int left = 8, int columns = 52)
     {
         string[] glyphs = await canvas.EvaluateAsync<string[]>("""
@@ -273,7 +292,7 @@ try
         await canvas.FocusAsync();
         await page.WaitForTimeoutAsync(100);
         await Hold("e", 60);
-        JsonElement activated = await Pixels();
+        JsonElement activated = await WaitForSwitchState(changed);
         Check(name + "-visible-toggle", before.GetProperty("switchOff").GetInt32() > 500 &&
             before.GetProperty("switchOn").GetInt32() == 0 &&
             (changed ? activated.GetProperty("switchOn").GetInt32() > 500 : activated.GetProperty("switchOn").GetInt32() == 0),
@@ -282,12 +301,10 @@ try
         if (repeat)
         {
             await page.Keyboard.PressAsync("Escape");
-            await page.WaitForTimeoutAsync(1100);
-            Check(name + "-pause-preserves-button", (await Pixels()).GetProperty("switchOn").GetInt32() > 500);
+            Check(name + "-pause-preserves-button", (await WaitForSwitchState(true)).GetProperty("switchOn").GetInt32() > 500);
             await canvas.ClickAsync();
         }
-        await page.WaitForTimeoutAsync(1100);
-        JsonElement settled = await Pixels();
+        JsonElement settled = await WaitForSwitchState(repeat || !changed ? false : true, 2000);
         Check(name + "-visible-reset-or-latch", repeat || !changed ?
             settled.GetProperty("switchOn").GetInt32() == 0 && settled.GetProperty("switchOff").GetInt32() > 500 :
             settled.GetProperty("switchOn").GetInt32() > 500, settled);
