@@ -58,7 +58,8 @@ Build/publish output includes the Phase 1 WAD, BSD license and credits.
 | Remaining weapons, stairs/crushers, switch textures and other boss actions | Not implemented | Required for original gameplay/campaign parity |
 | Music/MUS and Standard MIDI File playback | Partial | Clean-room MUS and SMF parsers decode bundled Freedoom `D_*` lumps into looping PCM mixed by the native audio thread and WebAudio on the browser target; verified via native ALSA-null submission and Chromium/WebKit WebAudio-after-click checks below; uses an approximate additive-harmonic/noise synth, not a General MIDI soundfont, so exact timbre/original parity is not claimed |
 | Powerup items (Berserk, Invulnerability, Partial Invisibility, Radiation Suit, Computer Area Map, Light Amplification Visor) | Partial | All six classic powerup pickups (types2022-2026,2045) are recognized, timed per vanilla durations (30/60/60/120s) and reset each level per original `P_SetupLevel` semantics; Invulnerability blocks all damage (floor/explosion/monster) and inverts the view, the Radiation Suit blocks types4/5/7/16 floor damage (type11 always damages, matching original `P_PlayerInSpecialSector`), Partial Invisibility reduces monster hit chance, the Light Amplification Visor renders at full brightness, and the Computer Area Map reveals the full automap instead of only visited sectors (fog-of-war automap is new in this change); engine scenario WADs confirm pickup, timers, invulnerability/radsuit immunity, computer-map reveal and HUD status text below; Berserk's vanilla melee-damage bonus is not claimed because no fist/melee weapon exists yet |
-| Saves, menus, multiplayer and extended maps/mods | Not implemented | No end-to-end capability claimed |
+| Save/load game state | Partial | F5 saves and F9 loads a JSON snapshot (map, position/angle, health/armor/ammo/weapons, keys, kills/secrets/time, found-secret sectors and per-actor removed/health) via a source-generated `System.Text.Json` context; desktop persists to a `doomsharp.sav` file next to the executable, the browser persists to `localStorage` via a Save/Load button pair; verified end-to-end natively with real X11 key input (F5 produced a real save, F9 restored player position after movement) and with an in-process harness covering successful load plus rejection of bad-version/unknown-map/malformed JSON; headless (108/108), engine (121/121) and native (22/22) checks remain green; in-flight projectiles are not preserved across a save/load cycle |
+| Menus, multiplayer and extended maps/mods | Not implemented | No end-to-end capability claimed |
 | Complete authentic WAD campaigns | Unverified | Map rendering alone is not campaign completion; missing behaviors can block progression |
 
 ## In-flight work and known limits
@@ -70,9 +71,23 @@ branch-only work separate from merged-main status.
 Remaining compatibility work includes stairs/crushers, remaining mover variants,
 all vanilla map specials and switch textures, other boss actions, exact monster states
 and attacks/infighting, remaining weapons (fist, chainsaw, plasma gun, BFG9000),
-telefragging, original physics, saves, menus and multiplayer. These gaps can
+telefragging, original physics, menus and multiplayer. These gaps can
 block complete authentic WAD campaigns. Extended maps/mod formats are not
 implemented.
+
+Save/load (`Save.cs`) is now partially implemented: F5/F9 (desktop keyboard,
+X11/Windows/macOS) and a Save/Load button pair (browser) capture or restore a
+single JSON snapshot of in-progress state — current map, player position/angle,
+health/armor/ammo/weapon ownership, keys, kill/secret/time counters, which
+secret sectors were found, and each actor's removed/health flags by spawn
+index — using a source-generated `JsonSerializerContext` so the AOT/trimmed
+desktop and WASM builds stay warning-free. Desktop persists to a `doomsharp.sav`
+file beside the executable; the browser persists to `localStorage`. Loading
+replays `Spawn()` for the saved map and reapplies actor state by index, so it
+depends on deterministic actor ordering for a given map; in-flight projectiles
+are discarded rather than restored. Saving is blocked while dead or after the
+level has finished, mirroring the existing "no-op while finished" pattern used
+elsewhere in `Game.Tick()`.
 
 Music/MUS and Standard MIDI File playback (`Music.cs`) is now partially
 implemented: a clean-room event-stream parser for both id Software's native MUS
@@ -415,6 +430,37 @@ a regression from this change. The synthesizer is a small additive-harmonic/
 noise-burst approximation (no General MIDI soundfont or OPL emulation), does not
 model per-note pitch bend or SMPTE-divisioned MIDI timing, and audible/perceptual
 quality versus the original soundtrack is unverified.
+
+Save/load game state (`Save.cs`, new `Buttons.Save`/`Buttons.Load` flags and
+`Game.SaveGame`/`LoadGame` hooks mirroring the `PlaySound`/`PlayMusic` delegate
+pattern, wired to file I/O in `Program.cs`, `localStorage` in `host.js`/`App.razor`,
+and F5/F9 key mappings in `Platform.cs`/`MacPlatform.cs`) was worker-reported
+against this build. `dotnet build -c Release` succeeded with zero warnings/errors
+for the root project and `tools/Checks`; `JsonSerializer` calls use a
+source-generated `SaveJsonContext` so the AOT/trimmed desktop and WASM targets'
+`TreatWarningsAsErrors` stayed satisfied. The `tools/Checks` suite passed
+unchanged: `headless` 108/108 PASS, `engine` 121/121 PASS, `native` 22/22 PASS
+(Xvfb/ALSA null device, including demo/restart/chaingun/rocket/door scenarios).
+A standalone in-process harness exercising `Game.Save()`/`TryLoad()` directly
+confirmed round-tripping of health, position and per-actor removed/health
+arrays, plus correct rejection of a bad-version, unknown-map and malformed-JSON
+save. On the real published Linux executable under Xvfb with genuine X11 key
+events (not the harness), F5 was observed writing a real `doomsharp.sav` with
+accurate live state at least twice, and a combined save/move/load cycle showed
+the player's position reverting exactly to the saved `(-416, 256)` after F9,
+confirming the Load path end-to-end as well; some repeated synthetic key taps in
+this bare Xvfb sandbox (no window manager) were dropped even for the
+pre-existing Tab binding, which is a known input-delivery limitation of this
+headless environment, not a defect in the Save/Load code path. Browser
+Playwright checks (Save/Load buttons added to `App.razor`, not yet covered by a
+dedicated scripted scenario to avoid touching the shared fixtures PR #27 also
+modifies) passed unchanged at 36/36 on Chromium and 35/35 on WebKit; Firefox
+reproducibly hung at the same pre-existing `AudioContext`/WebAudio step on this
+build **and** on an unmodified main checkout in this environment, confirming it
+is unrelated pre-existing flakiness. In-flight projectiles are discarded rather
+than restored across a save/load cycle, and the feature does not yet have a
+scripted native/browser regression test in the shared `tools/Checks`/
+`tools/BrowserChecks` harnesses.
 
 ## Reproduce
 
