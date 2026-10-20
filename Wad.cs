@@ -31,6 +31,31 @@ public sealed class Wad
 
     public byte[]? Find(string name) => Lumps.LastOrDefault(l => l.Name == name.ToUpperInvariant())?.Data;
     public byte[] Require(string name) => Find(name) ?? throw new InvalidDataException($"Missing WAD lump: {name}");
+
+    /// <summary>True when a raw 64x64 flat lump of the given name is present (used to probe animated flat frames).</summary>
+    public bool HasFlat(string name) => Find(name) is { Length: 4096 };
+
+    /// <summary>
+    /// True when a composed wall texture of the given name is defined in TEXTURE1/TEXTURE2 (used to probe
+    /// animated wall frames without fully decoding/compositing the texture).
+    /// </summary>
+    public bool HasTexture(string name)
+    {
+        foreach (string lump in new[] { "TEXTURE1", "TEXTURE2" })
+        {
+            byte[]? b = Find(lump);
+            if (b == null || b.Length < 4) continue;
+            int count = I32(b, 0);
+            if (count < 0 || count > (b.Length - 4) / 4) continue;
+            for (int i = 0; i < count; i++)
+            {
+                int p = I32(b, 4 + i * 4);
+                if (p < 0 || p > b.Length - 22) continue;
+                if (Name(b, p) == name) return true;
+            }
+        }
+        return false;
+    }
     public static bool IsMap(string name) => (name.Length == 4 && name[0] == 'E' && char.IsAsciiDigit(name[1]) &&
         name[2] == 'M' && char.IsAsciiDigit(name[3])) ||
         (name.Length == 5 && name.StartsWith("MAP", StringComparison.Ordinal) &&
