@@ -148,6 +148,37 @@ try
             Check("rocket-" + name + "-cleanup", game.Projectiles.All(p => !p.Rocket) && (name == "miss" || game.Health == health),
                 new { game.Health, projectiles = game.Projectiles.Count });
         }
+        // (a) the animation table maps known names to their full, correctly ordered cycle.
+        Check("texture-animation-flat-cycle",
+            TextureAnimation.Flat("NUKAGE2", 0, _ => true) == "NUKAGE1" &&
+            TextureAnimation.Flat("FWATER1", TextureAnimation.TicsPerFrame, _ => true) == "FWATER2" &&
+            TextureAnimation.Flat("LAVA1", 0, _ => true) == "LAVA1");
+        Check("texture-animation-wall-cycle",
+            TextureAnimation.Wall("BLODGR3", 0, _ => true) == "BLODGR1" &&
+            TextureAnimation.Wall("FIREBLU1", TextureAnimation.TicsPerFrame, _ => true) == "FIREBLU2" &&
+            TextureAnimation.Wall("STARTAN2", 0, _ => true) == "STARTAN2");
+        // (b) the frame index advances deterministically given a tic count, independent of framerate.
+        Check("texture-animation-frame-index-deterministic",
+            TextureAnimation.FrameIndex(0, 4) == 0 && TextureAnimation.FrameIndex(7, 4) == 0 &&
+            TextureAnimation.FrameIndex(8, 4) == 1 && TextureAnimation.FrameIndex(31, 4) == 3 &&
+            TextureAnimation.FrameIndex(32, 4) == 0 && TextureAnimation.FrameIndex(8 * 4 * 97 + 16, 4) == 2);
+        // Missing frames (not present in the loaded WAD) fall back to the original static name.
+        Check("texture-animation-missing-frame-falls-back",
+            TextureAnimation.Flat("NUKAGE1", TextureAnimation.TicsPerFrame, _ => false) == "NUKAGE1" &&
+            TextureAnimation.Wall("WFALL1", TextureAnimation.TicsPerFrame, _ => false) == "WFALL1");
+        // (c) the renderer's displayed texture/flat name matches the expected cycle position for a given tic count.
+        for (int frame = 0; frame < 3; frame++)
+        {
+            int tics = frame * TextureAnimation.TicsPerFrame + TextureAnimation.TicsPerFrame / 2;
+            string expectedFlat = new[] { "NUKAGE1", "NUKAGE2", "NUKAGE3" }[frame];
+            string expectedWall = new[] { "BLODRIP1", "BLODRIP2", "BLODRIP3" }[frame];
+            string actualFlat = Renderer.AnimatedFlatName("NUKAGE1", tics, _ => true);
+            string actualWall = Renderer.AnimatedWallName("BLODRIP1", tics, _ => true);
+            Check($"renderer-animated-flat-frame-{frame}", actualFlat == expectedFlat, new { tics, actualFlat });
+            Check($"renderer-animated-wall-frame-{frame}", actualWall == expectedWall, new { tics, actualWall });
+        }
+        Check("renderer-animated-flat-unanimated-passthrough", Renderer.AnimatedFlatName("FLOOR4_8", 1234, _ => true) == "FLOOR4_8");
+        Check("renderer-animated-wall-unanimated-passthrough", Renderer.AnimatedWallName("STARTAN2", 1234, _ => true) == "STARTAN2");
     }
     if (mode is "native" or "all")
     {
