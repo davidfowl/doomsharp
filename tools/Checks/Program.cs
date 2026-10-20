@@ -769,6 +769,129 @@ try
                 game.Armor == beforeArmor && afterActors.SequenceEqual(beforeActors),
                 new { loaded, error, beforeMapName, afterMapName = game.Map.Name });
         }
+        {
+            // Save-game compatibility: an actor's live Position (mutated as it walks/chases, see
+            // Game.UpdateActor) must round-trip across a save/load cycle instead of silently snapping back
+            // to its map-defined spawn spot (ActorPositionX/ActorPositionY previously were not part of
+            // SaveGameState at all, so TryLoad always left every restored actor at the freshly-rebuilt
+            // candidate list's spawn position).
+            Game before = Load("chase-memory");
+            Actor demon = before.Actors.Single(a => a.Type == 3002);
+            Vec spawnPosition = demon.Position;
+            Tick(before); // Confirm the demon starts out actively tracking the player while in sight.
+            for (int tics = 0; tics < 2000 && demon.ChaseMemory >= 3; tics++) Tick(before, Buttons.Run | Buttons.Forward);
+            Vec movedPosition = demon.Position;
+            Check("savegame-position-fixture-has-moved", movedPosition != spawnPosition,
+                new { spawnPosition, movedPosition });
+            string json = before.Save();
+
+            Game after = Load("chase-memory");
+            bool loaded = after.TryLoad(json, out string? error);
+            Actor restored = after.Actors.Single(a => a.Type == 3002);
+            Check("savegame-compat-position-restored", loaded && restored.Position == movedPosition,
+                new { loaded, error, restored.Position, movedPosition });
+
+            // The restored demon must keep acting from its actual (moved) position, not teleport back to
+            // spawn and then move from there: continuing play for a few more tics must not reproduce the
+            // original spawn-relative trajectory (the position it would be at if it had snapped back to
+            // spawnPosition and resumed chasing from there is a different point than continuing on from
+            // movedPosition).
+            Vec positionAfterLoad = restored.Position;
+            Tick(after, Buttons.Run | Buttons.Forward, count: 5);
+            Check("savegame-compat-position-continues-after-load", restored.Position != positionAfterLoad,
+                new { positionAfterLoad, restored.Position });
+
+            // A version-1/2/3/4 save (no ActorPositionX/ActorPositionY fields at all) must still load
+            // cleanly, with every actor defaulting to its map's deterministic spawn position — the
+            // pre-existing behavior.
+            string legacyJson = Regex.Replace(json, @",""ActorPositionX"":\[[^\]]*\],""ActorPositionY"":\[[^\]]*\]", "");
+            legacyJson = Regex.Replace(legacyJson, "\"Version\":5", "\"Version\":4");
+            Check("savegame-position-legacy-fixture-edited", legacyJson != json, new { legacyJson, json });
+            Game legacy = Load("chase-memory");
+            bool legacyLoaded = legacy.TryLoad(legacyJson, out string? legacyError);
+            Actor legacyDemon = legacy.Actors.Single(a => a.Type == 3002);
+            Check("savegame-compat-legacy-version-defaults-spawn-position",
+                legacyLoaded && legacyDemon.Position == spawnPosition,
+                new { legacyLoaded, legacyError, legacyDemon.Position, spawnPosition });
+        }
+        {
+            // ActorPositionX/ActorPositionY are only optional as a whole pair (present together, or both
+            // absent together); one array present without the other is an impossible half-a-position and
+            // must be rejected rather than silently dropped.
+            Game before = Load("infight-retarget");
+            Tick(before, count: 10);
+            string json = before.Save();
+
+            string xWithoutYJson = Regex.Replace(json, @",""ActorPositionY"":\[[^\]]*\]", "");
+            Game xWithoutYGame = Load("infight-retarget");
+            bool xWithoutYLoaded = xWithoutYGame.TryLoad(xWithoutYJson, out string? xWithoutYError);
+            Check("savegame-reject-actor-position-x-without-y", !xWithoutYLoaded && xWithoutYError != null,
+                new { xWithoutYLoaded, xWithoutYError });
+
+            string yWithoutXJson = Regex.Replace(json, @",""ActorPositionX"":\[[^\]]*\]", "");
+            Game yWithoutXGame = Load("infight-retarget");
+            bool yWithoutXLoaded = yWithoutXGame.TryLoad(yWithoutXJson, out string? yWithoutXError);
+            Check("savegame-reject-actor-position-y-without-x", !yWithoutXLoaded && yWithoutXError != null,
+                new { yWithoutXLoaded, yWithoutXError });
+
+            // A non-finite coordinate (NaN/Infinity) and an out-of-the-WAD-coordinate-range value must each
+            // be rejected before any live game state mutates, not silently accepted or clamped.
+            string nanJson = Regex.Replace(json, @"""ActorPositionX"":\[[^\]]*\]", m =>
+            {
+                string[] elements = Regex.Match(m.Value, @"\[([^\]]*)\]").Groups[1].Value.Split(',');
+                elements[0] = "NaN";
+                return $@"""ActorPositionX"":[{string.Join(',', elements)}]";
+            });
+            Game nanGame = Load("infight-retarget");
+            bool nanLoaded = nanGame.TryLoad(nanJson, out string? nanError);
+            Check("savegame-reject-non-finite-actor-position", !nanLoaded && nanError != null, new { nanLoaded, nanError });
+
+            string overflowJson = Regex.Replace(json, @"""ActorPositionY"":\[[^\]]*\]", m =>
+            {
+                string[] elements = Regex.Match(m.Value, @"\[([^\]]*)\]").Groups[1].Value.Split(',');
+                elements[0] = "1e999";
+                return $@"""ActorPositionY"":[{string.Join(',', elements)}]";
+            });
+            Check("savegame-position-overflow-fixture-edited", overflowJson != json, new { overflowJson, json });
+            Game overflowGame = Load("infight-retarget");
+            bool overflowLoaded = overflowGame.TryLoad(overflowJson, out string? overflowError);
+            Check("savegame-reject-actor-position-overflow", !overflowLoaded && overflowError != null,
+                new { overflowLoaded, overflowError });
+
+            string outOfRangeJson = Regex.Replace(json, @"""ActorPositionX"":\[[^\]]*\]", m =>
+            {
+                string[] elements = Regex.Match(m.Value, @"\[([^\]]*)\]").Groups[1].Value.Split(',');
+                elements[0] = "99999";
+                return $@"""ActorPositionX"":[{string.Join(',', elements)}]";
+            });
+            Game outOfRangeGame = Load("infight-retarget");
+            bool outOfRangeLoaded = outOfRangeGame.TryLoad(outOfRangeJson, out string? outOfRangeError);
+            Check("savegame-reject-actor-position-out-of-range", !outOfRangeLoaded && outOfRangeError != null,
+                new { outOfRangeLoaded, outOfRangeError });
+        }
+        {
+            // TryLoad's "malformed save leaves an in-progress game untouched" contract must also cover a
+            // corrupt ActorPositionX/ActorPositionY pair: an out-of-range position value must not partially
+            // rebuild Map/Actors before validation catches it.
+            Game game = Load("infight-retarget");
+            Tick(game, count: 50);
+            string beforeMapName = game.Map.Name;
+            var beforeActors = game.Actors.Select(a => (a.Position, a.Health, a.Removed)).ToList();
+
+            string validJson = game.Save();
+            string corruptJson = Regex.Replace(validJson, @"""ActorPositionX"":\[[^\]]*\]", m =>
+            {
+                string[] elements = Regex.Match(m.Value, @"\[([^\]]*)\]").Groups[1].Value.Split(',');
+                elements[0] = "99999";
+                return $@"""ActorPositionX"":[{string.Join(',', elements)}]";
+            });
+            bool loaded = game.TryLoad(corruptJson, out string? error);
+
+            var afterActors = game.Actors.Select(a => (a.Position, a.Health, a.Removed)).ToList();
+            Check("savegame-reject-actor-position-preserves-in-progress-game",
+                !loaded && error != null && game.Map.Name == beforeMapName && afterActors.SequenceEqual(beforeActors),
+                new { loaded, error, beforeMapName, afterMapName = game.Map.Name });
+        }
     }
     if (mode is "native" or "all")
     {

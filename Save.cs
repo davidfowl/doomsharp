@@ -31,6 +31,19 @@ namespace DoomSharp;
 /// so number parsing/writing for every other (non-coordinate) field in this type stays strict about
 /// rejecting non-finite values rather than needing to relax <c>System.Text.Json</c>'s number handling for
 /// the whole save format.
+/// <see cref="ActorPositionX"/>/<see cref="ActorPositionY"/> are trailing optional fields (version 5, null
+/// on versions 1-4): an actor's live <c>Position</c> (see <c>Game.UpdateActor</c>, which mutates it as a
+/// monster walks/chases/infights) used to be silently dropped on load, so any monster that had moved from
+/// its map-defined spawn spot snapped back there on load while incorrectly keeping its (now-restored)
+/// alert/chase-memory/infighting state for that moved-from position; version-1/2/3/4 saves still load that
+/// way (null means "use this map's deterministic spawn position for every actor", exactly what
+/// <c>Game.BuildSpawnState</c> already produces for the candidate actor list), but version-5 saves
+/// round-trip each actor's actual position, so a moved monster reloads where it actually was. Unlike the
+/// nullable alert/chase-memory coordinate pairs above, every actor always has a position, so these two
+/// arrays are each non-nullable <c>double[]</c> once present; only the whole field pair is optional
+/// (present together, or both absent together) to stay absent on older saves. There is no separate
+/// per-actor facing/angle field: <see cref="Game.Actor"/> never stores one (monsters do not have a
+/// persisted facing distinct from their position), so there is nothing else live to round-trip here.
 /// </summary>
 public sealed record SaveGameState(
     int Version, string Map, double PositionX, double PositionY, double Angle, double Feet,
@@ -40,7 +53,8 @@ public sealed record SaveGameState(
     bool[] ActorRemoved, int[] ActorHealth, int Items = 0,
     bool[]? ActorAwake = null, double?[]? ActorAlertX = null, double?[]? ActorAlertY = null,
     double[]? ActorChaseMemory = null, double?[]? ActorLastKnownTargetX = null,
-    double?[]? ActorLastKnownTargetY = null, int[]? ActorTargetIndex = null);
+    double?[]? ActorLastKnownTargetY = null, int[]? ActorTargetIndex = null,
+    double[]? ActorPositionX = null, double[]? ActorPositionY = null);
 
 [JsonSerializable(typeof(SaveGameState))]
 public sealed partial class SaveJsonContext : JsonSerializerContext;

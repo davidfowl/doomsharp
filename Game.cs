@@ -1125,11 +1125,12 @@ public sealed class Game
     }
 
     /// <summary>
-    /// Serializes the current map, player stats/inventory and per-actor removed/health/alert state to JSON.
-    /// In-flight projectiles are not preserved; <see cref="TryLoad"/> always resumes with none airborne.
+    /// Serializes the current map, player stats/inventory and per-actor removed/health/alert/position state
+    /// to JSON. In-flight projectiles are not preserved; <see cref="TryLoad"/> always resumes with none
+    /// airborne.
     /// </summary>
     public string Save() => JsonSerializer.Serialize(new SaveGameState(
-        4, Map.Name, Position.X, Position.Y, Angle, Feet,
+        5, Map.Name, Position.X, Position.Y, Angle, Feet,
         Health, Armor, Bullets, Shells, Rockets, HasShotgun, HasChaingun, HasRocketLauncher, SelectedWeapon,
         Keys, Kills, Secrets, Time, [.. foundSecrets],
         [.. Actors.Select(a => a.Removed)], [.. Actors.Select(a => a.Health)], Items,
@@ -1139,7 +1140,9 @@ public sealed class Game
         [.. Actors.Select(a => a.ChaseMemory)],
         [.. Actors.Select(a => a.LastKnownTargetPosition?.X)],
         [.. Actors.Select(a => a.LastKnownTargetPosition?.Y)],
-        [.. Actors.Select(a => a.Target == null ? -1 : Actors.IndexOf(a.Target))]),
+        [.. Actors.Select(a => a.Target == null ? -1 : Actors.IndexOf(a.Target))],
+        [.. Actors.Select(a => a.Position.X)],
+        [.. Actors.Select(a => a.Position.Y)]),
         SaveJsonContext.Default.SaveGameState);
 
     /// <summary>
@@ -1147,10 +1150,10 @@ public sealed class Game
     /// gameplay-field finiteness, actor-array shapes and target indices) against the save's target map
     /// <em>before touching any live game state</em>, then only on success reloads the map, rebuilds the
     /// deterministic actor list and reapplies each actor's saved removed/health/alert/chase-memory/
-    /// infighting-target state by index plus the player's saved position/stats/inventory. Returns false
-    /// (with <paramref name="error"/> set) for an unreadable, version-mismatched, unknown-map, non-finite,
-    /// actor-count-mismatched or out-of-range-target-index save, leaving the current game state completely
-    /// unchanged (no partial mutation of an in-progress game).
+    /// infighting-target/position state by index plus the player's saved position/stats/inventory. Returns
+    /// false (with <paramref name="error"/> set) for an unreadable, version-mismatched, unknown-map,
+    /// non-finite, actor-count-mismatched, out-of-range-target-index or out-of-range-position save, leaving
+    /// the current game state completely unchanged (no partial mutation of an in-progress game).
     /// </summary>
     public bool TryLoad(string json, out string? error)
     {
@@ -1158,7 +1161,7 @@ public sealed class Game
         try { state = JsonSerializer.Deserialize(json, SaveJsonContext.Default.SaveGameState); }
         catch (JsonException ex) { error = $"malformed save ({ex.Message})"; return false; }
         if (state == null) { error = "empty save."; return false; }
-        if (state.Version is not (1 or 2 or 3 or 4)) { error = $"unsupported save version {state.Version}."; return false; }
+        if (state.Version is not (1 or 2 or 3 or 4 or 5)) { error = $"unsupported save version {state.Version}."; return false; }
         if (!Wad.Maps.Contains(state.Map)) { error = $"save references unknown map {state.Map}."; return false; }
         if (!double.IsFinite(state.PositionX) || !double.IsFinite(state.PositionY) || !double.IsFinite(state.Angle) ||
             !double.IsFinite(state.Feet) || !double.IsFinite(state.Time))
@@ -1191,7 +1194,9 @@ public sealed class Game
             state.ActorChaseMemory != null && state.ActorChaseMemory.Length != candidateActors.Count ||
             state.ActorLastKnownTargetX != null && state.ActorLastKnownTargetX.Length != candidateActors.Count ||
             state.ActorLastKnownTargetY != null && state.ActorLastKnownTargetY.Length != candidateActors.Count ||
-            state.ActorTargetIndex != null && state.ActorTargetIndex.Length != candidateActors.Count)
+            state.ActorTargetIndex != null && state.ActorTargetIndex.Length != candidateActors.Count ||
+            state.ActorPositionX != null && state.ActorPositionX.Length != candidateActors.Count ||
+            state.ActorPositionY != null && state.ActorPositionY.Length != candidateActors.Count)
         {
             error = "save's actor layout no longer matches this map."; return false;
         }
@@ -1248,6 +1253,35 @@ public sealed class Game
                 }
             }
         }
+        // ActorPositionX/ActorPositionY are the only trailing actor fields that are not optional *per
+        // element* (every actor always has a position, live or spawned), only optional as a whole pair
+        // (absent together on a version 1-4 save, falling back to each actor's deterministic spawn
+        // position already computed into candidateActors above). Either array present without the other
+        // is corrupt save data, as is any non-finite value or a value outside the WAD vertex/thing
+        // coordinate format's signed 16-bit range (see Wad.I16), which bounds every legitimate map
+        // coordinate; validating this before the live-mutation point below keeps the atomic-load contract
+        // established by the chase-memory/target-index fix (a malformed save must never partially mutate
+        // an in-progress game).
+        if (state.ActorPositionX == null != (state.ActorPositionY == null))
+        {
+            error = "save's actor position X/Y arrays are inconsistently present."; return false;
+        }
+        if (state.ActorPositionX != null && state.ActorPositionY != null)
+        {
+            const double MapCoordinateLimit = 32768;
+            for (int i = 0; i < state.ActorPositionX.Length; i++)
+            {
+                double x = state.ActorPositionX[i], y = state.ActorPositionY[i];
+                if (!double.IsFinite(x) || !double.IsFinite(y))
+                {
+                    error = $"save contains a non-finite actor position at index {i}."; return false;
+                }
+                if (Math.Abs(x) > MapCoordinateLimit || Math.Abs(y) > MapCoordinateLimit)
+                {
+                    error = $"save contains an out-of-range actor position at index {i}."; return false;
+                }
+            }
+        }
 
         // All validation above is complete; only now may live game state actually change.
         Map = candidateMap; Assets = candidateAssets;
@@ -1273,6 +1307,14 @@ public sealed class Game
                 ? new Vec(lastX.Value, lastY.Value) : null;
             int targetIndex = state.ActorTargetIndex?[i] ?? -1;
             Actors[i].Target = targetIndex == -1 ? null : Actors[targetIndex];
+            // Absent (version 1-4) means "keep this map's deterministic spawn position", which is exactly
+            // what candidateActors (just copied into Actors above) already holds via BuildSpawnState;
+            // present (version 5) round-trips each actor's actual live position, so a monster that had
+            // moved before the save reloads where it actually was instead of snapping back to its spawn.
+            if (state.ActorPositionX != null && state.ActorPositionY != null)
+            {
+                Actors[i].Position = new Vec(state.ActorPositionX[i], state.ActorPositionY[i]);
+            }
         }
         foundSecrets.Clear();
         foreach (int sector in state.FoundSecretSectors) foundSecrets.Add(sector);
