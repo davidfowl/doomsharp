@@ -261,6 +261,30 @@ try
             Check("telefrag", blocker.Health <= 0 && game.Kills == 1 && game.Position.X > 50,
                 new { blocker.Health, game.Kills, game.Position });
         }
+        {
+            // A monster beyond a thin wall (no direct line of sight) but reachable through an open
+            // connecting sector (modeling an open door) wakes up and starts moving toward the player once
+            // gunfire propagates through that connection, even though it still cannot see the player.
+            Game game = Load("noise-propagation-wakes-through-open-door");
+            Actor monster = game.Actors.Single(a => a.Type == 3004);
+            Vec initial = monster.Position;
+            Check("noise-propagation-dormant-before-shot", !monster.Awake, new { monster.Awake });
+            Tick(game, Buttons.Fire);
+            Tick(game, count: 20);
+            Check("noise-propagation-wakes-through-open-door", monster.Awake && monster.Position != initial,
+                new { monster.Awake, initial, monster.Position });
+        }
+        {
+            // The same geometry, but the connecting sector's door is shut (floor == ceiling, no gap):
+            // Game.NoiseAlert's flood cannot cross it, so the monster never hears the shot and stays put.
+            Game game = Load("noise-propagation-blocked-by-closed-door");
+            Actor monster = game.Actors.Single(a => a.Type == 3004);
+            Vec initial = monster.Position;
+            Tick(game, Buttons.Fire);
+            Tick(game, count: 20);
+            Check("noise-propagation-blocked-by-closed-door", !monster.Awake && monster.Position == initial,
+                new { monster.Awake, initial, monster.Position });
+        }
     }
     if (mode is "native" or "all")
     {
