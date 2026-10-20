@@ -57,7 +57,7 @@ Build/publish output includes the Phase 1 WAD, BSD license and credits.
 | DMX decoding and sound-effects mixer | Partial | Native Linux playthrough submits effects to ALSA null; exact resampling/audio comparison, audible playback and Windows/macOS audio unverified |
 | Remaining weapons/powerups, stairs/crushers, switch textures and other boss actions | Not implemented | Required for original gameplay/campaign parity |
 | Music/MUS and Standard MIDI File playback | Partial | Clean-room MUS and SMF parsers decode bundled Freedoom `D_*` lumps into looping PCM mixed by the native audio thread and WebAudio on the browser target; verified via native ALSA-null submission and Chromium/WebKit WebAudio-after-click checks below; models per-channel pitch-bend as a semitone frequency offset and GM-program-aware timbre families via an approximate additive-harmonic/noise synth, not a General MIDI soundfont, so exact timbre/original parity is not claimed |
-| Save/load game state | Partial | F5 saves and F9 loads a JSON snapshot (map, position/angle, health/armor/ammo/weapons, keys, kills/secrets/time, found-secret sectors and per-actor removed/health) via a source-generated `System.Text.Json` context; desktop persists to a `doomsharp.sav` file next to the executable, the browser persists to `localStorage` via a Save/Load button pair; verified end-to-end natively with real X11 key input (F5 produced a real save, F9 restored player position after movement) and with an in-process harness covering successful load plus rejection of bad-version/unknown-map/malformed JSON; headless (108/108), engine (121/121) and native (22/22) checks remain green; in-flight projectiles are not preserved across a save/load cycle |
+| Save/load game state | Partial | F5 saves and F9 loads a JSON snapshot (map, position/angle, health/armor/ammo/weapons, keys, kills/secrets/time, found-secret sectors and per-actor removed/health/noise-alert state) via a source-generated `System.Text.Json` context; desktop persists to a `doomsharp.sav` file next to the executable, the browser persists to `localStorage` via a Save/Load button pair; `SaveGameState` gains trailing optional `ActorAwake`/`ActorAlertX`/`ActorAlertY` fields (format version bumped to 3) so a monster that was blindly chasing a propagated noise (see noise-propagation above) keeps doing so after a save/load cycle instead of silently reverting to dormant — version-1/2 saves still load, defaulting every actor to "not awake" (their prior, if incomplete, behavior); verified end-to-end natively with real X11 key input (F5 produced a real save, F9 restored player position after movement) and with an in-process harness covering successful load plus rejection of bad-version/unknown-map/malformed JSON, plus new `savegame-compat-*` checks covering the awake/alert round trip and legacy-version defaulting; headless (117/117) and engine (169/169) checks remain green; native checks are unchanged by this fix (CI retains that coverage); in-flight projectiles are not preserved across a save/load cycle |
 | Animated flat/wall textures | Partial | Fixed built-in clean-room cycle table (`TextureAnimation.cs`) for water/nukage/slime/blood/lava/fire flats and walls (e.g. NUKAGE1-3, FWATER1-4, BLODGR1-4, FIREBLU1-2); advances one frame per 8 tics (vanilla's non-switch rate), driven by the existing fixed 1/35s tick clock so animation speed is independent of framerate; both floor/ceiling flats and upper/lower/middle wall textures animate via the existing WAD lookup/renderer sampling paths; a frame only substitutes when it is actually present in the loaded WAD (checked via new `Wad.HasFlat`/`Wad.HasTexture` helpers), so unrelated WADs see no new missing-texture diagnostics; new engine checks `texture-animation-*` and `renderer-animated-*` cover table mapping, deterministic frame-index-from-tics, missing-frame fallback and renderer-facing resolution; headless (108/108) and engine (133/133) checks and `--demo --validate-maps` (0 missing textures across all maps) remain green |
 | Intermission/stats screen | Partial | On every level exit, `Game.FinishLevel` now computes Kills/Items/Secrets percentages (rounded, with a 0-total treated as 100%, matching the original's "nothing required" convention) and elapsed time, rendered as a 4-line overlay (`Game.IntermissionStats`) replacing the prior single-line prompt; a new `Items`/`TotalItems` pair counts health/armor bonuses, mega/soulspheres, berserk and keycards (not ammo or weapons, matching the original engine's `itemcount` semantics) and `TotalSecrets` counts sector-special-9 secrets; `SaveGameState` gains a trailing optional `Items` field (format version bumped to 2; version-1 saves still load, with `Items` defaulting to 0 and understating the restored percentage); no per-game cumulative statistics or a dedicated "you are here" map-select intermission like the original's inter-level screen — the overlay reuses the existing single-screen HUD-text rendering path; new engine checks `intermission-full`/`intermission-partial`/`intermission-empty` cover 100%, 50%-rounding and all-zero-total cases; headless (114/114) and engine (157/157) checks remain green |
 | Menus, multiplayer and extended maps/mods | Not implemented | No end-to-end capability claimed |
@@ -79,15 +79,21 @@ Save/load (`Save.cs`) is now partially implemented: F5/F9 (desktop keyboard,
 X11/Windows/macOS) and a Save/Load button pair (browser) capture or restore a
 single JSON snapshot of in-progress state — current map, player position/angle,
 health/armor/ammo/weapon ownership, keys, kill/secret/time counters, which
-secret sectors were found, and each actor's removed/health flags by spawn
-index — using a source-generated `JsonSerializerContext` so the AOT/trimmed
-desktop and WASM builds stay warning-free. Desktop persists to a `doomsharp.sav`
-file beside the executable; the browser persists to `localStorage`. Loading
-replays `Spawn()` for the saved map and reapplies actor state by index, so it
-depends on deterministic actor ordering for a given map; in-flight projectiles
-are discarded rather than restored. Saving is blocked while dead or after the
+secret sectors were found, and each actor's removed/health/noise-alert (Awake
+plus its remembered AlertPosition) flags by spawn index — using a
+source-generated `JsonSerializerContext` so the AOT/trimmed desktop and WASM
+builds stay warning-free. Desktop persists to a `doomsharp.sav` file beside the
+executable; the browser persists to `localStorage`. Loading replays `Spawn()`
+for the saved map and reapplies actor state by index, so it depends on
+deterministic actor ordering for a given map; in-flight projectiles are
+discarded rather than restored. Saving is blocked while dead or after the
 level has finished, mirroring the existing "no-op while finished" pattern used
-elsewhere in `Game.Tick()`.
+elsewhere in `Game.Tick()`. The Awake/AlertPosition fields are trailing
+optional (format version bumped to 3): older version-1/2 saves still load,
+with every actor simply defaulting to "not awake" (their behavior before this
+fix), while version-3 saves faithfully resume a monster's blind pursuit of a
+propagated noise across a save/load cycle instead of silently waking it back
+up to dormant.
 
 Music/MUS and Standard MIDI File playback (`Music.cs`) is now partially
 implemented: a clean-room event-stream parser for both id Software's native MUS

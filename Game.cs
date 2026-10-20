@@ -1108,19 +1108,22 @@ public sealed class Game
     }
 
     /// <summary>
-    /// Serializes the current map, player stats/inventory and per-actor removed/health state to JSON.
+    /// Serializes the current map, player stats/inventory and per-actor removed/health/alert state to JSON.
     /// In-flight projectiles are not preserved; <see cref="TryLoad"/> always resumes with none airborne.
     /// </summary>
     public string Save() => JsonSerializer.Serialize(new SaveGameState(
-        2, Map.Name, Position.X, Position.Y, Angle, Feet,
+        3, Map.Name, Position.X, Position.Y, Angle, Feet,
         Health, Armor, Bullets, Shells, Rockets, HasShotgun, HasChaingun, HasRocketLauncher, SelectedWeapon,
         Keys, Kills, Secrets, Time, [.. foundSecrets],
-        [.. Actors.Select(a => a.Removed)], [.. Actors.Select(a => a.Health)], Items),
+        [.. Actors.Select(a => a.Removed)], [.. Actors.Select(a => a.Health)], Items,
+        [.. Actors.Select(a => a.Awake)],
+        [.. Actors.Select(a => a.AlertPosition?.X ?? double.NaN)],
+        [.. Actors.Select(a => a.AlertPosition?.Y ?? double.NaN)]),
         SaveJsonContext.Default.SaveGameState);
 
     /// <summary>
     /// Restores a snapshot produced by <see cref="Save"/>: reloads its map, replays <see cref="Spawn"/> to
-    /// rebuild the deterministic actor list, then reapplies each actor's saved removed/health state by
+    /// rebuild the deterministic actor list, then reapplies each actor's saved removed/health/alert state by
     /// index and the player's saved position/stats/inventory. Returns false (with <paramref name="error"/>
     /// set) for an unreadable, version-mismatched, unknown-map or actor-count-mismatched save, leaving the
     /// current game state untouched.
@@ -1131,11 +1134,14 @@ public sealed class Game
         try { state = JsonSerializer.Deserialize(json, SaveJsonContext.Default.SaveGameState); }
         catch (JsonException ex) { error = $"malformed save ({ex.Message})"; return false; }
         if (state == null) { error = "empty save."; return false; }
-        if (state.Version is not (1 or 2)) { error = $"unsupported save version {state.Version}."; return false; }
+        if (state.Version is not (1 or 2 or 3)) { error = $"unsupported save version {state.Version}."; return false; }
         if (!Wad.Maps.Contains(state.Map)) { error = $"save references unknown map {state.Map}."; return false; }
         Map = new(Wad, state.Map); Assets = new(Wad, state.Map);
         Spawn();
-        if (state.ActorRemoved.Length != Actors.Count || state.ActorHealth.Length != Actors.Count)
+        if (state.ActorRemoved.Length != Actors.Count || state.ActorHealth.Length != Actors.Count ||
+            state.ActorAwake != null && state.ActorAwake.Length != Actors.Count ||
+            state.ActorAlertX != null && state.ActorAlertX.Length != Actors.Count ||
+            state.ActorAlertY != null && state.ActorAlertY.Length != Actors.Count)
         {
             error = "save's actor layout no longer matches this map."; return false;
         }
@@ -1143,6 +1149,12 @@ public sealed class Game
         {
             Actors[i].Removed = state.ActorRemoved[i];
             Actors[i].Health = state.ActorHealth[i];
+            // Absent (version 1/2) means "not awake", matching how those saves always behaved before
+            // this field existed; present means round-trip the monster's noise-alert pursuit exactly.
+            Actors[i].Awake = state.ActorAwake?[i] ?? false;
+            double alertX = state.ActorAlertX?[i] ?? double.NaN, alertY = state.ActorAlertY?[i] ?? double.NaN;
+            Actors[i].AlertPosition = Actors[i].Awake && !double.IsNaN(alertX) && !double.IsNaN(alertY)
+                ? new Vec(alertX, alertY) : null;
         }
         foundSecrets.Clear();
         foreach (int sector in state.FoundSecretSectors) foundSecrets.Add(sector);
