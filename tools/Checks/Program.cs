@@ -451,6 +451,198 @@ try
                 legacyLoaded && !legacyActor.Awake && legacyActor.AlertPosition == null,
                 new { legacyLoaded, legacyError, legacyActor.Awake, legacyActor.AlertPosition, legacyJson });
         }
+        {
+            // Save-game compatibility: a demon that lost direct sight of the player but is still inside
+            // its chase-memory window (ChaseMemory > 0, LastKnownTargetPosition set — see Game.UpdateActor)
+            // must keep pursuing that remembered spot after a save/load cycle, not silently revert to idle
+            // the instant the save is restored (ChaseMemory/LastKnownTargetPosition previously were not
+            // part of SaveGameState at all).
+            Game before = Load("chase-memory");
+            Actor demon = before.Actors.Single(a => a.Type == 3002);
+            Tick(before); // Confirm the demon starts out actively tracking the player while in sight.
+            // Run the player away until sight is just lost (ChaseMemory starts ticking down from its full
+            // value), matching the "chase-memory-exceeds-sight-range" scenario above.
+            for (int tics = 0; tics < 2000 && demon.ChaseMemory >= 3; tics++) Tick(before, Buttons.Run | Buttons.Forward);
+            Check("savegame-compat-chase-before-save",
+                demon.ChaseMemory is > 0 and < 3 && demon.LastKnownTargetPosition != null,
+                new { demon.ChaseMemory, demon.LastKnownTargetPosition });
+            string json = before.Save();
+            Vec rememberedBeforeSave = demon.LastKnownTargetPosition!.Value;
+            double chaseMemoryBeforeSave = demon.ChaseMemory;
+
+            Game after = Load("chase-memory");
+            bool loaded = after.TryLoad(json, out string? error);
+            Actor restored = after.Actors.Single(a => a.Type == 3002);
+            Check("savegame-compat-chase-restored",
+                loaded && restored.ChaseMemory == chaseMemoryBeforeSave && restored.LastKnownTargetPosition == rememberedBeforeSave,
+                new { loaded, error, restored.ChaseMemory, restored.LastKnownTargetPosition, chaseMemoryBeforeSave, rememberedBeforeSave });
+
+            // The restored demon must keep closing on the remembered spot on its own (player stays put, no
+            // fresh sight) rather than freezing because its chase memory never actually came back.
+            Vec positionAfterLoad = restored.Position;
+            Tick(after, count: 5);
+            Check("savegame-compat-chase-continues-after-load", restored.Position != positionAfterLoad,
+                new { positionAfterLoad, restored.Position });
+        }
+        {
+            // Save-game compatibility: a monster mid-infight (Target points at another monster, see
+            // Game.Hurt) must keep fighting that rival after a save/load cycle instead of silently
+            // reverting to "fight the player" (Target previously was not part of SaveGameState at all, so
+            // TryLoad always left every restored actor's Target at its freshly-spawned null default).
+            Game before = Load("infight-retarget");
+            Tick(before, count: 150);
+            Actor imp = before.Actors.Single(a => a.Type == 3001);
+            Actor demon = before.Actors.Single(a => a.Type == 3002);
+            Check("savegame-compat-infight-before-save", demon.Target == imp, new { target = demon.Target == imp ? "imp" : "other" });
+            string json = before.Save();
+
+            Game after = Load("infight-retarget");
+            bool loaded = after.TryLoad(json, out string? error);
+            Actor restoredImp = after.Actors.Single(a => a.Type == 3001);
+            Actor restoredDemon = after.Actors.Single(a => a.Type == 3002);
+            Check("savegame-compat-infight-restored", loaded && restoredDemon.Target == restoredImp,
+                new { loaded, error, target = restoredDemon.Target == restoredImp ? "imp" : "other" });
+
+            // The restored demon must keep closing on the imp on its own (no fresh hit needed) rather than
+            // idling or re-acquiring the player because its infighting target never actually came back; a
+            // shrinking separation confirms it is still actively pursuing restoredImp, not Position (the
+            // player).
+            double distanceAfterLoad = (restoredDemon.Position - restoredImp.Position).Length;
+            Tick(after, count: 30);
+            double distanceAfterChase = (restoredDemon.Position - restoredImp.Position).Length;
+            Check("savegame-compat-infight-continues-after-load",
+                restoredDemon.Target == restoredImp && distanceAfterChase < distanceAfterLoad,
+                new { restoredDemon.Target, distanceAfterLoad, distanceAfterChase });
+        }
+        {
+            // A version-1/2/3 save (no ActorChaseMemory/ActorLastKnownTargetX/ActorLastKnownTargetY/
+            // ActorTargetIndex fields at all) must still load cleanly, with every actor simply defaulting
+            // to "no chase memory, no infighting target" — the pre-existing behavior.
+            Game before = Load("infight-retarget");
+            Tick(before, count: 150);
+            string json = before.Save();
+            string legacyJson = Regex.Replace(json,
+                @",""ActorChaseMemory"":\[[^\]]*\],""ActorLastKnownTargetX"":\[[^\]]*\],""ActorLastKnownTargetY"":\[[^\]]*\],""ActorTargetIndex"":\[[^\]]*\]",
+                "");
+            legacyJson = Regex.Replace(legacyJson, "\"Version\":4", "\"Version\":3");
+            Game legacy = Load("infight-retarget");
+            bool legacyLoaded = legacy.TryLoad(legacyJson, out string? legacyError);
+            Actor legacyDemon = legacy.Actors.Single(a => a.Type == 3002);
+            Check("savegame-compat-legacy-version-defaults-no-chase-or-target",
+                legacyLoaded && legacyDemon.ChaseMemory == 0 && legacyDemon.LastKnownTargetPosition == null && legacyDemon.Target == null,
+                new { legacyLoaded, legacyError, legacyDemon.ChaseMemory, legacyDemon.LastKnownTargetPosition, legacyDemon.Target, legacyJson });
+        }
+        {
+            // Regression: Game.Save() previously threw ArgumentException for any save containing a resting
+            // actor (no noise-alert position, no chase memory — the overwhelmingly common case), because
+            // ActorAlertX/ActorAlertY/ActorLastKnownTargetX/ActorLastKnownTargetY used a raw double.NaN
+            // "no value" sentinel that System.Text.Json's default writer rejects. They now encode "no
+            // value" as an ordinary nullable-array null element instead, so saving and loading a fully idle
+            // game must not throw and must round-trip to the same idle state.
+            Game before = Load("infight-retarget");
+            Actor restingDemon = before.Actors.Single(a => a.Type == 3002);
+            Check("savegame-compat-resting-before-save",
+                !restingDemon.Awake && restingDemon.AlertPosition == null && restingDemon.ChaseMemory == 0 &&
+                restingDemon.LastKnownTargetPosition == null && restingDemon.Target == null,
+                new { restingDemon.Awake, restingDemon.AlertPosition, restingDemon.ChaseMemory, restingDemon.LastKnownTargetPosition, restingDemon.Target });
+
+            string? json = null; Exception? thrown = null;
+            try { json = before.Save(); } catch (Exception ex) { thrown = ex; }
+            Check("savegame-compat-resting-save-does-not-throw", thrown == null && json != null, thrown?.ToString());
+
+            Game after = Load("infight-retarget");
+            string? error = null;
+            bool loaded = json != null && after.TryLoad(json, out error);
+            Actor restoredDemon = after.Actors.Single(a => a.Type == 3002);
+            Check("savegame-compat-resting-restored",
+                loaded && !restoredDemon.Awake && restoredDemon.AlertPosition == null && restoredDemon.ChaseMemory == 0 &&
+                restoredDemon.LastKnownTargetPosition == null && restoredDemon.Target == null,
+                new { loaded, error, restoredDemon.Awake, restoredDemon.AlertPosition, restoredDemon.ChaseMemory, restoredDemon.LastKnownTargetPosition, restoredDemon.Target });
+        }
+        {
+            // Gameplay-critical fields (PositionX/Angle/Feet/Time) are not covered by the narrow nullable
+            // "no position" sentinel used for per-actor alert/chase-memory coordinates, so a save with a
+            // non-finite value in one of them (hand-edited or otherwise corrupted) must be rejected during
+            // load rather than silently accepted.
+            Game before = Load("infight-retarget");
+            Tick(before, count: 10);
+            string json = before.Save();
+            foreach (string field in new[] { "PositionX", "Angle", "Feet", "Time" })
+            {
+                string corrupted = Regex.Replace(json, $@"""{field}"":-?[0-9.eE+-]+", $@"""{field}"":NaN");
+                Game target = Load("infight-retarget");
+                bool loaded = target.TryLoad(corrupted, out string? error);
+                Check($"savegame-reject-non-finite-{field}", !loaded && error != null, new { loaded, error, corrupted });
+            }
+        }
+        {
+            // ActorTargetIndex values other than the documented -1 "no target" sentinel (fight the player)
+            // or a valid in-range actor index are corrupt save data and must reject the whole load, not
+            // silently clamp to "no target" as a prior version of this fix did for any negative value or
+            // any out-of-range index.
+            Game before = Load("infight-retarget");
+            Tick(before, count: 150);
+            string json = before.Save();
+            int actorCount = before.Actors.Count;
+
+            string allNoTargetJson = Regex.Replace(json, @"""ActorTargetIndex"":\[[^\]]*\]",
+                $@"""ActorTargetIndex"":[{string.Join(',', Enumerable.Repeat("-1", actorCount))}]");
+            Game allNoTargetGame = Load("infight-retarget");
+            bool allNoTargetLoaded = allNoTargetGame.TryLoad(allNoTargetJson, out string? allNoTargetError);
+            Check("savegame-target-index-minus-one-valid",
+                allNoTargetLoaded && allNoTargetGame.Actors.All(a => a.Target == null),
+                new { allNoTargetLoaded, allNoTargetError });
+
+            string negativeIndices = string.Join(',', Enumerable.Range(0, actorCount).Select(i => i == 0 ? "-2" : "-1"));
+            string invalidNegativeJson = Regex.Replace(json, @"""ActorTargetIndex"":\[[^\]]*\]", $@"""ActorTargetIndex"":[{negativeIndices}]");
+            Game invalidNegativeGame = Load("infight-retarget");
+            bool invalidNegativeLoaded = invalidNegativeGame.TryLoad(invalidNegativeJson, out string? invalidNegativeError);
+            Check("savegame-reject-target-index-invalid-negative", !invalidNegativeLoaded && invalidNegativeError != null,
+                new { invalidNegativeLoaded, invalidNegativeError });
+
+            string outOfRangeIndices = string.Join(',', Enumerable.Range(0, actorCount).Select(i => i == 0 ? actorCount.ToString() : "-1"));
+            string outOfRangeJson = Regex.Replace(json, @"""ActorTargetIndex"":\[[^\]]*\]", $@"""ActorTargetIndex"":[{outOfRangeIndices}]");
+            Game outOfRangeGame = Load("infight-retarget");
+            bool outOfRangeLoaded = outOfRangeGame.TryLoad(outOfRangeJson, out string? outOfRangeError);
+            Check("savegame-reject-target-index-out-of-range", !outOfRangeLoaded && outOfRangeError != null,
+                new { outOfRangeLoaded, outOfRangeError });
+            // A valid in-range index (not -1) resolving to the correct actor is already covered by
+            // savegame-compat-infight-restored above.
+        }
+        {
+            // TryLoad's contract: a malformed save must leave an already-in-progress game completely
+            // unchanged, not partially mutated (e.g. Map/Actors already rebuilt for the save's target map
+            // before validation caught the problem). Start a game, advance it, then attempt to load a save
+            // with a corrupt (out-of-range) ActorTargetIndex into that same in-progress game, and assert
+            // every observable field is identical afterward.
+            Game game = Load("infight-retarget");
+            Tick(game, count: 50);
+            string beforeMapName = game.Map.Name;
+            Vec beforePosition = game.Position; double beforeAngle = game.Angle, beforeFeet = game.Feet;
+            int beforeHealth = game.Health, beforeArmor = game.Armor, beforeBullets = game.Bullets,
+                beforeShells = game.Shells, beforeRockets = game.Rockets, beforeKeys = game.Keys,
+                beforeKills = game.Kills, beforeSecrets = game.Secrets, beforeItems = game.Items;
+            double beforeTime = game.Time;
+            var beforeActors = game.Actors.Select(a => (a.Position, a.Health, a.Removed, a.Awake, a.AlertPosition,
+                a.ChaseMemory, a.LastKnownTargetPosition, Target: a.Target == null ? -1 : game.Actors.IndexOf(a.Target))).ToList();
+
+            string validJson = game.Save();
+            int n = game.Actors.Count;
+            string indices = string.Join(',', Enumerable.Range(0, n).Select(i => i == 0 ? n.ToString() : "-1"));
+            string corruptJson = Regex.Replace(validJson, @"""ActorTargetIndex"":\[[^\]]*\]", $@"""ActorTargetIndex"":[{indices}]");
+            bool loaded = game.TryLoad(corruptJson, out string? error);
+
+            var afterActors = game.Actors.Select(a => (a.Position, a.Health, a.Removed, a.Awake, a.AlertPosition,
+                a.ChaseMemory, a.LastKnownTargetPosition, Target: a.Target == null ? -1 : game.Actors.IndexOf(a.Target))).ToList();
+            Check("savegame-reject-preserves-in-progress-game",
+                !loaded && error != null &&
+                game.Map.Name == beforeMapName && game.Position == beforePosition && game.Angle == beforeAngle &&
+                game.Feet == beforeFeet && game.Health == beforeHealth && game.Armor == beforeArmor &&
+                game.Bullets == beforeBullets && game.Shells == beforeShells && game.Rockets == beforeRockets &&
+                game.Keys == beforeKeys && game.Kills == beforeKills && game.Secrets == beforeSecrets &&
+                game.Items == beforeItems && game.Time == beforeTime && afterActors.SequenceEqual(beforeActors),
+                new { loaded, error, beforeMapName, afterMapName = game.Map.Name });
+        }
     }
     if (mode is "native" or "all")
     {
