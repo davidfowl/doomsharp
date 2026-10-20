@@ -1165,12 +1165,25 @@ public sealed class Game
         {
             error = "save contains a non-finite gameplay value."; return false;
         }
+        // ActorRemoved/ActorHealth/FoundSecretSectors are declared non-nullable in SaveGameState, but that
+        // is only a compile-time (nullable-reference) annotation: a hand-edited or otherwise corrupted save
+        // can still deserialize an explicit JSON `null` into any of them, and dereferencing that null below
+        // (.Length, foreach) would throw an unhandled NullReferenceException instead of the explicit
+        // malformed-save error every other corrupt-save case already returns.
+        if (state.ActorRemoved == null || state.ActorHealth == null || state.FoundSecretSectors == null)
+        {
+            error = "save is missing required actor/secret array data."; return false;
+        }
 
         // Compute the target map's deterministic actor list in a local (not yet committed to the live
         // game) so every shape/index check below can run before any mutation, honoring the "fully succeed
         // or leave the existing game completely unchanged" contract.
         Map candidateMap = new(Wad, state.Map);
         (_, _, _, List<Actor> candidateActors, int candidateUnsupportedThings) = BuildSpawnState(candidateMap);
+        // Candidate Assets are constructed here too, alongside the candidate map/actors, so a failure
+        // partway through assembling the candidate state (map, assets, or actor layout) can never leave
+        // the live Map/Assets pair inconsistent with each other or with the live Actors list.
+        Assets candidateAssets = new(Wad, state.Map);
         if (state.ActorRemoved.Length != candidateActors.Count || state.ActorHealth.Length != candidateActors.Count ||
             state.ActorAwake != null && state.ActorAwake.Length != candidateActors.Count ||
             state.ActorAlertX != null && state.ActorAlertX.Length != candidateActors.Count ||
@@ -1195,9 +1208,49 @@ public sealed class Game
                 }
             }
         }
+        // ChaseMemory is a countdown timer (see ChaseMemoryDuration/UpdateActor) that only ever runs from
+        // its full duration down to its 0 "no chase memory" sentinel/default; a negative or non-finite
+        // value can never arise from normal play and is corrupt save data, not a tighter gameplay cap.
+        if (state.ActorChaseMemory != null)
+        {
+            foreach (double chaseMemory in state.ActorChaseMemory)
+            {
+                if (!double.IsFinite(chaseMemory) || chaseMemory < 0)
+                {
+                    error = $"save contains an invalid actor chase-memory value {chaseMemory}."; return false;
+                }
+            }
+        }
+        // ActorLastKnownTargetX/Y encode "no remembered position" as both elements null together; either
+        // whole array present without the other, or one element present without its paired element, is an
+        // impossible half-a-position and must be rejected rather than silently dropped (which previously
+        // lost the remembered position instead of flagging the corruption).
+        if (state.ActorLastKnownTargetX == null != (state.ActorLastKnownTargetY == null))
+        {
+            error = "save's actor last-known-target X/Y arrays are inconsistently present."; return false;
+        }
+        if (state.ActorLastKnownTargetX != null && state.ActorLastKnownTargetY != null)
+        {
+            for (int i = 0; i < state.ActorLastKnownTargetX.Length; i++)
+            {
+                double? lastX = state.ActorLastKnownTargetX[i], lastY = state.ActorLastKnownTargetY[i];
+                if (lastX.HasValue != lastY.HasValue)
+                {
+                    error = $"save contains an actor last-known-target position with only one of X/Y set at index {i}.";
+                    return false;
+                }
+                // double.IsFinite(double?) isn't a thing; check the underlying value once we know it's
+                // present. A non-finite literal such as 1e999 deserializes to double.PositiveInfinity,
+                // which NaN-only checks would miss.
+                if (lastX.HasValue && (!double.IsFinite(lastX.Value) || !double.IsFinite(lastY!.Value)))
+                {
+                    error = $"save contains a non-finite actor last-known-target position at index {i}."; return false;
+                }
+            }
+        }
 
         // All validation above is complete; only now may live game state actually change.
-        Map = candidateMap; Assets = new(Wad, state.Map);
+        Map = candidateMap; Assets = candidateAssets;
         Actors.Clear(); Actors.AddRange(candidateActors);
         Projectiles.Clear(); foundSecrets.Clear(); bossDeathActivated = false;
         UnsupportedThings = candidateUnsupportedThings;

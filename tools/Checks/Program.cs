@@ -583,6 +583,125 @@ try
                 game.Items == beforeItems && game.Time == beforeTime && afterActors.SequenceEqual(beforeActors),
                 new { loaded, error, beforeMapName, afterMapName = game.Map.Name });
         }
+        {
+            // ChaseMemory (see ChaseMemoryDuration/UpdateActor) is a countdown timer that only ever runs
+            // from its full duration down to its 0 "no chase memory" sentinel/default; a negative value
+            // never arises from normal play and must be rejected as malformed-save, not silently clamped.
+            // Mismatched per-actor last-known-target X/Y presence (one set without its pair) must likewise
+            // be rejected rather than silently dropped, and a numeric-overflow literal such as 1e999 (which
+            // deserializes to double.PositiveInfinity, not NaN) must be rejected by the same finite check.
+            Game before = Load("chase-memory");
+            Actor demon = before.Actors.Single(a => a.Type == 3002);
+            Tick(before);
+            for (int tics = 0; tics < 2000 && demon.ChaseMemory >= 3; tics++) Tick(before, Buttons.Run | Buttons.Forward);
+            Check("savegame-chase-memory-fixture-has-remembered-position",
+                demon.ChaseMemory is > 0 and < 3 && demon.LastKnownTargetPosition != null, new { demon.ChaseMemory });
+            string json = before.Save();
+            int demonIndex = before.Actors.IndexOf(demon);
+            SaveGameState baseline = JsonSerializer.Deserialize(json, SaveJsonContext.Default.SaveGameState)!;
+
+            double[] invalidChaseMemory = [.. baseline.ActorChaseMemory!];
+            invalidChaseMemory[demonIndex] = -1;
+            string invalidChaseMemoryJson = JsonSerializer.Serialize(
+                baseline with { ActorChaseMemory = invalidChaseMemory }, SaveJsonContext.Default.SaveGameState);
+            Game invalidChaseMemoryGame = Load("chase-memory");
+            bool invalidChaseMemoryLoaded = invalidChaseMemoryGame.TryLoad(invalidChaseMemoryJson, out string? invalidChaseMemoryError);
+            Check("savegame-reject-chase-memory-invalid", !invalidChaseMemoryLoaded && invalidChaseMemoryError != null,
+                new { invalidChaseMemoryLoaded, invalidChaseMemoryError });
+
+            // The legitimate 0 "no chase memory" sentinel/default for every actor (the overwhelmingly
+            // common case, already covered for a single resting actor by savegame-compat-resting-restored)
+            // must still load successfully — this validation is not a new, tighter gameplay cap.
+            double[] zeroChaseMemory = [.. baseline.ActorChaseMemory!.Select(_ => 0.0)];
+            double?[] noTargetX = [.. baseline.ActorLastKnownTargetX!.Select(_ => (double?)null)];
+            double?[] noTargetY = [.. baseline.ActorLastKnownTargetY!.Select(_ => (double?)null)];
+            string zeroChaseMemoryJson = JsonSerializer.Serialize(baseline with
+            {
+                ActorChaseMemory = zeroChaseMemory, ActorLastKnownTargetX = noTargetX, ActorLastKnownTargetY = noTargetY
+            }, SaveJsonContext.Default.SaveGameState);
+            Game zeroChaseMemoryGame = Load("chase-memory");
+            bool zeroChaseMemoryLoaded = zeroChaseMemoryGame.TryLoad(zeroChaseMemoryJson, out string? zeroChaseMemoryError);
+            Check("savegame-chase-memory-zero-sentinel-loads",
+                zeroChaseMemoryLoaded && zeroChaseMemoryGame.Actors.All(a => a.ChaseMemory == 0 && a.LastKnownTargetPosition == null),
+                new { zeroChaseMemoryLoaded, zeroChaseMemoryError });
+
+            // The demon's baseline X is non-null (remembered position just lost); pairing its X with a
+            // missing Y is an impossible half-a-position.
+            double?[] xWithoutY = [.. baseline.ActorLastKnownTargetY!];
+            xWithoutY[demonIndex] = null;
+            string xWithoutYJson = JsonSerializer.Serialize(
+                baseline with { ActorLastKnownTargetY = xWithoutY }, SaveJsonContext.Default.SaveGameState);
+            Game xWithoutYGame = Load("chase-memory");
+            bool xWithoutYLoaded = xWithoutYGame.TryLoad(xWithoutYJson, out string? xWithoutYError);
+            Check("savegame-reject-last-known-target-x-without-y", !xWithoutYLoaded && xWithoutYError != null,
+                new { xWithoutYLoaded, xWithoutYError });
+
+            double?[] yWithoutX = [.. baseline.ActorLastKnownTargetX!];
+            yWithoutX[demonIndex] = null;
+            string yWithoutXJson = JsonSerializer.Serialize(
+                baseline with { ActorLastKnownTargetX = yWithoutX }, SaveJsonContext.Default.SaveGameState);
+            Game yWithoutXGame = Load("chase-memory");
+            bool yWithoutXLoaded = yWithoutXGame.TryLoad(yWithoutXJson, out string? yWithoutXError);
+            Check("savegame-reject-last-known-target-y-without-x", !yWithoutXLoaded && yWithoutXError != null,
+                new { yWithoutXLoaded, yWithoutXError });
+
+            // Hand-edit the raw text (rather than going through SaveGameState/JsonSerializer.Serialize,
+            // which rejects writing a non-finite double outright) so the demon's X element becomes the
+            // literal overflow token "1e999", exactly as System.Text.Json would parse it from a corrupted
+            // save file: as double.PositiveInfinity, not NaN.
+            string overflowJson = Regex.Replace(json, @"""ActorLastKnownTargetX"":\[([^\]]*)\]", m =>
+            {
+                string[] elements = m.Groups[1].Value.Split(',');
+                elements[demonIndex] = "1e999";
+                return $@"""ActorLastKnownTargetX"":[{string.Join(',', elements)}]";
+            });
+            Check("savegame-chase-memory-overflow-fixture-edited", overflowJson != json, new { overflowJson, json });
+            Game overflowGame = Load("chase-memory");
+            bool overflowLoaded = overflowGame.TryLoad(overflowJson, out string? overflowError);
+            Check("savegame-reject-last-known-target-overflow", !overflowLoaded && overflowError != null,
+                new { overflowLoaded, overflowError });
+        }
+        {
+            // (b) ActorRemoved/ActorHealth/FoundSecretSectors are declared non-nullable in SaveGameState,
+            // but that is only a compile-time annotation: a hand-edited save can still carry an explicit
+            // JSON null for any of them. Loading must hit the ordinary malformed-save error path, not throw
+            // an unhandled NullReferenceException.
+            Game before = Load("infight-retarget");
+            Tick(before, count: 10);
+            string json = before.Save();
+            foreach (string field in new[] { "ActorRemoved", "ActorHealth", "FoundSecretSectors" })
+            {
+                string corrupted = Regex.Replace(json, $@"""{field}"":\[[^\]]*\]", $@"""{field}"":null");
+                Game target = Load("infight-retarget");
+                bool threw = false; bool loaded = false; string? error = null;
+                try { loaded = target.TryLoad(corrupted, out error); }
+                catch (Exception ex) { threw = true; error = ex.ToString(); }
+                Check($"savegame-reject-null-{field}", !threw && !loaded && error != null, new { threw, loaded, error });
+            }
+        }
+        {
+            // Extend the existing "malformed save leaves an in-progress game untouched" contract
+            // (savegame-reject-preserves-in-progress-game above) to this new null-required-array failure
+            // point: it must also leave a running game's map/actor state completely unchanged rather than
+            // partially rebuilding Map/Actors before the null was discovered.
+            Game game = Load("infight-retarget");
+            Tick(game, count: 50);
+            string beforeMapName = game.Map.Name;
+            Vec beforePosition = game.Position; double beforeAngle = game.Angle, beforeFeet = game.Feet;
+            int beforeHealth = game.Health, beforeArmor = game.Armor;
+            var beforeActors = game.Actors.Select(a => (a.Position, a.Health, a.Removed)).ToList();
+
+            string validJson = game.Save();
+            string corruptJson = Regex.Replace(validJson, @"""ActorHealth"":\[[^\]]*\]", @"""ActorHealth"":null");
+            bool loaded = game.TryLoad(corruptJson, out string? error);
+
+            var afterActors = game.Actors.Select(a => (a.Position, a.Health, a.Removed)).ToList();
+            Check("savegame-reject-null-array-preserves-in-progress-game",
+                !loaded && error != null && game.Map.Name == beforeMapName && game.Position == beforePosition &&
+                game.Angle == beforeAngle && game.Feet == beforeFeet && game.Health == beforeHealth &&
+                game.Armor == beforeArmor && afterActors.SequenceEqual(beforeActors),
+                new { loaded, error, beforeMapName, afterMapName = game.Map.Name });
+        }
     }
     if (mode is "native" or "all")
     {
