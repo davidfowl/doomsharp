@@ -353,6 +353,44 @@ try
             Check("noise-propagation-blocked-by-closed-door", !monster.Awake && monster.Position == initial,
                 new { monster.Awake, initial, monster.Position });
         }
+        {
+            // Save-game compatibility: a monster that was blindly chasing a propagated noise (Awake plus
+            // its remembered AlertPosition) must keep doing so after a save/load cycle, not silently
+            // revert to dormant the instant the save is restored (the per-actor state TryLoad previously
+            // reapplied only covered Removed/Health, so this alert state used to be dropped on load).
+            Game before = Load("noise-propagation-wakes-through-open-door");
+            Tick(before, Buttons.Fire);
+            Tick(before, count: 20);
+            Actor awakened = before.Actors.Single(a => a.Type == 3004);
+            Check("savegame-compat-awake-before-save", awakened.Awake && awakened.AlertPosition != null,
+                new { awakened.Awake, awakened.AlertPosition });
+            string json = before.Save();
+            Vec positionBeforeSave = awakened.Position;
+
+            Game after = Load("noise-propagation-wakes-through-open-door");
+            bool loaded = after.TryLoad(json, out string? error);
+            Actor restored = after.Actors.Single(a => a.Type == 3004);
+            Check("savegame-compat-awake-restored", loaded && restored.Awake && restored.AlertPosition == awakened.AlertPosition,
+                new { loaded, error, restoredAwake = restored.Awake, restoredAlert = restored.AlertPosition, savedAlert = awakened.AlertPosition });
+
+            // The restored monster must keep closing on the remembered alert position on its own (no
+            // fresh noise, no line of sight yet) rather than sitting idle because its wake state never
+            // actually came back.
+            Tick(after, count: 10);
+            Check("savegame-compat-awake-continues-after-load", restored.Position != positionBeforeSave,
+                new { positionBeforeSave, restored.Position });
+
+            // A version-1/2 save (no ActorAwake/ActorAlertX/ActorAlertY fields at all) must still load
+            // cleanly, with every actor simply defaulting to "not awake" — the pre-existing behavior.
+            string legacyJson = Regex.Replace(json, @",""ActorAwake"":\[[^\]]*\],""ActorAlertX"":\[[^\]]*\],""ActorAlertY"":\[[^\]]*\]", "");
+            legacyJson = Regex.Replace(legacyJson, "\"Version\":3", "\"Version\":2");
+            Game legacy = Load("noise-propagation-wakes-through-open-door");
+            bool legacyLoaded = legacy.TryLoad(legacyJson, out string? legacyError);
+            Actor legacyActor = legacy.Actors.Single(a => a.Type == 3004);
+            Check("savegame-compat-legacy-version-defaults-dormant",
+                legacyLoaded && !legacyActor.Awake && legacyActor.AlertPosition == null,
+                new { legacyLoaded, legacyError, legacyActor.Awake, legacyActor.AlertPosition, legacyJson });
+        }
     }
     if (mode is "native" or "all")
     {
