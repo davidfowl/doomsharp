@@ -56,7 +56,7 @@ Build/publish output includes the Phase 1 WAD, BSD license and credits.
 | Native window presentation | Working | Bounded actual-engine desktop smoke runs pass on three OSes; interactive input coverage differs by platform below |
 | DMX decoding and sound-effects mixer | Partial | Native Linux playthrough submits effects to ALSA null; exact resampling/audio comparison, audible playback and Windows/macOS audio unverified |
 | Remaining weapons/powerups, stairs/crushers, switch textures and other boss actions | Not implemented | Required for original gameplay/campaign parity |
-| Music/MUS and Standard MIDI File playback | Partial | Clean-room MUS and SMF parsers decode bundled Freedoom `D_*` lumps into looping PCM mixed by the native audio thread and WebAudio on the browser target; verified via native ALSA-null submission and Chromium/WebKit WebAudio-after-click checks below; uses an approximate additive-harmonic/noise synth, not a General MIDI soundfont, so exact timbre/original parity is not claimed |
+| Music/MUS and Standard MIDI File playback | Partial | Clean-room MUS and SMF parsers decode bundled Freedoom `D_*` lumps into looping PCM mixed by the native audio thread and WebAudio on the browser target; verified via native ALSA-null submission and Chromium/WebKit WebAudio-after-click checks below; models per-channel pitch-bend as a semitone frequency offset and GM-program-aware timbre families via an approximate additive-harmonic/noise synth, not a General MIDI soundfont, so exact timbre/original parity is not claimed |
 | Save/load game state | Partial | F5 saves and F9 loads a JSON snapshot (map, position/angle, health/armor/ammo/weapons, keys, kills/secrets/time, found-secret sectors and per-actor removed/health) via a source-generated `System.Text.Json` context; desktop persists to a `doomsharp.sav` file next to the executable, the browser persists to `localStorage` via a Save/Load button pair; verified end-to-end natively with real X11 key input (F5 produced a real save, F9 restored player position after movement) and with an in-process harness covering successful load plus rejection of bad-version/unknown-map/malformed JSON; headless (108/108), engine (121/121) and native (22/22) checks remain green; in-flight projectiles are not preserved across a save/load cycle |
 | Menus, multiplayer and extended maps/mods | Not implemented | No end-to-end capability claimed |
 | Complete authentic WAD campaigns | Unverified | Map rendering alone is not campaign completion; missing behaviors can block progression |
@@ -93,9 +93,13 @@ format and Standard MIDI Files (needed because the bundled Freedoom WAD ships
 `D_*` music lumps as SMF, not MUS) feeds a small additive-harmonic/noise-burst
 software synthesizer, producing looping PCM mixed into the existing native
 audio thread (`Audio.cs`) and the browser's WebAudio graph (`host.js`/`App.razor`)
-alongside the existing one-shot SFX voices. This is an approximation of General
-MIDI timbres, not a soundfont-accurate renderer, and does not model per-note
-pitch bend or SMPTE-divisioned MIDI files (falls back to a default PPQ). See
+alongside the existing one-shot SFX voices. Per-channel MUS/MIDI pitch-bend
+controller events are translated to a semitone offset applied to the affected
+note's frequency (`Instruments.MusPitchBendSemitones`/`MidiPitchBendSemitones`),
+and GM program numbers are grouped into broad timbre families with distinct
+harmonic content and attack/decay/sustain/release envelopes (`Instruments.cs`).
+This is still an approximation of General MIDI timbres, not a soundfont-accurate
+renderer, and SMPTE-divisioned MIDI files fall back to a default PPQ. See
 the "Built vs. runtime-tested" verification below for exact evidence.
 Sector-11 exit handling and E1M8's last-Baron/tag666 floor action are implemented;
 other original finale boss actions remain absent. Damaging-floor timing is approximate.
@@ -407,9 +411,11 @@ Playwright run reproducibly hung waiting for `AudioContext` to reach `running`
 after a click on this build **and** on an unmodified main checkout in this same
 environment, so it is a pre-existing environment/headless-audio limitation, not
 a regression from this change. The synthesizer is a small additive-harmonic/
-noise-burst approximation (no General MIDI soundfont or OPL emulation), does not
-model per-note pitch bend or SMPTE-divisioned MIDI timing, and audible/perceptual
-quality versus the original soundtrack is unverified.
+noise-burst approximation (no General MIDI soundfont or OPL emulation). It now
+models per-channel MUS/MIDI pitch-bend controller events as a semitone offset
+and shapes GM-program timbre families with distinct envelopes (`Instruments.cs`),
+but SMPTE-divisioned MIDI timing still falls back to a default PPQ, and
+audible/perceptual quality versus the original soundtrack is unverified.
 
 Save/load game state (`Save.cs`, new `Buttons.Save`/`Buttons.Load` flags and
 `Game.SaveGame`/`LoadGame` hooks mirroring the `PlaySound`/`PlayMusic` delegate
