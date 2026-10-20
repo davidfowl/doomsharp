@@ -35,6 +35,8 @@ public sealed class Actor
     public bool Removed, Dropped;
     public char? FixedFrame;
     public bool Hanging;
+    // Null means "fight the player" (the default); set by infighting when another monster's attack hurts this one.
+    public Actor? Target;
     public Actor(Thing thing, string sprite, bool enemy, bool solid, double radius, int health)
     {
         Position = thing.Position; Type = thing.Type; Sprite = sprite; Enemy = enemy; Solid = solid;
@@ -48,6 +50,9 @@ public sealed class Projectile
     public double Z, Time = 5;
     public bool Rocket, Exploded;
     public int ExplosionTicks;
+    // The monster that fired this projectile; null for player-fired projectiles. Used to attribute
+    // infighting damage and to exclude the shooter from its own projectile's hit test.
+    public Actor? Owner;
 }
 
 public sealed class Game
@@ -359,10 +364,12 @@ public sealed class Game
         {
             Sector sector = Map.Sectors[Map.FindSector(destination.Position)];
             if (line.Tag == 0 || sector.Tag != line.Tag) continue;
-            if (!Map.CanMove(destination.Position, destination.Position, 16, 56, sector.Floor) ||
-                Actors.Any(a => !a.Removed && a.Solid && a.Health > 0 &&
-                    (a.Position - destination.Position).Length < a.Radius + 16))
+            if (!Map.CanMove(destination.Position, destination.Position, 16, 56, sector.Floor))
             { Say("TELEPORT DESTINATION BLOCKED"); return true; }
+            // Telefrag: anything occupying the destination is instantly killed, and the teleport still succeeds.
+            foreach (Actor blocker in Actors.Where(a => !a.Removed && a.Solid && a.Health > 0 &&
+                (a.Position - destination.Position).Length < a.Radius + 16).ToArray())
+                Hurt(blocker, blocker.Health);
             Position = destination.Position; Feet = Map.FloorAt(Position, 16); Angle = destination.Angle * Math.PI / 180;
             PickupFlash = .3; PlaySound?.Invoke("TELEPT");
             if (line.Special == 39) line.Special = 0;
@@ -685,12 +692,19 @@ public sealed class Game
         if (target != null) Hurt(target, random.Next(1, 4) * 5);
     }
 
-    void Hurt(Actor actor, int damage)
+    // instigator is the attacking actor (null for the player), used only to drive infighting retargeting:
+    // a monster hurt by another monster switches to fight its attacker, while player damage never retargets.
+    void Hurt(Actor actor, int damage, Actor? instigator = null)
     {
         if (actor.Removed || actor.Health <= 0) return;
         actor.Health -= damage; actor.HurtTime = .2;
         PlaySound?.Invoke("POPAIN");
-        if (actor.Health > 0) return;
+        if (actor.Health > 0)
+        {
+            if (actor.Enemy && instigator != null && instigator != actor && instigator.Enemy && instigator.Health > 0)
+                actor.Target = instigator;
+            return;
+        }
         if (actor.Enemy)
         {
             Kills++; PlaySound?.Invoke("PODTH1");
@@ -707,18 +721,18 @@ public sealed class Game
         if (actor.Type == 2035)
         {
             actor.Removed = true; PlaySound?.Invoke("BAREXP");
-            Blast(actor.Position, Map.Sectors[Map.FindSector(actor.Position)].Floor + 32, false);
+            Blast(actor.Position, Map.Sectors[Map.FindSector(actor.Position)].Floor + 32, false, instigator);
         }
     }
 
-    void Blast(Vec origin, double z, bool rocket)
+    void Blast(Vec origin, double z, bool rocket, Actor? instigator = null)
     {
         foreach (Actor other in Actors.ToArray())
             if (!other.Removed && other.Health > 0 && (other.Enemy || other.Type == 2035))
             {
                 double distance = Math.Max(0, (other.Position - origin).Length - (rocket ? other.Radius : 0));
                 if (distance < 128 && Map.ClearSight(origin, other.Position, z))
-                    Hurt(other, Math.Max(1, (int)(128 - distance)));
+                    Hurt(other, Math.Max(1, (int)(128 - distance)), instigator);
             }
         double playerDistance = Math.Max(0, (Position - origin).Length - (rocket ? 16 : 0));
         if (playerDistance < 128 && Map.ClearSight(origin, Position, rocket ? z : Eye))
@@ -730,28 +744,41 @@ public sealed class Game
         actor.HurtTime = Math.Max(0, actor.HurtTime - dt); actor.Cooldown -= dt;
         if (actor.Removed) return;
         if (actor.Health <= 0) { actor.DeathTime += dt; return; }
-        if (!actor.Enemy || Health <= 0 || Finished) return;
-        Vec delta = Position - actor.Position;
+        if (!actor.Enemy || Finished) return;
+        // A monster normally fights the player; infighting (see Hurt) can instead point it at another monster.
+        Actor? rival = actor.Target != null && actor.Target != actor && !actor.Target.Removed && actor.Target.Health > 0
+            ? actor.Target : null;
+        if (rival == null && Health <= 0) return;
+        Vec targetPosition = rival?.Position ?? Position;
+        double meleeRadius = rival?.Radius ?? 0, stopRadius = rival?.Radius ?? 20;
+        Vec delta = targetPosition - actor.Position;
         double distance = delta.Length;
         double floor = Map.Sectors[Map.FindSector(actor.Position)].Floor;
-        if (distance > 1500 || !Map.ClearSight(actor.Position, Position, floor + 40)) return;
-        if (actor.Cooldown <= 0 && (distance < 64 || actor.Type is not (3002 or 58) && distance < 800))
+        if (distance > 1500 || !Map.ClearSight(actor.Position, targetPosition, floor + 40)) return;
+        if (actor.Cooldown <= 0 && (distance < 64 + meleeRadius || actor.Type is not (3002 or 58) && distance < 800))
         {
             actor.Cooldown = 1.1 + random.NextDouble();
-            if (distance < 64) Damage(random.Next(3, 9) * 3);
+            if (distance < 64 + meleeRadius)
+            {
+                int damage = random.Next(3, 9) * 3;
+                if (rival != null) Hurt(rival, damage, actor); else Damage(damage);
+            }
             else if (actor.Type is 3004 or 9 or 65 or 7)
             {
                 PlaySound?.Invoke(actor.Type == 9 ? "SHOTGN" : "PISTOL");
                 if (random.NextDouble() < Math.Clamp(1 - distance / 1200, .15, .9))
-                    Damage(random.Next(1, 5) * (actor.Type == 9 ? 5 : 3));
+                {
+                    int damage = random.Next(1, 5) * (actor.Type == 9 ? 5 : 3);
+                    if (rival != null) Hurt(rival, damage, actor); else Damage(damage);
+                }
             }
             else
             {
-                Projectiles.Add(new() { Position = actor.Position, Z = floor + 32, Velocity = delta * (220 / distance) });
+                Projectiles.Add(new() { Position = actor.Position, Z = floor + 32, Velocity = delta * (220 / distance), Owner = actor });
                 PlaySound?.Invoke("FIRSHT");
             }
         }
-        if (distance > actor.Radius + 20 && actor.HurtTime == 0)
+        if (distance > actor.Radius + stopRadius && actor.HurtTime == 0)
         {
             Vec move = delta * (dt * (actor.Type is 3002 or 58 ? 90 : 42) / distance);
             Vec next = actor.Position + move;
@@ -779,7 +806,7 @@ public sealed class Game
             {
                 foreach (Actor actor in Actors)
                 {
-                    if (actor.Removed || !actor.Solid || actor.Health <= 0) continue;
+                    if (actor == p.Owner || actor.Removed || !actor.Solid || actor.Health <= 0) continue;
                     double floor = Map.Sectors[Map.FindSector(actor.Position)].Floor;
                     if (p.Z + 4 <= floor || p.Z - 4 >= floor + 56) continue;
                     double hit = Map.CircleImpact(p.Position, next, actor.Position, actor.Radius + 11);
@@ -794,6 +821,15 @@ public sealed class Game
                     double hit = Map.CircleImpact(p.Position, next, Position, 20);
                     if (hit < impact) { impact = hit; playerHit = true; }
                 }
+                // Monster fireballs can also strike other monsters in their path, triggering infighting.
+                foreach (Actor actor in Actors)
+                {
+                    if (actor == p.Owner || actor.Removed || !actor.Solid || actor.Health <= 0) continue;
+                    double floor = Map.Sectors[Map.FindSector(actor.Position)].Floor;
+                    if (p.Z + 4 <= floor || p.Z - 4 >= floor + 56) continue;
+                    double hit = Map.CircleImpact(p.Position, next, actor.Position, actor.Radius);
+                    if (hit < impact) { impact = hit; target = actor; playerHit = false; }
+                }
             }
             if (impact <= 1)
             {
@@ -803,13 +839,14 @@ public sealed class Game
                     // Mark the impact before damage: barrel chains cannot apply it a second time.
                     p.Exploded = true; p.ExplosionTicks = 18;
                     if (target != null && (target.Enemy || target.Type == 2035))
-                        Hurt(target, random.Next(1, 9) * 20);
-                    Blast(p.Position, p.Z, true);
+                        Hurt(target, random.Next(1, 9) * 20, p.Owner);
+                    Blast(p.Position, p.Z, true, p.Owner);
                     PlaySound?.Invoke("BAREXP");
                 }
                 else
                 {
                     if (playerHit) { Damage(random.Next(1, 9) * 3); PlaySound?.Invoke("FIRXPL"); }
+                    else if (target != null) { Hurt(target, random.Next(1, 9) * 3, p.Owner); PlaySound?.Invoke("FIRXPL"); }
                     p.Time = 0;
                 }
                 continue;

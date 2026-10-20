@@ -179,6 +179,36 @@ try
         }
         Check("renderer-animated-flat-unanimated-passthrough", Renderer.AnimatedFlatName("FLOOR4_8", 1234, _ => true) == "FLOOR4_8");
         Check("renderer-animated-wall-unanimated-passthrough", Renderer.AnimatedWallName("STARTAN2", 1234, _ => true) == "STARTAN2");
+        {
+            // A fireball fired by one monster that strikes another should make the victim retarget the
+            // attacker, not the player who never touched it.
+            Game game = Load("infight-retarget");
+            Tick(game, count: 150);
+            Actor imp = game.Actors.Single(a => a.Type == 3001);
+            Actor demon = game.Actors.Single(a => a.Type == 3002);
+            Check("infight-retarget", demon.Target == imp && demon.Health < 150 && game.Health == 100,
+                new { demon.Health, target = demon.Target == imp ? "imp" : "other", playerHealth = game.Health });
+        }
+        {
+            // Player gunfire must never make a monster retaliate against another monster: the hit monster's
+            // target stays unset (it keeps fighting the player, the only one that ever attacked it).
+            Game game = Load("infight-player-safe");
+            Tick(game);
+            int initial = game.Actors.Single(a => a.Type == 3002).Health;
+            Tick(game, Buttons.Fire);
+            Tick(game, count: 5);
+            Actor demon = game.Actors.Single(a => a.Type == 3002);
+            Check("infight-player-safe", demon.Health < initial && demon.Target == null, new { initial, demon.Health, demon.Target });
+        }
+        {
+            // Walking into an occupied teleport destination telefrags whatever is standing there and still
+            // completes the teleport, instead of blocking it.
+            Game game = Load("infight-telefrag");
+            Actor blocker = game.Actors.Single(a => a.Type == 3004);
+            Tick(game, Buttons.Forward, 60);
+            Check("telefrag", blocker.Health <= 0 && game.Kills == 1 && game.Position.X > 50,
+                new { blocker.Health, game.Kills, game.Position });
+        }
     }
     if (mode is "native" or "all")
     {
