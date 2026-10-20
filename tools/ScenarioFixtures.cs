@@ -68,6 +68,19 @@ public static class ScenarioFixtures
         foreach (int special in locks)
             foreach (int key in new[] { 0, 5, 40, 13, 38, 6, 39 })
                 yield return ($"door-{special}-{key}", Write(assets.Concat(Door(special, key))));
+        // Noise propagation: a three-sector corridor with a thin interior wall blocking the player's
+        // direct line of sight to a monster in the far sector. The middle sector is either "open" (a
+        // normal passable gap, modeling an already-open door) or "closed" (floor == ceiling, modeling a
+        // shut door), which is exactly the condition Game.NoiseAlert's sector-flood checks when deciding
+        // whether a sound can propagate past it.
+        foreach (bool open in new[] { true, false })
+        {
+            List<Lump> corridor = Corridor("E1M1", [-192, 64, 320, 576], [0, 0, 0], [128, open ? 128 : 0, 128],
+                [0, 0, 0], [(-96, 0, 1), (448, 0, 3004)]);
+            AddCorridorWall(corridor, 1, (192, 256, 192, -256));
+            yield return ($"noise-propagation-{(open ? "wakes-through-open-door" : "blocked-by-closed-door")}",
+                Write(assets.Concat(corridor)));
+        }
         foreach (string mode in new[] { "last-baron", "two-barons", "knight", "mixed", "wrong-map", "no-tag" })
             yield return ($"boss-{mode}", Write(assets.Concat(Boss(mode))));
 
@@ -122,6 +135,28 @@ public static class ScenarioFixtures
         Append("VERTEXES", Shorts(568, 256, 568, -256));
         Append("SIDEDEFS", Pack(w => { Side(w, 0, true); Side(w, 0, true); }));
         Append("LINEDEFS", Shorts(vertex, vertex + 1, 6, 0, 0, side, side + 1));
+        int blockmap = map.FindIndex(l => l.Name == "BLOCKMAP");
+        byte[] block = map[blockmap].Data;
+        map[blockmap] = new("BLOCKMAP", block.AsSpan(0, block.Length - 2).ToArray().Concat(Shorts(line, 65535)).ToArray());
+    }
+
+    // Like AddWall, but for multi-sector Corridor() maps: computes indices dynamically (Corridor already
+    // has several vertices/sides/lines) instead of assuming the single-sector Room() layout, and assigns
+    // the new one-sided solid line to the given sector so it blocks sight/movement through that sector
+    // without altering sector connectivity (SectorLines) used by Game.NoiseAlert's flood-fill.
+    static void AddCorridorWall(List<Lump> map, int sector, (int X1, int Y1, int X2, int Y2) wall)
+    {
+        int vertex = map.Single(l => l.Name == "VERTEXES").Data.Length / 4;
+        int side = map.Single(l => l.Name == "SIDEDEFS").Data.Length / 30;
+        int line = map.Single(l => l.Name == "LINEDEFS").Data.Length / 14;
+        void Append(string name, byte[] bytes)
+        {
+            int i = map.FindIndex(l => l.Name == name);
+            map[i] = new(name, map[i].Data.Concat(bytes).ToArray());
+        }
+        Append("VERTEXES", Shorts(wall.X1, wall.Y1, wall.X2, wall.Y2));
+        Append("SIDEDEFS", Pack(w => Side(w, sector, false)));
+        Append("LINEDEFS", Shorts(vertex, vertex + 1, 1, 0, 0, side, 65535));
         int blockmap = map.FindIndex(l => l.Name == "BLOCKMAP");
         byte[] block = map[blockmap].Data;
         map[blockmap] = new("BLOCKMAP", block.AsSpan(0, block.Length - 2).ToArray().Concat(Shorts(line, 65535)).ToArray());

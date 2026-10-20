@@ -42,6 +42,11 @@ public sealed class Actor
     // means the monster has never seen its target (or has fully forgotten it) and sits idle.
     public Vec? LastKnownTargetPosition;
     public double ChaseMemory;
+    // Set by Game.NoiseAlert when a propagated sound reaches this monster's sector while it has no direct
+    // line of sight to the player; AlertPosition is the sound's origin to blindly head toward until the
+    // monster either arrives there, regains direct sight of the player, or is hurt into infighting instead.
+    public bool Awake;
+    public Vec? AlertPosition;
     public Actor(Thing thing, string sprite, bool enemy, bool solid, double radius, int health)
     {
         Position = thing.Position; Type = thing.Type; Sprite = sprite; Enemy = enemy; Solid = solid;
@@ -656,6 +661,7 @@ public sealed class Game
         PlaySound?.Invoke("PISTOL");
         double spread = chaingunAccuratePair ? 0 : (random.NextDouble() - random.NextDouble()) * Math.PI / 32;
         Hitscan(Angle + spread);
+        NoiseAlert(Position);
         return true;
     }
 
@@ -671,6 +677,7 @@ public sealed class Game
             double angle = Angle + (random.NextDouble() - .5) * (shotgun ? .12 : .015);
             Hitscan(angle);
         }
+        NoiseAlert(Position);
     }
 
     void ShootRocket()
@@ -684,6 +691,7 @@ public sealed class Game
             Velocity = new Vec(Math.Cos(Angle), Math.Sin(Angle)) * 700
         });
         PlaySound?.Invoke("RLAUNC");
+        NoiseAlert(Position);
     }
 
     void Hitscan(double angle)
@@ -780,12 +788,28 @@ public sealed class Game
         else
         {
             actor.ChaseMemory = Math.Max(0, actor.ChaseMemory - dt);
-            if (actor.ChaseMemory <= 0 || actor.LastKnownTargetPosition is not { } remembered) return;
-            // Sight is lost but the memory window hasn't expired: keep closing on the last-known position
-            // instead of attacking (can't see the target) or standing still.
-            targetPosition = remembered;
-            delta = targetPosition - actor.Position;
-            distance = delta.Length;
+            if (actor.ChaseMemory > 0 && actor.LastKnownTargetPosition is { } remembered)
+            {
+                // Sight is lost but the memory window hasn't expired: keep closing on the last-known
+                // position instead of attacking (can't see the target) or standing still.
+                targetPosition = remembered;
+                delta = targetPosition - actor.Position;
+                distance = delta.Length;
+            }
+            else if (rival == null && actor.Awake && actor.AlertPosition is { } alert)
+            {
+                // Chase memory of the player has run out (or never existed): a monster that was woken by a
+                // propagated noise (see NoiseAlert) still blindly heads for the sound's origin until it
+                // arrives, regains sight of the player (handled above once close enough), or is blocked.
+                Vec toAlert = alert - actor.Position;
+                double alertDistance = toAlert.Length;
+                if (alertDistance > actor.Radius + 20 && actor.HurtTime == 0)
+                    MoveToward(actor, toAlert, alertDistance, floor, dt);
+                else
+                    actor.Awake = false; // reached the noise's source without finding the player; go back to sleep
+                return;
+            }
+            else return;
         }
         if (sighted && actor.Cooldown <= 0 && (distance < 64 + meleeRadius || actor.Type is not (3002 or 58) && distance < 800))
         {
@@ -810,14 +834,58 @@ public sealed class Game
                 PlaySound?.Invoke("FIRSHT");
             }
         }
-        if (distance > actor.Radius + stopRadius && actor.HurtTime == 0)
+        if (distance > actor.Radius + stopRadius && actor.HurtTime == 0) MoveToward(actor, delta, distance, floor, dt);
+    }
+
+    void MoveToward(Actor actor, Vec delta, double distance, double floor, double dt)
+    {
+        Vec move = delta * (dt * (actor.Type is 3002 or 58 ? 90 : 42) / distance);
+        Vec next = actor.Position + move;
+        if (Map.CanMove(actor.Position, next, actor.Radius, 56, floor, true) &&
+            !Actors.Any(a => a != actor && a.Solid && !a.Removed && a.Health > 0 &&
+                (a.Position - next).Length < actor.Radius + a.Radius))
+            actor.Position = next;
+    }
+
+    // Floods the sector graph from a loud sound's origin (player gunfire or pain) across currently-open
+    // connections, waking any monster whose sector the flood reaches so it can start blindly chasing the
+    // player (see UpdateActor) even without direct line of sight — a clean-room analogue of classic DOOM's
+    // P_NoiseAlert. A connection only propagates sound when it currently has an open gap between the two
+    // sectors' floor/ceiling (so a closed door blocks it, matching how it also blocks sight/movement) and
+    // is not a classic sound-blocking linedef (flag bit 0x40, ML_SOUNDBLOCK). The flood is additionally
+    // capped at the same 1500-unit range monsters already use for direct sight, so distant noise fades out.
+    void NoiseAlert(Vec origin)
+    {
+        const double range = 1500;
+        const int soundBlock = 0x40;
+        int start = Map.FindSector(origin);
+        Dictionary<int, double> reached = new() { [start] = 0 };
+        Queue<int> frontier = new();
+        frontier.Enqueue(start);
+        while (frontier.Count > 0)
         {
-            Vec move = delta * (dt * (actor.Type is 3002 or 58 ? 90 : 42) / distance);
-            Vec next = actor.Position + move;
-            if (Map.CanMove(actor.Position, next, actor.Radius, 56, floor, true) &&
-                !Actors.Any(a => a != actor && a.Solid && !a.Removed && a.Health > 0 &&
-                    (a.Position - next).Length < actor.Radius + a.Radius))
-                actor.Position = next;
+            int sector = frontier.Dequeue();
+            double baseDistance = reached[sector];
+            foreach (int index in Map.SectorLines[sector])
+            {
+                Line line = Map.Lines[index];
+                if (line.Left == 65535 || (line.Flags & soundBlock) != 0) continue;
+                int right = Map.Sides[line.Right].Sector, left = Map.Sides[line.Left].Sector;
+                int other = right == sector ? left : right;
+                if (other == sector) continue;
+                Sector a = Map.Sectors[right], b = Map.Sectors[left];
+                if (Math.Min(a.Ceiling, b.Ceiling) - Math.Max(a.Floor, b.Floor) <= 0) continue; // closed door
+                double distance = baseDistance + (Map.Vertices[line.A] - Map.Vertices[line.B]).Length;
+                if (distance > range || (reached.TryGetValue(other, out double existing) && existing <= distance))
+                    continue;
+                reached[other] = distance;
+                frontier.Enqueue(other);
+            }
+        }
+        foreach (Actor actor in Actors)
+        {
+            if (actor.Enemy && !actor.Removed && actor.Health > 0 && reached.ContainsKey(Map.FindSector(actor.Position)))
+            { actor.Awake = true; actor.AlertPosition = origin; }
         }
     }
 
@@ -892,6 +960,7 @@ public sealed class Game
     {
         int absorb = Math.Min(Armor, amount / 3); Armor -= absorb; Health = Math.Max(0, Health - amount + absorb);
         DamageFlash = .3; PlaySound?.Invoke(Health > 0 ? "PLPAIN" : "PLDETH");
+        NoiseAlert(Position); // player pain/death cries are also loud enough to wake nearby monsters
         if (Health == 0) Say("YOU DIED - PRESS R TO RESTART");
     }
 
