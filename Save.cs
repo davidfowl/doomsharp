@@ -23,7 +23,14 @@ namespace DoomSharp;
 /// memory"/"no infighting target"), but version-4 saves round-trip both, so the monster keeps doing
 /// whichever of the two it was doing after loading. <see cref="ActorTargetIndex"/> stores each actor's
 /// <c>Target</c> as an index into the deterministic spawn-order actor list (-1 for "no target", i.e. fight
-/// the player), which stays valid across save/load because <c>Spawn</c> rebuilds that list identically.
+/// the player), which stays valid across save/load because <c>Spawn</c> rebuilds that list identically; any
+/// other negative value or an index at/beyond the actor count is corrupt save data, rejected by
+/// <c>Game.TryLoad</c> rather than silently clamped. <see cref="ActorAlertX"/>/<see cref="ActorAlertY"/>/
+/// <see cref="ActorLastKnownTargetX"/>/<see cref="ActorLastKnownTargetY"/> encode "no position" as an
+/// ordinary JSON <c>null</c> per-actor element (nullable array elements), not a <c>double.NaN</c> sentinel,
+/// so number parsing/writing for every other (non-coordinate) field in this type stays strict about
+/// rejecting non-finite values rather than needing to relax <c>System.Text.Json</c>'s number handling for
+/// the whole save format.
 /// </summary>
 public sealed record SaveGameState(
     int Version, string Map, double PositionX, double PositionY, double Angle, double Feet,
@@ -31,17 +38,9 @@ public sealed record SaveGameState(
     bool HasShotgun, bool HasChaingun, bool HasRocketLauncher, Weapon SelectedWeapon,
     int Keys, int Kills, int Secrets, double Time, int[] FoundSecretSectors,
     bool[] ActorRemoved, int[] ActorHealth, int Items = 0,
-    bool[]? ActorAwake = null, double[]? ActorAlertX = null, double[]? ActorAlertY = null,
-    double[]? ActorChaseMemory = null, double[]? ActorLastKnownTargetX = null,
-    double[]? ActorLastKnownTargetY = null, int[]? ActorTargetIndex = null);
+    bool[]? ActorAwake = null, double?[]? ActorAlertX = null, double?[]? ActorAlertY = null,
+    double[]? ActorChaseMemory = null, double?[]? ActorLastKnownTargetX = null,
+    double?[]? ActorLastKnownTargetY = null, int[]? ActorTargetIndex = null);
 
-// AllowNamedFloatingPointLiterals is required because ActorAlertX/ActorAlertY/ActorLastKnownTargetX/
-// ActorLastKnownTargetY encode "no position" as double.NaN per-actor; without this option, the default
-// writer throws ArgumentException the instant any array contains a NaN, which System.Text.Json otherwise
-// rejects as invalid JSON. That made Game.Save() throw for every actor not currently alert/chasing (i.e.
-// virtually every real save), a pre-existing latent bug never exercised by prior tests (which only ever
-// saved maps with a single already-awake actor) until the chase-memory/infighting save round-trip checks
-// below started calling Save() on fixtures with a resting monster.
-[JsonSourceGenerationOptions(NumberHandling = JsonNumberHandling.AllowNamedFloatingPointLiterals)]
 [JsonSerializable(typeof(SaveGameState))]
 public sealed partial class SaveJsonContext : JsonSerializerContext;

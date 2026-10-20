@@ -139,24 +139,41 @@ public sealed class Game
 
     void Spawn()
     {
-        Thing? start = Map.Things.Cast<Thing?>().FirstOrDefault(t => t!.Value.Type == 1);
-        if (start == null) throw new InvalidDataException($"{Map.Name} has no player-one start.");
-        Position = start.Value.Position; Angle = start.Value.Angle * Math.PI / 180;
-        Feet = Map.FloorAt(Position, 16);
-        Actors.Clear(); Projectiles.Clear(); foundSecrets.Clear();
+        (Vec position, double angle, double feet, List<Actor> actors, int unsupportedThings) = BuildSpawnState(Map);
+        Position = position; Angle = angle; Feet = feet;
+        Actors.Clear(); Actors.AddRange(actors);
+        Projectiles.Clear(); foundSecrets.Clear();
         bossDeathActivated = false;
-        UnsupportedThings = 0;
-        foreach (Thing thing in Map.Things)
+        UnsupportedThings = unsupportedThings;
+    }
+
+    /// <summary>
+    /// Computes the player start position/angle/feet and the deterministic spawn-order actor list for
+    /// <paramref name="map"/>, purely as a function of <paramref name="map"/> (no instance state is read or
+    /// mutated). Shared by <see cref="Spawn"/> (which commits the result to the live game) and
+    /// <see cref="TryLoad"/> (which uses it to validate a save's actor layout against its target map
+    /// <em>before</em> committing any mutation, so a malformed save never partially mutates an in-progress
+    /// game).
+    /// </summary>
+    static (Vec Position, double Angle, double Feet, List<Actor> Actors, int UnsupportedThings) BuildSpawnState(Map map)
+    {
+        Thing? start = map.Things.Cast<Thing?>().FirstOrDefault(t => t!.Value.Type == 1);
+        if (start == null) throw new InvalidDataException($"{map.Name} has no player-one start.");
+        Vec position = start.Value.Position; double angle = start.Value.Angle * Math.PI / 180;
+        double feet = map.FloorAt(position, 16);
+        List<Actor> actors = []; int unsupportedThings = 0;
+        foreach (Thing thing in map.Things)
         {
             if (thing.Type is >= 1 and <= 4 or 11 or 14 || (thing.Flags & 16) != 0 || (thing.Flags & 2) == 0) continue;
             Actor? actor = CreateActor(thing);
             if (actor == null)
             {
-                UnsupportedThings++;
+                unsupportedThings++;
                 Console.Error.WriteLine($"Unsupported thing type {thing.Type} at {thing.Position}; skipped.");
             }
-            else Actors.Add(actor);
+            else actors.Add(actor);
         }
+        return (position, angle, feet, actors, unsupportedThings);
     }
 
     static Actor? CreateActor(Thing t) => t.Type switch
@@ -1117,20 +1134,23 @@ public sealed class Game
         Keys, Kills, Secrets, Time, [.. foundSecrets],
         [.. Actors.Select(a => a.Removed)], [.. Actors.Select(a => a.Health)], Items,
         [.. Actors.Select(a => a.Awake)],
-        [.. Actors.Select(a => a.AlertPosition?.X ?? double.NaN)],
-        [.. Actors.Select(a => a.AlertPosition?.Y ?? double.NaN)],
+        [.. Actors.Select(a => a.AlertPosition?.X)],
+        [.. Actors.Select(a => a.AlertPosition?.Y)],
         [.. Actors.Select(a => a.ChaseMemory)],
-        [.. Actors.Select(a => a.LastKnownTargetPosition?.X ?? double.NaN)],
-        [.. Actors.Select(a => a.LastKnownTargetPosition?.Y ?? double.NaN)],
+        [.. Actors.Select(a => a.LastKnownTargetPosition?.X)],
+        [.. Actors.Select(a => a.LastKnownTargetPosition?.Y)],
         [.. Actors.Select(a => a.Target == null ? -1 : Actors.IndexOf(a.Target))]),
         SaveJsonContext.Default.SaveGameState);
 
     /// <summary>
-    /// Restores a snapshot produced by <see cref="Save"/>: reloads its map, replays <see cref="Spawn"/> to
-    /// rebuild the deterministic actor list, then reapplies each actor's saved removed/health/alert/chase-
-    /// memory/infighting-target state by index and the player's saved position/stats/inventory. Returns
-    /// false (with <paramref name="error"/> set) for an unreadable, version-mismatched, unknown-map or
-    /// actor-count-mismatched save, leaving the current game state untouched.
+    /// Restores a snapshot produced by <see cref="Save"/>: validates the entire save (version, map,
+    /// gameplay-field finiteness, actor-array shapes and target indices) against the save's target map
+    /// <em>before touching any live game state</em>, then only on success reloads the map, rebuilds the
+    /// deterministic actor list and reapplies each actor's saved removed/health/alert/chase-memory/
+    /// infighting-target state by index plus the player's saved position/stats/inventory. Returns false
+    /// (with <paramref name="error"/> set) for an unreadable, version-mismatched, unknown-map, non-finite,
+    /// actor-count-mismatched or out-of-range-target-index save, leaving the current game state completely
+    /// unchanged (no partial mutation of an in-progress game).
     /// </summary>
     public bool TryLoad(string json, out string? error)
     {
@@ -1140,19 +1160,47 @@ public sealed class Game
         if (state == null) { error = "empty save."; return false; }
         if (state.Version is not (1 or 2 or 3 or 4)) { error = $"unsupported save version {state.Version}."; return false; }
         if (!Wad.Maps.Contains(state.Map)) { error = $"save references unknown map {state.Map}."; return false; }
-        Map = new(Wad, state.Map); Assets = new(Wad, state.Map);
-        Spawn();
-        if (state.ActorRemoved.Length != Actors.Count || state.ActorHealth.Length != Actors.Count ||
-            state.ActorAwake != null && state.ActorAwake.Length != Actors.Count ||
-            state.ActorAlertX != null && state.ActorAlertX.Length != Actors.Count ||
-            state.ActorAlertY != null && state.ActorAlertY.Length != Actors.Count ||
-            state.ActorChaseMemory != null && state.ActorChaseMemory.Length != Actors.Count ||
-            state.ActorLastKnownTargetX != null && state.ActorLastKnownTargetX.Length != Actors.Count ||
-            state.ActorLastKnownTargetY != null && state.ActorLastKnownTargetY.Length != Actors.Count ||
-            state.ActorTargetIndex != null && state.ActorTargetIndex.Length != Actors.Count)
+        if (!double.IsFinite(state.PositionX) || !double.IsFinite(state.PositionY) || !double.IsFinite(state.Angle) ||
+            !double.IsFinite(state.Feet) || !double.IsFinite(state.Time))
+        {
+            error = "save contains a non-finite gameplay value."; return false;
+        }
+
+        // Compute the target map's deterministic actor list in a local (not yet committed to the live
+        // game) so every shape/index check below can run before any mutation, honoring the "fully succeed
+        // or leave the existing game completely unchanged" contract.
+        Map candidateMap = new(Wad, state.Map);
+        (_, _, _, List<Actor> candidateActors, int candidateUnsupportedThings) = BuildSpawnState(candidateMap);
+        if (state.ActorRemoved.Length != candidateActors.Count || state.ActorHealth.Length != candidateActors.Count ||
+            state.ActorAwake != null && state.ActorAwake.Length != candidateActors.Count ||
+            state.ActorAlertX != null && state.ActorAlertX.Length != candidateActors.Count ||
+            state.ActorAlertY != null && state.ActorAlertY.Length != candidateActors.Count ||
+            state.ActorChaseMemory != null && state.ActorChaseMemory.Length != candidateActors.Count ||
+            state.ActorLastKnownTargetX != null && state.ActorLastKnownTargetX.Length != candidateActors.Count ||
+            state.ActorLastKnownTargetY != null && state.ActorLastKnownTargetY.Length != candidateActors.Count ||
+            state.ActorTargetIndex != null && state.ActorTargetIndex.Length != candidateActors.Count)
         {
             error = "save's actor layout no longer matches this map."; return false;
         }
+        // -1 is the documented "no infighting target" sentinel (fight the player); any other negative
+        // value or an index at/beyond the actor count is corrupt save data and must reject the whole load,
+        // not silently coerce to the harmless "no target" default.
+        if (state.ActorTargetIndex != null)
+        {
+            foreach (int targetIndex in state.ActorTargetIndex)
+            {
+                if (targetIndex != -1 && (targetIndex < 0 || targetIndex >= candidateActors.Count))
+                {
+                    error = $"save contains an out-of-range actor target index {targetIndex}."; return false;
+                }
+            }
+        }
+
+        // All validation above is complete; only now may live game state actually change.
+        Map = candidateMap; Assets = new(Wad, state.Map);
+        Actors.Clear(); Actors.AddRange(candidateActors);
+        Projectiles.Clear(); foundSecrets.Clear(); bossDeathActivated = false;
+        UnsupportedThings = candidateUnsupportedThings;
         for (int i = 0; i < Actors.Count; i++)
         {
             Actors[i].Removed = state.ActorRemoved[i];
@@ -1160,18 +1208,18 @@ public sealed class Game
             // Absent (version 1/2) means "not awake", matching how those saves always behaved before
             // this field existed; present means round-trip the monster's noise-alert pursuit exactly.
             Actors[i].Awake = state.ActorAwake?[i] ?? false;
-            double alertX = state.ActorAlertX?[i] ?? double.NaN, alertY = state.ActorAlertY?[i] ?? double.NaN;
-            Actors[i].AlertPosition = Actors[i].Awake && !double.IsNaN(alertX) && !double.IsNaN(alertY)
-                ? new Vec(alertX, alertY) : null;
+            double? alertX = state.ActorAlertX?[i], alertY = state.ActorAlertY?[i];
+            Actors[i].AlertPosition = Actors[i].Awake && alertX.HasValue && alertY.HasValue
+                ? new Vec(alertX.Value, alertY.Value) : null;
             // Absent (version 1/2/3) means "no chase memory/infighting target", matching how those saves
             // always behaved before these fields existed; present (version 4) round-trips a monster's
             // remembered-position pursuit and its infighting target exactly.
             Actors[i].ChaseMemory = state.ActorChaseMemory?[i] ?? 0;
-            double lastX = state.ActorLastKnownTargetX?[i] ?? double.NaN, lastY = state.ActorLastKnownTargetY?[i] ?? double.NaN;
-            Actors[i].LastKnownTargetPosition = Actors[i].ChaseMemory > 0 && !double.IsNaN(lastX) && !double.IsNaN(lastY)
-                ? new Vec(lastX, lastY) : null;
+            double? lastX = state.ActorLastKnownTargetX?[i], lastY = state.ActorLastKnownTargetY?[i];
+            Actors[i].LastKnownTargetPosition = Actors[i].ChaseMemory > 0 && lastX.HasValue && lastY.HasValue
+                ? new Vec(lastX.Value, lastY.Value) : null;
             int targetIndex = state.ActorTargetIndex?[i] ?? -1;
-            Actors[i].Target = targetIndex >= 0 && targetIndex < Actors.Count ? Actors[targetIndex] : null;
+            Actors[i].Target = targetIndex == -1 ? null : Actors[targetIndex];
         }
         foundSecrets.Clear();
         foreach (int sector in state.FoundSecretSectors) foundSecrets.Add(sector);
