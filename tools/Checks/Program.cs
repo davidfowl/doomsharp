@@ -295,6 +295,40 @@ try
             Check("telefrag", blocker.Health <= 0 && game.Kills == 1 && game.Position.X > 50,
                 new { blocker.Health, game.Kills, game.Position });
         }
+        {
+            // Chase memory: a demon that starts in sight of the player keeps closing even after the
+            // player outruns its sight range, instead of freezing the instant it can no longer see them,
+            // then settles back down to idle once the memory window has run out with sight never regained.
+            Game game = Load("chase-memory");
+            Actor demon = game.Actors.Single(a => a.Type == 3002);
+            Tick(game); // Confirm the demon starts out actively tracking the player while in sight.
+            Check("chase-memory-sighted", demon.ChaseMemory > 0 && demon.LastKnownTargetPosition != null,
+                new { demon.ChaseMemory, demon.LastKnownTargetPosition });
+            // Run the player away (melee-only demon is slower) one tic at a time until the very first
+            // moment sight is lost (ChaseMemory starts ticking down from its full value); separation must
+            // have cleared the engine's sight range by then.
+            int tics = 0;
+            for (; tics < 2000 && demon.ChaseMemory >= 3; tics++) Tick(game, Buttons.Run | Buttons.Forward);
+            double distanceAtLoss = (game.Position - demon.Position).Length;
+            Vec afterLoss = demon.Position;
+            Check("chase-memory-exceeds-sight-range", distanceAtLoss > 1500 && demon.ChaseMemory is > 0 and < 3,
+                new { tics, distanceAtLoss, demon.ChaseMemory });
+            // Keep the player running away (never idle) so it cannot coincidentally wander back within
+            // sight range; while the memory window is still open the demon should keep closing on the
+            // last-known spot rather than stand still, even though it genuinely cannot see the player.
+            Tick(game, Buttons.Run | Buttons.Forward, 20);
+            Check("chase-memory-continues-after-sight-lost", demon.Position != afterLoss && demon.ChaseMemory > 0,
+                new { afterLoss, demon.Position, demon.ChaseMemory });
+            Vec duringMemory = demon.Position;
+            // Once the memory window has fully expired without ever re-spotting the player, the demon
+            // settles back to idle: it stops advancing and no longer repeats stale movement forever.
+            Tick(game, Buttons.Run | Buttons.Forward, 150);
+            Check("chase-memory-expires", demon.ChaseMemory == 0, new { demon.ChaseMemory });
+            Vec afterExpiry = demon.Position;
+            Tick(game, Buttons.Run | Buttons.Forward, 20);
+            Check("chase-memory-idle-after-expiry", demon.Position == afterExpiry && demon.ChaseMemory == 0,
+                new { duringMemory, afterExpiry, demon.Position });
+        }
     }
     if (mode is "native" or "all")
     {
