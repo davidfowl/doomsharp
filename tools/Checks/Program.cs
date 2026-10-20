@@ -104,6 +104,13 @@ try
         }
         var missing = await ProcessCheck.Run(executable, ["--wad", Path.Combine(output, "does-not-exist.wad"), "--headless"]);
         Check("reject-missing-wad", missing.Code == 1 && missing.Text.Contains("DoomSharp:", StringComparison.Ordinal), missing);
+
+        // --- CLI/startup: a directory passed where a file path is expected must surface the UnauthorizedAccessException
+        // thrown by the file APIs as a clean "DoomSharp: ..." message (exit 1), not an unhandled-exception process abort.
+        var wadIsDirectory = await ProcessCheck.Run(executable, ["--wad", output, "--headless"]);
+        Check("reject-wad-path-is-directory", wadIsDirectory.Code == 1 && wadIsDirectory.Text.Contains("DoomSharp:", StringComparison.Ordinal), wadIsDirectory);
+        var demoWadIsDirectory = await ProcessCheck.Run(executable, ["--demo-wad", output]);
+        Check("reject-demo-wad-path-is-directory", demoWadIsDirectory.Code == 1 && demoWadIsDirectory.Text.Contains("DoomSharp:", StringComparison.Ordinal), demoWadIsDirectory);
     }
     if (mode is "engine" or "all")
     {
