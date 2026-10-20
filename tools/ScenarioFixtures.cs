@@ -70,6 +70,25 @@ public static class ScenarioFixtures
                 yield return ($"door-{special}-{key}", Write(assets.Concat(Door(special, key))));
         foreach (string mode in new[] { "last-baron", "two-barons", "knight", "mixed", "wrong-map", "no-tag" })
             yield return ($"boss-{mode}", Write(assets.Concat(Boss(mode))));
+        List<Lump> retarget = Room("E1M1", [(0, 0, 1), (600, 0, 3001), (300, 0, 3002)]);
+        yield return ("infight-retarget", Write(assets.Concat(retarget)));
+        List<Lump> playerSafe = Room("E1M1", [(0, 0, 1), (120, 0, 3002)]);
+        yield return ("infight-player-safe", Write(assets.Concat(playerSafe)));
+        yield return ("infight-telefrag", Write(assets.Concat(Teleport())));
+    }
+
+    static List<Lump> Teleport()
+    {
+        // Two sectors joined by a line tagged/specialed as a teleporter (39); the player starts in the first
+        // and walks into the second, triggering a teleport to a destination marker (type 14) in the second
+        // sector where a monster already stands, so the only way through is to telefrag it.
+        List<Lump> map = Corridor("E1M1", [-128, 0, 128], [0, 0], [128, 128], [0, 7],
+            [(-64, 0, 1), (64, 0, 14), (64, 0, 3004)]);
+        byte[] lines = map.Single(l => l.Name == "LINEDEFS").Data;
+        const int portal = 3;
+        BinaryPrimitives.WriteUInt16LittleEndian(lines.AsSpan(portal * 14 + 6), 39);
+        BinaryPrimitives.WriteUInt16LittleEndian(lines.AsSpan(portal * 14 + 8), 7);
+        return map;
     }
 
     static void AddBarrier(List<Lump> map)
