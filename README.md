@@ -214,14 +214,18 @@ walls/floors/ceilings, sky, masked walls and sprites; collision, sliding and
 24-unit steps; pistol, shotgun, chaingun and swept rocket/explosion combat;
 pickups, keys, armor, simplified enemies/barrels; common doors, tagged locks,
 lifts/floors, teleports, damaging floors, secrets, exits and map progression;
-E1M8 last-Baron/tag666 floors; DMX effects, MUS/Standard-MIDI music playback
-(approximate software synthesis, see [PROGRESS.md](PROGRESS.md)), HUD, automap
+E1M8 last-Baron/tag666 floors; animated flat/wall textures (water, nukage,
+slime, blood, lava and fire cycles on a fixed 8-tic interval); DMX effects,
+MUS/Standard-MIDI music playback
+(approximate software synthesis, see [PROGRESS.md](PROGRESS.md)), HUD, automap,
+an end-of-level intermission stats screen (Kills/Items/Secrets percentages and
+time; see [PROGRESS.md](PROGRESS.md) for the exact "item" definition),
 and a single-slot JSON save/load (F5/F9, see [PROGRESS.md](PROGRESS.md) for
 scope and verification; in-flight projectiles are not preserved).
 
 Still incomplete: other weapons/powerups, exact monster states/AI/physics/RNG,
 stairs/crushers and every moving-sector/switch special, other boss actions,
-animated textures, menus, multiplayer and original visual/timing/audio
+menus, multiplayer and original visual/timing/audio
 parity. No PWAD overlay stacking, Hexen/UDMF, extended nodes, Boom/MBF/DEHACKED or
 mod compatibility. Only medium-skill single-player flags are selected. Missing
 assets/types produce explicit diagnostics; missing textures use a diagnostic

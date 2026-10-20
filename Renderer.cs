@@ -17,6 +17,7 @@ public sealed class Renderer
     public int VisiblePlanePixels { get; private set; }
     public int VisibleSpritePixels { get; private set; }
     public int VisibleWeaponPixels { get; private set; }
+    int tics;
 
     readonly record struct Vertex(double X, double Y, double Z, double U, double V);
     readonly record struct Screen(double X, double Y, double InvZ, double U, double V);
@@ -31,6 +32,7 @@ public sealed class Renderer
     public void Render(Game state)
     {
         game = state; position = state.Position; eye = state.Eye;
+        tics = (int)Math.Round(state.Time * 35.0);
         forward = new(Math.Cos(state.Angle), Math.Sin(state.Angle)); right = new(forward.Y, -forward.X);
         Array.Fill(depth, double.PositiveInfinity);
         Array.Fill(Pixels, 0x15151b);
@@ -47,10 +49,10 @@ public sealed class Renderer
             for (int i = 1; i < polygon.Length - 1; i++)
             {
                 Vec a = polygon[0], b = polygon[i], c = polygon[i + 1];
-                if (eye > sector.Floor) Plane(a, b, c, sector.Floor, state.Assets.Flat(sector.FloorTexture), sector.Light);
+                if (eye > sector.Floor) Plane(a, b, c, sector.Floor, state.Assets.Flat(AnimatedFlat(sector.FloorTexture)), sector.Light);
                 if (eye < sector.Ceiling)
                     Plane(a, b, c, sector.Ceiling, sector.CeilingTexture == "F_SKY1" ?
-                        state.Assets.Texture(state.Assets.SkyName) : state.Assets.Flat(sector.CeilingTexture),
+                        state.Assets.Texture(state.Assets.SkyName) : state.Assets.Flat(AnimatedFlat(sector.CeilingTexture)),
                         sector.Light, sector.CeilingTexture == "F_SKY1");
             }
             for (int i = 0; i < sub.Count; i++) DrawSeg(map.Segs[sub.First + i]);
@@ -102,7 +104,7 @@ public sealed class Renderer
         double length = (b - a).Length;
         if (backSide == 65535)
         {
-            Picture texture = game.Assets.Texture(side.Middle);
+            Picture texture = game.Assets.Texture(AnimatedWall(side.Middle));
             double topAnchor = (line.Flags & 16) != 0 ? front.Floor + texture.Height : front.Ceiling;
             Wall(a, b, front.Floor, front.Ceiling, u, u + length, topAnchor + side.YOffset, texture, front.Light);
             return;
@@ -110,25 +112,40 @@ public sealed class Renderer
         Sector back = map.Sectors[map.Sides[backSide].Sector];
         if (front.Ceiling > back.Ceiling && !(front.CeilingTexture == "F_SKY1" && back.CeilingTexture == "F_SKY1") && side.Upper != "-")
         {
-            Picture texture = game.Assets.Texture(side.Upper);
+            Picture texture = game.Assets.Texture(AnimatedWall(side.Upper));
             double topAnchor = (line.Flags & 8) != 0 ? front.Ceiling : back.Ceiling + texture.Height;
             Wall(a, b, back.Ceiling, front.Ceiling, u, u + length, topAnchor + side.YOffset, texture, front.Light);
         }
         if (front.Floor < back.Floor && side.Lower != "-")
         {
-            Picture texture = game.Assets.Texture(side.Lower);
+            Picture texture = game.Assets.Texture(AnimatedWall(side.Lower));
             double topAnchor = (line.Flags & 16) != 0 ? front.Ceiling : back.Floor;
             Wall(a, b, front.Floor, back.Floor, u, u + length, topAnchor + side.YOffset, texture, front.Light);
         }
         if (side.Middle != "-")
         {
-            Picture texture = game.Assets.Texture(side.Middle);
+            Picture texture = game.Assets.Texture(AnimatedWall(side.Middle));
             double bottom = Math.Max(front.Floor, back.Floor), top = Math.Min(front.Ceiling, back.Ceiling);
             double anchor = ((line.Flags & 16) != 0 ? bottom + texture.Height : top) + side.YOffset;
             bottom = Math.Max(bottom, anchor - texture.Height); top = Math.Min(top, anchor);
             if (top > bottom) Wall(a, b, bottom, top, u, u + length, anchor, texture, front.Light);
         }
     }
+
+    string AnimatedFlat(string name) => AnimatedFlatName(name, tics, game.Wad.HasFlat);
+    string AnimatedWall(string name) => AnimatedWallName(name, tics, game.Wad.HasTexture);
+
+    /// <summary>
+    /// The flat name the renderer would display for the given tic count, substituting the matching
+    /// animation-cycle frame only when <paramref name="exists"/> confirms it is present in the WAD.
+    /// </summary>
+    public static string AnimatedFlatName(string name, int tics, Func<string, bool> exists) => TextureAnimation.Flat(name, tics, exists);
+
+    /// <summary>
+    /// The wall texture name the renderer would display for the given tic count, substituting the matching
+    /// animation-cycle frame only when <paramref name="exists"/> confirms it is present in the WAD.
+    /// </summary>
+    public static string AnimatedWallName(string name, int tics, Func<string, bool> exists) => TextureAnimation.Wall(name, tics, exists);
 
     void Wall(Vec a, Vec b, double bottom, double top, double u0, double u1, double anchor, Picture texture, int light)
     {
@@ -374,7 +391,9 @@ public sealed class Renderer
         Text($"{game.Map.Name}  KILLS {game.Kills}/{game.TotalEnemies}  KEYS {game.Keys}  SECRETS {game.Secrets}",
             8, viewHeight + 5 + 9 * scale, scale, 0xc0c0c0);
         if (game.Message.Length > 0) Text(game.Message, 8, 8, scale, 0xffee90);
-        if (game.Finished) Text(game.CompletionPrompt, 30, viewHeight / 2, scale, 0xffffff);
+        if (game.Finished)
+            for (int i = 0; i < game.IntermissionStats.Length; i++)
+                Text(game.IntermissionStats[i], 30, viewHeight / 2 - 9 * scale + i * 9 * scale, scale, 0xffffff);
         if (!game.Automap && game.Health > 0)
         {
             int x = Width / 2, y = viewHeight / 2;

@@ -151,7 +151,15 @@ public sealed class Assets
         if (rate == 0 || count < 0 || count > b.Length - 8) throw new InvalidDataException($"Invalid sound DS{name}.");
         // DMX sound lumps conventionally have 16 guard samples at either end.
         int start = count > 32 ? 24 : 8, length = count > 32 ? count - 32 : count;
-        short[] pcm = new short[(int)((long)length * SoundSampleRate / rate)];
+        // Resampling to SoundSampleRate amplifies by SoundSampleRate/rate, so a malformed/tiny rate (e.g. 1)
+        // combined with an otherwise in-bounds count can request a pathologically large or (once truncated to
+        // int) negative output length. Reject anything beyond a generous real-world sound-effect duration before
+        // ever computing the 32-bit allocation size, rather than letting the cast overflow or the runtime try to
+        // allocate gigabytes for a tiny malformed lump.
+        const long maxSoundSamples = 10 * 60 * (long)SoundSampleRate;
+        long pcmLength = (long)length * SoundSampleRate / rate;
+        if (pcmLength < 0 || pcmLength > maxSoundSamples) throw new InvalidDataException($"Invalid sound DS{name} sample rate.");
+        short[] pcm = new short[pcmLength];
         for (int i = 0; i < pcm.Length; i++) pcm[i] = (short)((b[start + (int)((long)i * rate / SoundSampleRate)] - 128) * 128);
         return pcm;
     }
