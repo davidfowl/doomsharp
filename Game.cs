@@ -1112,21 +1112,25 @@ public sealed class Game
     /// In-flight projectiles are not preserved; <see cref="TryLoad"/> always resumes with none airborne.
     /// </summary>
     public string Save() => JsonSerializer.Serialize(new SaveGameState(
-        3, Map.Name, Position.X, Position.Y, Angle, Feet,
+        4, Map.Name, Position.X, Position.Y, Angle, Feet,
         Health, Armor, Bullets, Shells, Rockets, HasShotgun, HasChaingun, HasRocketLauncher, SelectedWeapon,
         Keys, Kills, Secrets, Time, [.. foundSecrets],
         [.. Actors.Select(a => a.Removed)], [.. Actors.Select(a => a.Health)], Items,
         [.. Actors.Select(a => a.Awake)],
         [.. Actors.Select(a => a.AlertPosition?.X ?? double.NaN)],
-        [.. Actors.Select(a => a.AlertPosition?.Y ?? double.NaN)]),
+        [.. Actors.Select(a => a.AlertPosition?.Y ?? double.NaN)],
+        [.. Actors.Select(a => a.ChaseMemory)],
+        [.. Actors.Select(a => a.LastKnownTargetPosition?.X ?? double.NaN)],
+        [.. Actors.Select(a => a.LastKnownTargetPosition?.Y ?? double.NaN)],
+        [.. Actors.Select(a => a.Target == null ? -1 : Actors.IndexOf(a.Target))]),
         SaveJsonContext.Default.SaveGameState);
 
     /// <summary>
     /// Restores a snapshot produced by <see cref="Save"/>: reloads its map, replays <see cref="Spawn"/> to
-    /// rebuild the deterministic actor list, then reapplies each actor's saved removed/health/alert state by
-    /// index and the player's saved position/stats/inventory. Returns false (with <paramref name="error"/>
-    /// set) for an unreadable, version-mismatched, unknown-map or actor-count-mismatched save, leaving the
-    /// current game state untouched.
+    /// rebuild the deterministic actor list, then reapplies each actor's saved removed/health/alert/chase-
+    /// memory/infighting-target state by index and the player's saved position/stats/inventory. Returns
+    /// false (with <paramref name="error"/> set) for an unreadable, version-mismatched, unknown-map or
+    /// actor-count-mismatched save, leaving the current game state untouched.
     /// </summary>
     public bool TryLoad(string json, out string? error)
     {
@@ -1134,14 +1138,18 @@ public sealed class Game
         try { state = JsonSerializer.Deserialize(json, SaveJsonContext.Default.SaveGameState); }
         catch (JsonException ex) { error = $"malformed save ({ex.Message})"; return false; }
         if (state == null) { error = "empty save."; return false; }
-        if (state.Version is not (1 or 2 or 3)) { error = $"unsupported save version {state.Version}."; return false; }
+        if (state.Version is not (1 or 2 or 3 or 4)) { error = $"unsupported save version {state.Version}."; return false; }
         if (!Wad.Maps.Contains(state.Map)) { error = $"save references unknown map {state.Map}."; return false; }
         Map = new(Wad, state.Map); Assets = new(Wad, state.Map);
         Spawn();
         if (state.ActorRemoved.Length != Actors.Count || state.ActorHealth.Length != Actors.Count ||
             state.ActorAwake != null && state.ActorAwake.Length != Actors.Count ||
             state.ActorAlertX != null && state.ActorAlertX.Length != Actors.Count ||
-            state.ActorAlertY != null && state.ActorAlertY.Length != Actors.Count)
+            state.ActorAlertY != null && state.ActorAlertY.Length != Actors.Count ||
+            state.ActorChaseMemory != null && state.ActorChaseMemory.Length != Actors.Count ||
+            state.ActorLastKnownTargetX != null && state.ActorLastKnownTargetX.Length != Actors.Count ||
+            state.ActorLastKnownTargetY != null && state.ActorLastKnownTargetY.Length != Actors.Count ||
+            state.ActorTargetIndex != null && state.ActorTargetIndex.Length != Actors.Count)
         {
             error = "save's actor layout no longer matches this map."; return false;
         }
@@ -1155,6 +1163,15 @@ public sealed class Game
             double alertX = state.ActorAlertX?[i] ?? double.NaN, alertY = state.ActorAlertY?[i] ?? double.NaN;
             Actors[i].AlertPosition = Actors[i].Awake && !double.IsNaN(alertX) && !double.IsNaN(alertY)
                 ? new Vec(alertX, alertY) : null;
+            // Absent (version 1/2/3) means "no chase memory/infighting target", matching how those saves
+            // always behaved before these fields existed; present (version 4) round-trips a monster's
+            // remembered-position pursuit and its infighting target exactly.
+            Actors[i].ChaseMemory = state.ActorChaseMemory?[i] ?? 0;
+            double lastX = state.ActorLastKnownTargetX?[i] ?? double.NaN, lastY = state.ActorLastKnownTargetY?[i] ?? double.NaN;
+            Actors[i].LastKnownTargetPosition = Actors[i].ChaseMemory > 0 && !double.IsNaN(lastX) && !double.IsNaN(lastY)
+                ? new Vec(lastX, lastY) : null;
+            int targetIndex = state.ActorTargetIndex?[i] ?? -1;
+            Actors[i].Target = targetIndex >= 0 && targetIndex < Actors.Count ? Actors[targetIndex] : null;
         }
         foundSecrets.Clear();
         foreach (int sector in state.FoundSecretSectors) foundSecrets.Add(sector);

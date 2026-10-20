@@ -391,6 +391,87 @@ try
                 legacyLoaded && !legacyActor.Awake && legacyActor.AlertPosition == null,
                 new { legacyLoaded, legacyError, legacyActor.Awake, legacyActor.AlertPosition, legacyJson });
         }
+        {
+            // Save-game compatibility: a demon that lost direct sight of the player but is still inside
+            // its chase-memory window (ChaseMemory > 0, LastKnownTargetPosition set — see Game.UpdateActor)
+            // must keep pursuing that remembered spot after a save/load cycle, not silently revert to idle
+            // the instant the save is restored (ChaseMemory/LastKnownTargetPosition previously were not
+            // part of SaveGameState at all).
+            Game before = Load("chase-memory");
+            Actor demon = before.Actors.Single(a => a.Type == 3002);
+            Tick(before); // Confirm the demon starts out actively tracking the player while in sight.
+            // Run the player away until sight is just lost (ChaseMemory starts ticking down from its full
+            // value), matching the "chase-memory-exceeds-sight-range" scenario above.
+            for (int tics = 0; tics < 2000 && demon.ChaseMemory >= 3; tics++) Tick(before, Buttons.Run | Buttons.Forward);
+            Check("savegame-compat-chase-before-save",
+                demon.ChaseMemory is > 0 and < 3 && demon.LastKnownTargetPosition != null,
+                new { demon.ChaseMemory, demon.LastKnownTargetPosition });
+            string json = before.Save();
+            Vec rememberedBeforeSave = demon.LastKnownTargetPosition!.Value;
+            double chaseMemoryBeforeSave = demon.ChaseMemory;
+
+            Game after = Load("chase-memory");
+            bool loaded = after.TryLoad(json, out string? error);
+            Actor restored = after.Actors.Single(a => a.Type == 3002);
+            Check("savegame-compat-chase-restored",
+                loaded && restored.ChaseMemory == chaseMemoryBeforeSave && restored.LastKnownTargetPosition == rememberedBeforeSave,
+                new { loaded, error, restored.ChaseMemory, restored.LastKnownTargetPosition, chaseMemoryBeforeSave, rememberedBeforeSave });
+
+            // The restored demon must keep closing on the remembered spot on its own (player stays put, no
+            // fresh sight) rather than freezing because its chase memory never actually came back.
+            Vec positionAfterLoad = restored.Position;
+            Tick(after, count: 5);
+            Check("savegame-compat-chase-continues-after-load", restored.Position != positionAfterLoad,
+                new { positionAfterLoad, restored.Position });
+        }
+        {
+            // Save-game compatibility: a monster mid-infight (Target points at another monster, see
+            // Game.Hurt) must keep fighting that rival after a save/load cycle instead of silently
+            // reverting to "fight the player" (Target previously was not part of SaveGameState at all, so
+            // TryLoad always left every restored actor's Target at its freshly-spawned null default).
+            Game before = Load("infight-retarget");
+            Tick(before, count: 150);
+            Actor imp = before.Actors.Single(a => a.Type == 3001);
+            Actor demon = before.Actors.Single(a => a.Type == 3002);
+            Check("savegame-compat-infight-before-save", demon.Target == imp, new { target = demon.Target == imp ? "imp" : "other" });
+            string json = before.Save();
+
+            Game after = Load("infight-retarget");
+            bool loaded = after.TryLoad(json, out string? error);
+            Actor restoredImp = after.Actors.Single(a => a.Type == 3001);
+            Actor restoredDemon = after.Actors.Single(a => a.Type == 3002);
+            Check("savegame-compat-infight-restored", loaded && restoredDemon.Target == restoredImp,
+                new { loaded, error, target = restoredDemon.Target == restoredImp ? "imp" : "other" });
+
+            // The restored demon must keep closing on the imp on its own (no fresh hit needed) rather than
+            // idling or re-acquiring the player because its infighting target never actually came back; a
+            // shrinking separation confirms it is still actively pursuing restoredImp, not Position (the
+            // player).
+            double distanceAfterLoad = (restoredDemon.Position - restoredImp.Position).Length;
+            Tick(after, count: 30);
+            double distanceAfterChase = (restoredDemon.Position - restoredImp.Position).Length;
+            Check("savegame-compat-infight-continues-after-load",
+                restoredDemon.Target == restoredImp && distanceAfterChase < distanceAfterLoad,
+                new { restoredDemon.Target, distanceAfterLoad, distanceAfterChase });
+        }
+        {
+            // A version-1/2/3 save (no ActorChaseMemory/ActorLastKnownTargetX/ActorLastKnownTargetY/
+            // ActorTargetIndex fields at all) must still load cleanly, with every actor simply defaulting
+            // to "no chase memory, no infighting target" — the pre-existing behavior.
+            Game before = Load("infight-retarget");
+            Tick(before, count: 150);
+            string json = before.Save();
+            string legacyJson = Regex.Replace(json,
+                @",""ActorChaseMemory"":\[[^\]]*\],""ActorLastKnownTargetX"":\[[^\]]*\],""ActorLastKnownTargetY"":\[[^\]]*\],""ActorTargetIndex"":\[[^\]]*\]",
+                "");
+            legacyJson = Regex.Replace(legacyJson, "\"Version\":4", "\"Version\":3");
+            Game legacy = Load("infight-retarget");
+            bool legacyLoaded = legacy.TryLoad(legacyJson, out string? legacyError);
+            Actor legacyDemon = legacy.Actors.Single(a => a.Type == 3002);
+            Check("savegame-compat-legacy-version-defaults-no-chase-or-target",
+                legacyLoaded && legacyDemon.ChaseMemory == 0 && legacyDemon.LastKnownTargetPosition == null && legacyDemon.Target == null,
+                new { legacyLoaded, legacyError, legacyDemon.ChaseMemory, legacyDemon.LastKnownTargetPosition, legacyDemon.Target, legacyJson });
+        }
     }
     if (mode is "native" or "all")
     {
