@@ -229,9 +229,16 @@ public sealed class Map
                 (l.Left != 65535 && l.Left >= Sides.Length))
                 throw new InvalidDataException("Invalid linedef reference.");
         foreach (Seg s in Segs)
+        {
             if (s.A >= Vertices.Length || s.B >= Vertices.Length || s.Line >= Lines.Length ||
                 s.Direction > 1 || (s.Direction == 1 && Lines[s.Line].Left == 65535))
                 throw new InvalidDataException("Invalid seg reference.");
+            // A zero-length (or coincident-vertex) seg carries no direction, so the BSP polygon
+            // builder's half-plane clip against it is a no-op: the enclosing subsector polygon is
+            // left unclipped on that edge and can bleed past the map's actual geometry into the
+            // bounding-box padding, producing a visibly stretched floor/ceiling plane.
+            if (Vertices[s.A] == Vertices[s.B]) throw new InvalidDataException("Degenerate (zero-length) seg.");
+        }
         foreach (Subsector s in Subsectors)
             if (s.Count == 0 || s.First + s.Count > Segs.Length) throw new InvalidDataException("Invalid subsector.");
         for (int i = 0; i < Nodes.Length; i++)
