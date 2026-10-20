@@ -34,6 +34,54 @@ static void Tick(Game game, Buttons buttons = Buttons.None, int count = 1)
     Input input = new() { Held = buttons };
     for (int i = 0; i < count; i++) game.Tick(input, 1.0 / 35);
 }
+
+// Builds a minimal valid IWAD byte image (header + lump data + directory) from the given name/bytes pairs,
+// for exercising lump parsing against synthetic/malformed data without needing an on-disk fixture file.
+static byte[] BuildMinimalWad((string Name, byte[] Data)[] lumps)
+{
+    using MemoryStream stream = new();
+    using BinaryWriter writer = new(stream);
+    writer.Write("IWAD"u8);
+    writer.Write(lumps.Length);
+    List<int> offsets = [];
+    writer.Write(0); // directory offset placeholder, patched below
+    foreach ((string _, byte[] data) in lumps)
+    {
+        offsets.Add((int)stream.Position);
+        writer.Write(data);
+    }
+    int directory = (int)stream.Position;
+    foreach (((string name, byte[] data), int offset) in lumps.Zip(offsets))
+    {
+        writer.Write(offset);
+        writer.Write(data.Length);
+        byte[] nameBytes = new byte[8];
+        Encoding.ASCII.GetBytes(name).CopyTo(nameBytes, 0);
+        writer.Write(nameBytes);
+    }
+    writer.Flush();
+    byte[] bytes = stream.ToArray();
+    bytes[8] = (byte)directory; bytes[9] = (byte)(directory >> 8); bytes[10] = (byte)(directory >> 16); bytes[11] = (byte)(directory >> 24);
+    return bytes;
+}
+
+// Builds a DMX-format ("DS*") sound lump header (format 3, given rate/count) with filler sample data,
+// sized exactly to satisfy the parser's `count <= data.Length - 8` bound check.
+static byte[] BuildDmxSound(ushort rate, int sampleCount)
+{
+    byte[] data = new byte[8 + sampleCount];
+    data[0] = 3; data[1] = 0;
+    data[2] = (byte)rate; data[3] = (byte)(rate >> 8);
+    data[4] = (byte)sampleCount; data[5] = (byte)(sampleCount >> 8); data[6] = (byte)(sampleCount >> 16); data[7] = (byte)(sampleCount >> 24);
+    return data;
+}
+
+static byte[] Pack4(int value)
+{
+    byte[] bytes = new byte[4];
+    bytes[0] = (byte)value; bytes[1] = (byte)(value >> 8); bytes[2] = (byte)(value >> 16); bytes[3] = (byte)(value >> 24);
+    return bytes;
+}
 try
 {
     if (mode is "headless" or "all")
@@ -110,6 +158,18 @@ try
             Check("music-mus-roundtrip-frequency", Math.Abs(note.Frequency - expectedFrequency) < 1e-6, new { note.Frequency, expectedFrequency });
         }
         Check("music-mus-roundtrip-duration", Math.Abs(musDuration - 70 / 140.0) < 1e-9, musDuration);
+
+        // --- WAD/Assets: a malformed DS* sound lump with a pathologically small sample rate must be rejected
+        // cleanly instead of overflowing the 32-bit resampled-length computation into a negative array size
+        // (observed pre-fix as an uncaught OverflowException instead of the usual InvalidDataException). ---
+        {
+            byte[] overflowSound = BuildDmxSound(rate: 1, sampleCount: 100_000);
+            byte[] badRateWad = BuildMinimalWad([("PLAYPAL", new byte[768]), ("PNAMES", Pack4(0)), ("DSTEST", overflowSound)]);
+            Assets assets = new(new Wad(badRateWad), "MAP01");
+            InvalidDataException? caught = null;
+            try { assets.Sound("TEST"); } catch (InvalidDataException ex) { caught = ex; }
+            Check("wad-sound-reject-overflowing-rate", caught != null, caught?.Message);
+        }
 
         foreach (string name in new[] { "portal-equal", "step-24", "step-25", "clearance-56", "clearance-55",
             "overlap-55", "closed-portal", "flag-blocked", "masked-passable", "masked-blocked" })
