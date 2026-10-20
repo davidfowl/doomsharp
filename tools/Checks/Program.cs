@@ -59,6 +59,58 @@ try
     }
     if (mode is "engine" or "all")
     {
+        // --- Music: MUS/MIDI pitch-bend translation to semitones ---
+        Check("music-mus-bend-center", Math.Abs(Instruments.MusPitchBendSemitones(64)) < 1e-9, Instruments.MusPitchBendSemitones(64));
+        Check("music-mus-bend-min", Math.Abs(Instruments.MusPitchBendSemitones(0) - -2.0) < 1e-9, Instruments.MusPitchBendSemitones(0));
+        double expectedMusMax = (127 - 64) / 64.0 * 2.0;
+        Check("music-mus-bend-max", Math.Abs(Instruments.MusPitchBendSemitones(127) - expectedMusMax) < 1e-9, Instruments.MusPitchBendSemitones(127));
+        Check("music-midi-bend-center", Math.Abs(Instruments.MidiPitchBendSemitones(0, 64)) < 1e-9, Instruments.MidiPitchBendSemitones(0, 64));
+        Check("music-midi-bend-min", Math.Abs(Instruments.MidiPitchBendSemitones(0, 0) - -2.0) < 1e-9, Instruments.MidiPitchBendSemitones(0, 0));
+        double expectedMidiMax = (16383 - 8192) / 8192.0 * 2.0;
+        Check("music-midi-bend-max", Math.Abs(Instruments.MidiPitchBendSemitones(127, 127) - expectedMidiMax) < 1e-9, Instruments.MidiPitchBendSemitones(127, 127));
+
+        // --- Music: GM-program-aware voicing produces measurably different synthesis parameters ---
+        Instruments.Voice piano = Instruments.ForProgram(0), organ = Instruments.ForProgram(20), guitar = Instruments.ForProgram(28),
+            brass = Instruments.ForProgram(60), synth = Instruments.ForProgram(100);
+        Check("music-voice-classify", Instruments.Classify(0) == Instruments.Family.Percussive && Instruments.Classify(20) == Instruments.Family.Sustained &&
+            Instruments.Classify(28) == Instruments.Family.Plucked && Instruments.Classify(60) == Instruments.Family.Bright &&
+            Instruments.Classify(100) == Instruments.Family.Synth,
+            new { piano = Instruments.Classify(0), organ = Instruments.Classify(20), guitar = Instruments.Classify(28),
+                brass = Instruments.Classify(60), synth = Instruments.Classify(100) });
+        Check("music-voice-distinct-harmonics", !piano.Harmonics.SequenceEqual(organ.Harmonics) && !piano.Harmonics.SequenceEqual(guitar.Harmonics) &&
+            !organ.Harmonics.SequenceEqual(brass.Harmonics) && !guitar.Harmonics.SequenceEqual(synth.Harmonics));
+        Check("music-voice-distinct-envelope", organ.DecaySeconds > guitar.DecaySeconds && double.IsPositiveInfinity(organ.DecaySeconds) &&
+            guitar.PluckOvershoot > 0 && piano.PluckOvershoot == 0 && organ.SustainLevel > piano.SustainLevel,
+            new { organDecayIsInfinite = double.IsPositiveInfinity(organ.DecaySeconds), guitarDecay = guitar.DecaySeconds,
+                guitarOvershoot = guitar.PluckOvershoot, pianoOvershoot = piano.PluckOvershoot,
+                organSustain = organ.SustainLevel, pianoSustain = piano.SustainLevel });
+
+        // --- Music: a full MUS-to-internal-event conversion round trip for a sample tune with a bend ---
+        byte[] mus =
+        [
+            (byte)'M', (byte)'U', (byte)'S', 0x1A,
+            12, 0, 16, 0,           // scoreLength=12, scoreStart=16
+            1, 0, 0, 0, 0, 0, 0, 0, // channel/instrument header fields (unused by the parser)
+            0x40, 0x00, 0x18,       // controller change ch0: patch (controller 0) = 24 (guitar/plucked)
+            0x10, 0xBC, 0x64,       // play note ch0: note=60, has-volume bit set, velocity=100
+            0xA0, 0x60, 0x46,       // pitch-bend ch0: value=96 (centered=64, so +1 semitone), then delta=70 ticks
+            0x00, 0x3C,             // release note ch0: note=60
+            0x60,                   // score end
+        ];
+        (List<Music.NoteSpan> musNotes, double musDuration) = Music.ParseMusForTest(mus);
+        double expectedBend = Instruments.MusPitchBendSemitones(96);
+        double expectedFrequency = 440.0 * Math.Pow(2, (60 - 69) / 12.0) * Math.Pow(2, expectedBend / 12.0);
+        Check("music-mus-roundtrip-count", musNotes.Count == 1, musNotes.Count);
+        if (musNotes.Count == 1)
+        {
+            Music.NoteSpan note = musNotes[0];
+            Check("music-mus-roundtrip-timing", Math.Abs(note.Start) < 1e-9 && Math.Abs(note.End - 70 / 140.0) < 1e-9, new { note.Start, note.End });
+            Check("music-mus-roundtrip-instrument", note.Instrument == 24 && !note.Percussion, new { note.Instrument, note.Percussion });
+            Check("music-mus-roundtrip-bend", Math.Abs(note.Bend - expectedBend) < 1e-9, new { note.Bend, expectedBend });
+            Check("music-mus-roundtrip-frequency", Math.Abs(note.Frequency - expectedFrequency) < 1e-6, new { note.Frequency, expectedFrequency });
+        }
+        Check("music-mus-roundtrip-duration", Math.Abs(musDuration - 70 / 140.0) < 1e-9, musDuration);
+
         foreach (string name in new[] { "portal-equal", "step-24", "step-25", "clearance-56", "clearance-55",
             "overlap-55", "closed-portal", "flag-blocked", "masked-passable", "masked-blocked" })
         {
