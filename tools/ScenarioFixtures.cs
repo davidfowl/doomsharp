@@ -75,6 +75,12 @@ public static class ScenarioFixtures
         List<Lump> playerSafe = Room("E1M1", [(0, 0, 1), (120, 0, 3002)]);
         yield return ("infight-player-safe", Write(assets.Concat(playerSafe)));
         yield return ("infight-telefrag", Write(assets.Concat(Teleport())));
+        // A long open corridor: a demon starts near one end, the player near the middle so it is in
+        // immediate (sighted) range, with plenty of runway beyond so the player can outrun the demon
+        // (it is melee-only and slower) until the separation exceeds the engine's sight range, at which
+        // point the demon loses its "sighted" target and relies on chase memory of the last-known position.
+        List<Lump> chaseMemory = Corridor("E1M1", [-200, 6000], [0], [128], [0], [(0, 0, 3002), (300, 0, 1)]);
+        yield return ("chase-memory", Write(assets.Concat(chaseMemory)));
     }
 
     static List<Lump> Teleport()

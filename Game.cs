@@ -37,6 +37,11 @@ public sealed class Actor
     public bool Hanging;
     // Null means "fight the player" (the default); set by infighting when another monster's attack hurts this one.
     public Actor? Target;
+    // "Chase memory": the target's position the last time it was actually seen, and a countdown (seconds)
+    // during which the monster keeps pursuing that remembered spot after losing line-of-sight. Null/zero
+    // means the monster has never seen its target (or has fully forgotten it) and sits idle.
+    public Vec? LastKnownTargetPosition;
+    public double ChaseMemory;
     public Actor(Thing thing, string sprite, bool enemy, bool solid, double radius, int health)
     {
         Position = thing.Position; Type = thing.Type; Sprite = sprite; Enemy = enemy; Solid = solid;
@@ -739,6 +744,11 @@ public sealed class Game
             Damage(rocket ? Math.Max(1, (int)(128 - playerDistance)) : (int)(128 - playerDistance));
     }
 
+    // Classic DOOM monsters keep a few seconds of "memory" of where their target last stood after losing
+    // line-of-sight, continuing to close on that spot instead of freezing in place; the window here is a
+    // few seconds' worth of ticks, matching that behavior without depending on the original movecount table.
+    const double ChaseMemoryDuration = 3.0;
+
     void UpdateActor(Actor actor, double dt)
     {
         actor.HurtTime = Math.Max(0, actor.HurtTime - dt); actor.Cooldown -= dt;
@@ -751,11 +761,27 @@ public sealed class Game
         if (rival == null && Health <= 0) return;
         Vec targetPosition = rival?.Position ?? Position;
         double meleeRadius = rival?.Radius ?? 0, stopRadius = rival?.Radius ?? 20;
+        double floor = Map.Sectors[Map.FindSector(actor.Position)].Floor;
         Vec delta = targetPosition - actor.Position;
         double distance = delta.Length;
-        double floor = Map.Sectors[Map.FindSector(actor.Position)].Floor;
-        if (distance > 1500 || !Map.ClearSight(actor.Position, targetPosition, floor + 40)) return;
-        if (actor.Cooldown <= 0 && (distance < 64 + meleeRadius || actor.Type is not (3002 or 58) && distance < 800))
+        bool sighted = distance <= 1500 && Map.ClearSight(actor.Position, targetPosition, floor + 40);
+        if (sighted)
+        {
+            // Target is actually visible: refresh the remembered spot and reset the pursuit window.
+            actor.LastKnownTargetPosition = targetPosition;
+            actor.ChaseMemory = ChaseMemoryDuration;
+        }
+        else
+        {
+            actor.ChaseMemory = Math.Max(0, actor.ChaseMemory - dt);
+            if (actor.ChaseMemory <= 0 || actor.LastKnownTargetPosition is not { } remembered) return;
+            // Sight is lost but the memory window hasn't expired: keep closing on the last-known position
+            // instead of attacking (can't see the target) or standing still.
+            targetPosition = remembered;
+            delta = targetPosition - actor.Position;
+            distance = delta.Length;
+        }
+        if (sighted && actor.Cooldown <= 0 && (distance < 64 + meleeRadius || actor.Type is not (3002 or 58) && distance < 800))
         {
             actor.Cooldown = 1.1 + random.NextDouble();
             if (distance < 64 + meleeRadius)
