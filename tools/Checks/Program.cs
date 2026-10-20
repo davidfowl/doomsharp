@@ -200,6 +200,40 @@ try
             Check("rocket-" + name + "-cleanup", game.Projectiles.All(p => !p.Rocket) && (name == "miss" || game.Health == health),
                 new { game.Health, projectiles = game.Projectiles.Count });
         }
+        {
+            // Full intermission: a keycard and an armor bonus on the walked path (both collected), a
+            // secret sector (found on spawn) and no monsters. Percentages should all read 100%.
+            Game game = Load("intermission-full"); Tick(game);
+            Tick(game, Buttons.Forward, 50); Tick(game, Buttons.Use);
+            Check("intermission-full-finished", game.Finished && game.Items == 2 && game.TotalItems == 2 &&
+                game.Secrets == 1 && game.TotalSecrets == 1 && game.Kills == 0 && game.TotalEnemies == 0,
+                new { game.Items, game.TotalItems, game.Secrets, game.TotalSecrets, game.Kills, game.TotalEnemies });
+            Check("intermission-full-stats-text", game.IntermissionStats.Length == 4 &&
+                game.IntermissionStats[1] == "KILLS 100%  ITEMS 100%  SECRETS 100%" &&
+                game.IntermissionStats[^1] == game.CompletionPrompt, game.IntermissionStats);
+        }
+        {
+            // Partial intermission: one of two items is off the walked path (uncollected), no secret
+            // sector. Verifies non-trivial rounding (50%) and the zero-total-secrets 100% convention.
+            Game game = Load("intermission-partial"); Tick(game);
+            Tick(game, Buttons.Forward, 50); Tick(game, Buttons.Use);
+            Check("intermission-partial-finished", game.Finished && game.Items == 1 && game.TotalItems == 2 &&
+                game.Secrets == 0 && game.TotalSecrets == 0,
+                new { game.Items, game.TotalItems, game.Secrets, game.TotalSecrets });
+            Check("intermission-partial-stats-text",
+                game.IntermissionStats[1] == "KILLS 100%  ITEMS 50%  SECRETS 100%", game.IntermissionStats);
+        }
+        {
+            // Empty intermission: no items, no secrets, no monsters at all; every zero-total percentage
+            // must still read 100% (matching the original's "nothing required" convention), never a crash.
+            Game game = Load("intermission-empty"); Tick(game);
+            Tick(game, Buttons.Forward, 50); Tick(game, Buttons.Use);
+            Check("intermission-empty-finished", game.Finished && game.Items == 0 && game.TotalItems == 0 &&
+                game.Secrets == 0 && game.TotalSecrets == 0 && game.Kills == 0 && game.TotalEnemies == 0,
+                new { game.Items, game.TotalItems, game.Secrets, game.TotalSecrets });
+            Check("intermission-empty-stats-text",
+                game.IntermissionStats[1] == "KILLS 100%  ITEMS 100%  SECRETS 100%", game.IntermissionStats);
+        }
         // (a) the animation table maps known names to their full, correctly ordered cycle.
         Check("texture-animation-flat-cycle",
             TextureAnimation.Flat("NUKAGE2", 0, _ => true) == "NUKAGE1" &&

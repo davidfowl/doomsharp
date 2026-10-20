@@ -86,6 +86,9 @@ public sealed class Game
     public int Kills { get; private set; }
     public int TotalEnemies => Actors.Count(a => a.Enemy);
     public int Secrets { get; private set; }
+    public int TotalSecrets => Map.Sectors.Count(s => s.Special == 9);
+    public int Items { get; private set; }
+    public int TotalItems => Actors.Count(a => IsItemType(a.Type));
     public double Time { get; private set; }
     public double FireTime { get; private set; }
     public double DamageFlash { get; private set; }
@@ -95,6 +98,9 @@ public sealed class Game
     public bool Automap { get; private set; }
     public bool Finished { get; private set; }
     public string CompletionPrompt { get; private set; } = "";
+    /// <summary>Classic end-of-level stats lines (map name, kills/items/secrets percentages, time,
+    /// continue prompt), populated by <see cref="FinishLevel"/> and rendered while <see cref="Finished"/>.</summary>
+    public string[] IntermissionStats { get; private set; } = [];
     public string Message { get; private set; } = "";
     public List<Actor> Actors { get; } = [];
     public List<Projectile> Projectiles { get; } = [];
@@ -863,6 +869,14 @@ public sealed class Game
         if (Health == 0) Say("YOU DIED - PRESS R TO RESTART");
     }
 
+    /// <summary>
+    /// Thing types counted toward the classic "items" intermission stat: health/armor bonuses,
+    /// megaspheres/soulspheres, berserk and keycards/skull keys. Ammo and weapon pickups are
+    /// excluded, matching the original engine's <c>itemcount</c> semantics.
+    /// </summary>
+    static bool IsItemType(int type) => type is 2011 or 2012 or 2014 or 2015 or 2018 or 2019 or 2013 or 2023
+        or 5 or 40 or 6 or 39 or 13 or 38;
+
     void Pickup(Actor actor)
     {
         bool taken = true;
@@ -906,16 +920,29 @@ public sealed class Game
         }
         if (!taken) return;
         actor.Removed = true; PickupFlash = .15; PlaySound?.Invoke("ITEMUP");
+        if (IsItemType(actor.Type)) Items++;
     }
 
     void Say(string text) { Message = text; messageTime = 4; }
+
+    /// <summary>Rounds a value/total ratio to a whole percentage, treating a zero total as 100% (no
+    /// kills/items/secrets required means full credit, matching the original intermission screen).</summary>
+    static int Percent(int value, int total) => total <= 0 ? 100 : (int)Math.Round(value * 100.0 / total);
 
     void FinishLevel(bool secret)
     {
         Finished = true; secretExit = secret;
         string? next = NextMapName(Map.Name, secretExit);
         CompletionPrompt = next != null && Wad.Maps.Contains(next) ?
-            "LEVEL COMPLETE - FIRE TO CONTINUE" : "END OF AVAILABLE MAPS - R TO REPLAY";
+            "FIRE TO CONTINUE" : "END OF AVAILABLE MAPS - R TO REPLAY";
+        int minutes = (int)(Time / 60), seconds = (int)Time % 60;
+        IntermissionStats =
+        [
+            Map.Name + " FINISHED",
+            $"KILLS {Percent(Kills, TotalEnemies)}%  ITEMS {Percent(Items, TotalItems)}%  SECRETS {Percent(Secrets, TotalSecrets)}%",
+            $"TIME {minutes:D2}:{seconds:D2}",
+            CompletionPrompt,
+        ];
         Say(CompletionPrompt);
     }
 
@@ -976,8 +1003,8 @@ public sealed class Game
             HasShotgun = false; HasChaingun = false; HasRocketLauncher = false;
             SelectedWeapon = Weapon.Pistol;
         }
-        Keys = 0; Kills = 0; Secrets = 0; Time = 0; FireTime = 0; Finished = false; secretExit = false;
-        CompletionPrompt = "";
+        Keys = 0; Kills = 0; Secrets = 0; Items = 0; Time = 0; FireTime = 0; Finished = false; secretExit = false;
+        CompletionPrompt = ""; IntermissionStats = [];
         DamageFlash = 0; PickupFlash = 0; damageTick = 0; WalkTime = 0;
         chaingunTicks = 0; chaingunFollowup = false; chaingunRefiring = false; pendingWeapon = null;
         ChaingunFrame = 0; ChaingunFlashFrame = 0; ChaingunFlashTicks = 0;
@@ -990,10 +1017,10 @@ public sealed class Game
     /// In-flight projectiles are not preserved; <see cref="TryLoad"/> always resumes with none airborne.
     /// </summary>
     public string Save() => JsonSerializer.Serialize(new SaveGameState(
-        1, Map.Name, Position.X, Position.Y, Angle, Feet,
+        2, Map.Name, Position.X, Position.Y, Angle, Feet,
         Health, Armor, Bullets, Shells, Rockets, HasShotgun, HasChaingun, HasRocketLauncher, SelectedWeapon,
         Keys, Kills, Secrets, Time, [.. foundSecrets],
-        [.. Actors.Select(a => a.Removed)], [.. Actors.Select(a => a.Health)]),
+        [.. Actors.Select(a => a.Removed)], [.. Actors.Select(a => a.Health)], Items),
         SaveJsonContext.Default.SaveGameState);
 
     /// <summary>
@@ -1009,7 +1036,7 @@ public sealed class Game
         try { state = JsonSerializer.Deserialize(json, SaveJsonContext.Default.SaveGameState); }
         catch (JsonException ex) { error = $"malformed save ({ex.Message})"; return false; }
         if (state == null) { error = "empty save."; return false; }
-        if (state.Version != 1) { error = $"unsupported save version {state.Version}."; return false; }
+        if (state.Version is not (1 or 2)) { error = $"unsupported save version {state.Version}."; return false; }
         if (!Wad.Maps.Contains(state.Map)) { error = $"save references unknown map {state.Map}."; return false; }
         Map = new(Wad, state.Map); Assets = new(Wad, state.Map);
         Spawn();
@@ -1028,7 +1055,8 @@ public sealed class Game
         Health = state.Health; Armor = state.Armor; Bullets = state.Bullets; Shells = state.Shells; Rockets = state.Rockets;
         HasShotgun = state.HasShotgun; HasChaingun = state.HasChaingun; HasRocketLauncher = state.HasRocketLauncher;
         SelectedWeapon = state.SelectedWeapon; Keys = state.Keys; Kills = state.Kills; Secrets = state.Secrets; Time = state.Time;
-        Finished = false; CompletionPrompt = ""; secretExit = false; DamageFlash = 0; PickupFlash = 0;
+        Items = state.Items;
+        Finished = false; CompletionPrompt = ""; IntermissionStats = []; secretExit = false; DamageFlash = 0; PickupFlash = 0;
         chaingunTicks = 0; chaingunFollowup = false; chaingunRefiring = false; pendingWeapon = null;
         ChaingunFrame = 0; ChaingunFlashFrame = 0; ChaingunFlashTicks = 0; RocketFireTicks = 0;
         PlayMusic?.Invoke(MusicLumpName(Map.Name));

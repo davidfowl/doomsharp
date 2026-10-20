@@ -70,6 +70,18 @@ public static class ScenarioFixtures
                 yield return ($"door-{special}-{key}", Write(assets.Concat(Door(special, key))));
         foreach (string mode in new[] { "last-baron", "two-barons", "knight", "mixed", "wrong-map", "no-tag" })
             yield return ($"boss-{mode}", Write(assets.Concat(Boss(mode))));
+
+        // Intermission/stats scenarios: a single secret room with keycard/armor-bonus items and an S1
+        // exit line, used to verify the end-of-level Kills/Items/Secrets percentages and time display.
+        foreach (string mode in new[] { "full", "partial", "empty" })
+        {
+            List<(int X, int Y, int Type)> things = [(0, 0, 1)];
+            if (mode != "empty") things.Add((100, 0, 5)); // blue keycard, always on the walked path
+            if (mode == "full") things.Add((150, 0, 2015)); // armor bonus, also on the walked path
+            if (mode == "partial") things.Add((150, 200, 2015)); // armor bonus, off the walked path
+            int special = mode == "full" ? 9 : 0; // secret sector only for the "full" (100%-everything) case
+            yield return ($"intermission-{mode}", Write(assets.Concat(Room("E1M1", things, special, true))));
+        }
         List<Lump> retarget = Room("E1M1", [(0, 0, 1), (600, 0, 3001), (300, 0, 3002)]);
         yield return ("infight-retarget", Write(assets.Concat(retarget)));
         List<Lump> playerSafe = Room("E1M1", [(0, 0, 1), (120, 0, 3002)]);
