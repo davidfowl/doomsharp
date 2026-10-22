@@ -36,6 +36,7 @@ var malformed = new (string Name, Action<byte[]> Mutate)[]
     ("bad-lump-extent", b => Put32(b, DirectoryOffset(b) + 4, int.MaxValue)),
     ("bad-map-order", b => NameBytes("BOGUS").CopyTo(b, Entry(b, "SEGS") + 8)),
     ("bad-sidedef-index", b => Put16(b, LumpOffset(b, "LINEDEFS") + 10, 65534)),
+    ("bad-degenerate-seg", b => Put16(b, LumpOffset(b, "SEGS") + 2, U16(b, LumpOffset(b, "SEGS")))),
     ("bad-node-child", b => Put16(b, LumpOffset(b, "NODES") + 24, 0x8002)),
     ("cyclic-node", b => Put16(b, LumpOffset(b, "NODES") + 24, 0)),
     ("bad-subsector-range", b => Put16(b, LumpOffset(b, "SSECTORS") + 2, 9)),
@@ -266,6 +267,7 @@ static int Entry(byte[] bytes, string name)
 }
 static int LumpOffset(byte[] bytes, string name) => I32(bytes, Entry(bytes, name));
 static int I32(byte[] b, int i) => BinaryPrimitives.ReadInt32LittleEndian(b.AsSpan(i, 4));
+static int U16(byte[] b, int i) => BinaryPrimitives.ReadUInt16LittleEndian(b.AsSpan(i, 2));
 static void Put32(byte[] b, int i, int v) => BinaryPrimitives.WriteInt32LittleEndian(b.AsSpan(i, 4), v);
 static void Put16(byte[] b, int i, int v) => BinaryPrimitives.WriteUInt16LittleEndian(b.AsSpan(i, 2), (ushort)v);
 
