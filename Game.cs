@@ -7,8 +7,10 @@ public enum Buttons
 {
     None = 0, Forward = 1, Back = 2, Left = 4, Right = 8, TurnLeft = 16, TurnRight = 32,
     Fire = 64, Use = 128, Run = 256, Restart = 512, Pistol = 1024, Shotgun = 2048, Map = 4096,
-    Chaingun = 8192, RocketLauncher = 16384, Save = 32768, Load = 65536
+    Chaingun = 8192, RocketLauncher = 16384, Save = 32768, Load = 65536, Menu = 131072
 }
+
+public enum MenuScreen { Main, Options, QuitConfirm }
 
 public enum Weapon { Pistol, Shotgun, Chaingun, RocketLauncher }
 
@@ -112,6 +114,21 @@ public sealed class Game
     public double WalkTime { get; private set; }
     public double Bob { get; private set; }
     public bool Automap { get; private set; }
+    public bool MenuOpen { get; private set; }
+    public MenuScreen MenuScreen { get; private set; } = MenuScreen.Main;
+    public int MenuIndex { get; private set; }
+    public double MouseSensitivity { get; private set; } = 1;
+    public bool MessagesOn { get; private set; } = true;
+    public string[] MenuItems => MenuScreen switch
+    {
+        MenuScreen.Main => new[] { "RESUME", "NEW GAME", "OPTIONS", "QUIT GAME" },
+        MenuScreen.Options => new[] { $"MOUSE SENSITIVITY {MouseSensitivity:F1}", $"MESSAGES {(MessagesOn ? "ON" : "OFF")}", "BACK" },
+        _ => new[] { "YES", "NO" }
+    };
+    public string MenuTitle => MenuScreen switch
+    {
+        MenuScreen.Main => "MAIN MENU", MenuScreen.Options => "OPTIONS", _ => "QUIT GAME?"
+    };
     public bool Finished { get; private set; }
     public string CompletionPrompt { get; private set; } = "";
     /// <summary>Classic end-of-level stats lines (map name, kills/items/secrets percentages, time,
@@ -274,6 +291,19 @@ public sealed class Game
 
     public void Tick(Input input, double dt)
     {
+        Buttons pressed = input.Held & ~previous;
+        previous = input.Held;
+        if ((pressed & Buttons.Menu) != 0)
+        {
+            if (MenuOpen) MenuOpen = false;
+            else { MenuOpen = true; MenuScreen = MenuScreen.Main; MenuIndex = 0; }
+        }
+        if (MenuOpen)
+        {
+            HandleMenu(pressed, input);
+            input.MouseX = 0;
+            return;
+        }
         dt = Math.Clamp(dt, 0, .05);
         Time += dt; FireTime = Math.Max(0, FireTime - dt);
         if (chaingunTicks > 0) chaingunTicks--;
@@ -286,8 +316,6 @@ public sealed class Game
         LightAmpTime = Math.Max(0, LightAmpTime - dt);
         messageTime -= dt;
         if (messageTime <= 0) Message = "";
-        Buttons pressed = input.Held & ~previous;
-        previous = input.Held;
         if ((pressed & Buttons.Restart) != 0) { Load(Map.Name, true); return; }
         if ((pressed & Buttons.Save) != 0 && SaveGame != null && Health > 0 && !Finished) { SaveGame(Save()); Say("GAME SAVED"); }
         if ((pressed & Buttons.Load) != 0 && LoadGame != null)
@@ -310,7 +338,7 @@ public sealed class Game
             if ((pressed & Buttons.Chaingun) != 0) SelectWeapon(Weapon.Chaingun);
             if ((pressed & Buttons.RocketLauncher) != 0) SelectWeapon(Weapon.RocketLauncher);
             Angle += (((input.Held & Buttons.TurnLeft) != 0 ? 1 : 0) -
-                ((input.Held & Buttons.TurnRight) != 0 ? 1 : 0)) * dt * 2.4 - input.MouseX * .003;
+                ((input.Held & Buttons.TurnRight) != 0 ? 1 : 0)) * dt * 2.4 - input.MouseX * .003 * MouseSensitivity;
             Angle = Math.IEEERemainder(Angle, Math.Tau);
             Vec forward = new(Math.Cos(Angle), Math.Sin(Angle)), right = new(forward.Y, -forward.X);
             double f = ((input.Held & Buttons.Forward) != 0 ? 1 : 0) - ((input.Held & Buttons.Back) != 0 ? 1 : 0);
@@ -1065,7 +1093,41 @@ public sealed class Game
         if (IsItemType(actor.Type)) Items++;
     }
 
-    void Say(string text) { Message = text; messageTime = 4; }
+    void Say(string text) { if (MessagesOn) Message = text; messageTime = 4; }
+
+    void HandleMenu(Buttons pressed, Input input)
+    {
+        string[] items = MenuItems;
+        if ((pressed & Buttons.Back) != 0) MenuIndex = (MenuIndex + 1) % items.Length;
+        if ((pressed & Buttons.Forward) != 0) MenuIndex = (MenuIndex - 1 + items.Length) % items.Length;
+        bool left = (pressed & Buttons.TurnLeft) != 0, right = (pressed & Buttons.TurnRight) != 0;
+        if (MenuScreen == MenuScreen.Options && MenuIndex == 0 && (left || right))
+        {
+            MouseSensitivity = Math.Clamp(MouseSensitivity + (right ? .1 : -.1), .2, 3.0);
+            return;
+        }
+        if ((pressed & (Buttons.Use | Buttons.Fire)) == 0) return;
+        switch (MenuScreen)
+        {
+            case MenuScreen.Main:
+                switch (MenuIndex)
+                {
+                    case 0: MenuOpen = false; break;
+                    case 1: Load(Map.Name, true); MenuOpen = false; break;
+                    case 2: MenuScreen = MenuScreen.Options; MenuIndex = 0; break;
+                    case 3: MenuScreen = MenuScreen.QuitConfirm; MenuIndex = 1; break;
+                }
+                break;
+            case MenuScreen.Options:
+                if (MenuIndex == 1) MessagesOn = !MessagesOn;
+                else if (MenuIndex == 2) { MenuScreen = MenuScreen.Main; MenuIndex = 0; }
+                break;
+            case MenuScreen.QuitConfirm:
+                if (MenuIndex == 0) input.Quit = true;
+                else { MenuScreen = MenuScreen.Main; MenuIndex = 0; }
+                break;
+        }
+    }
 
     /// <summary>Rounds a value/total ratio to a whole percentage, treating a zero total as 100% (no
     /// kills/items/secrets required means full credit, matching the original intermission screen).</summary>
