@@ -6,9 +6,24 @@ commands and verification boundaries. Entries below are historical: Python
 commands and old runner hashes refer to their recorded revisions, not current
 tooling. Historical platform results do not qualify a newer local revision.
 
-Last verified: **2026-10-13**, against merged `main` and its linked CI run. This distinguishes the
-verified playable increment from full DOOM compatibility and physical-device
-verification. **Full original-DOOM parity remains unfinished.**
+Milestone verified: **2026-10-17**, against implementation
+[`42a186f`](https://github.com/davidfowl/doomsharp/commit/42a186f1269cd022ae6f68d2bdcb04b2b89fa1d5)
+and its [completed CI run](https://github.com/davidfowl/doomsharp/actions/runs/39067803717).
+This distinguishes the qualified playable increment from full DOOM compatibility
+and physical-device verification. **Full original-DOOM parity remains unfinished.**
+
+**Historical integration status (2026-10-17):** the stair/crusher milestone remained on
+`feat/classic-stair-builders`. A normal fast-forward push of qualified candidate
+`8af8ca24f954045b1d23d4df8ceb5d8e92f67180` to `main` was rejected with
+`push declined due to repository rule violations`. Remote `main` was then
+verified unchanged at `6325ccd0f837bdf7bdce1467da709ee211c53ff7`.
+No bypass or retry was attempted. This PR subsequently combines that milestone
+and the switch-texture increment; the historical rule rejection does not describe
+the status of this PR after it is merged.
+
+The distinct switch-texture increment is on `feat/classic-switch-textures`,
+based on preserved milestone tip `7bf840a`. Its local qualification is described
+below; the earlier completed CI run does not qualify this newer implementation.
 
 ## Merged
 
@@ -19,8 +34,8 @@ It uses the .NET platform/BCL and OS APIs, not third-party managed libraries or
 game engines. Original DOOM source and proprietary WADs are not included.
 
 The [status reconciliation PR #3](https://github.com/davidfowl/doomsharp/pull/3)
-is also merged. This page describes capabilities available on `main`, not
-unmerged branch claims. Working below means verified **within the stated scope**,
+is also merged. Except for explicitly marked branch-only rows, this page
+describes capabilities available on `main`. Working below means verified **within the stated scope**,
 not complete original-DOOM behavior.
 
 [Executable-only assurance PR #7](https://github.com/davidfowl/doomsharp/pull/7)
@@ -49,14 +64,17 @@ Build/publish output includes the Phase 1 WAD, BSD license and credits.
 | Chaingun pickup/fire/inventory | Partial | Type2002 and chaingunner drop, key4, shared bullets, four-tick shots/two-shot pairs and supplied body/flash patches; dedicated Linux executable scenarios below, not exact original timing/RNG/visual parity or broad platform gameplay |
 | Rocket launcher/inventory/projectiles | Partial | Type2003/key5, separate2010/2046 ammo/cap50, real20-unit/tick swept missiles, direct/occluded radial damage and supplied weapon/flight/explosion patches; bounded native scenarios described below, not exact original autoaim/windup/RNG/visual or campaign parity |
 | Movement, collision and sector actions | Partial | Native door/lift paths and selected boundaries; tagged locked fast-door99/133-137 action scope has dedicated executable scenarios below, not every mover/trigger |
+| Tagged stair builders | Partial | Actions7/8/100/127, directed same-flat chains and shared floor support; engine assertions and synthetic Linux native checks; not exact original busy-neighbor quirks or campaign completion |
+| Cycling crushers and stops | Partial | Actions6/25/77/141 with57/74 stops, speed/cycles, footprint/armor damage and preserved pause/resume; engine and synthetic Linux checks; simplified actor heights/corpses and other ceiling actions remain incomplete |
+| Classic switch textures/buttons | Partial | Feedback for 24 existing S1/SR actions, 40 vanilla pairs, 35-tick independent resets, success/denial and lifecycle checks; not all switch/action families or campaigns |
 | Map progression and damaging exits | Partial | Native Linux input observes E1M1 to E1M2 with inventory/health retained; local classic-map scenarios qualify sector-11 damage/exit, fresh dead-player next-map state and finale/missing-map stop; not original campaign completion |
 | E1M8 Baron/tag666 floor action | Partial | Last living type3003 with a live player, all eligible tagged floors lower to lowest neighbors through shared movers;14 synthetic native cases below, not original E1M8/campaign or exact death-state timing |
 | Actors, sprites, pickups and barrels | Partial | Native demo observes pickup and one enemy kill; exact states/attacks, infighting, boss behavior and many item/visual cases remain unfinished or unverified |
 | HUD, weapon overlays and automap | Partial | Actual executable exports HUD/weapon frames; local Linux native Tab on/off plus W/Ctrl controls qualify automap input, not original visuals or other-platform interactive behavior |
-| Native window presentation | Working | Bounded actual-engine desktop smoke runs pass on three OSes; interactive input coverage differs by platform below |
+| Native window presentation | Working | Six native OS/architecture targets pass bounded desktop CI; Linux also exercises synthetic OS input; not physical-device verification |
 | DMX decoding and sound-effects mixer | Partial | Native Linux playthrough submits effects to ALSA null; exact resampling/audio comparison, audible playback and Windows/macOS audio unverified |
-| Remaining weapons, stairs/crushers, switch textures and other boss actions | Not implemented | Required for original gameplay/campaign parity |
-| Powerup items (Berserk, Invulnerability, Partial Invisibility, Radiation Suit, Computer Area Map, Light Amplification Visor) | Partial | Types 2022-2026 and 2045 grant timed/level-persistent effects; invulnerability blocks damage, partial invisibility reduces monster hit chance, radiation suit exempts most damaging floors, computer map reveals unexplored sectors, and light amp brightens the view; Berserk's melee bonus is not implemented because there is no fist weapon; effects reset on level change and are not persisted in savegames |
+| Remaining weapons, mover/switch variants and other boss actions | Not implemented | Required for original gameplay/campaign parity |
+| Powerup items | Partial | Six classic pickups affect damage, monster aim, floor hazards, map visibility and lighting; Berserk lacks a fist/melee damage bonus; powerup state is not persisted in savegames |
 | Music/MUS and Standard MIDI File playback | Partial | Clean-room MUS and SMF parsers decode bundled Freedoom `D_*` lumps into looping PCM mixed by the native audio thread and WebAudio on the browser target; verified via native ALSA-null submission and Chromium/WebKit WebAudio-after-click checks below; models per-channel pitch-bend as a semitone frequency offset and GM-program-aware timbre families via an approximate additive-harmonic/noise synth, not a General MIDI soundfont, so exact timbre/original parity is not claimed |
 | Save/load game state | Partial | F5 saves and F9 loads a JSON snapshot (map, position/angle, health/armor/ammo/weapons, keys, kills/secrets/time, found-secret sectors and per-actor removed/health/noise-alert/chase-memory/infighting-target state) via a source-generated `System.Text.Json` context; desktop persists to a `doomsharp.sav` file next to the executable, the browser persists to `localStorage` via a Save/Load button pair; `SaveGameState` gains trailing optional `ActorAwake`/`ActorAlertX`/`ActorAlertY` fields (format version bumped to 3) so a monster that was blindly chasing a propagated noise (see noise-propagation above) keeps doing so after a save/load cycle instead of silently reverting to dormant — version-1/2 saves still load, defaulting every actor to "not awake" (their prior, if incomplete, behavior); a later fix adds trailing optional `ActorChaseMemory`/`ActorLastKnownTargetX`/`ActorLastKnownTargetY`/`ActorTargetIndex` fields (format version bumped to 4) so a monster closing on a remembered last-seen position (see chase-memory above) or fighting another monster via infighting (see infighting above) keeps doing so after a save/load cycle instead of silently reverting to idle/re-acquiring the player — version-1/2/3 saves still load, defaulting every actor to "no chase memory"/"no infighting target" (their prior, if incomplete, behavior); `ActorTargetIndex` stores each actor's infighting target as an index into the deterministic spawn-order actor list (-1 for "no target"), which `Spawn` rebuilds identically on load so the index stays valid; this fix also corrects a pre-existing latent bug where `Game.Save()` threw `ArgumentException` for any save containing a non-alert/non-chasing actor, because the `double.NaN` "no position" sentinel used by `ActorAlertX`/`ActorAlertY` (and now the chase-memory position fields) is rejected by `System.Text.Json`'s default number writer — `ActorAlertX`/`ActorAlertY`/`ActorLastKnownTargetX`/`ActorLastKnownTargetY` instead encode "no position" as an ordinary JSON `null` per-actor element (nullable array elements) rather than relaxing number parsing for the whole save format, so every other gameplay field (position/angle/feet/time) still rejects non-finite values on load; `ActorTargetIndex` values other than the documented -1 "no target" sentinel or a valid in-range index are rejected as corrupt save data rather than silently clamped; and `TryLoad` now validates a save's entire actor layout/target indices against its target map before mutating any live game state, so a malformed save leaves an in-progress game completely unchanged instead of partially mutating it; a later fix adds a trailing optional `ActorPositionX`/`ActorPositionY` field pair (format version bumped to 5) so a monster that had walked/chased away from its map-defined spawn spot (see `Game.UpdateActor`) keeps its actual position after a save/load cycle instead of silently snapping back to spawn while incorrectly retaining its (now-restored) alert/chase-memory/infighting state for that moved-from position — version-1/2/3/4 saves still load, defaulting every actor to its map's deterministic spawn position (the prior, if incomplete, behavior, already produced by `Game.BuildSpawnState` for the rebuilt candidate actor list); `ActorPositionX`/`ActorPositionY` are only optional as a whole pair (present together or both absent together, since every actor always has a live position, unlike the nullable per-actor alert/chase-memory coordinates above); `TryLoad` rejects a save with only one of the pair present, a non-finite (NaN/Infinity) coordinate, or a coordinate outside the signed-16-bit WAD vertex/thing coordinate range before mutating any live game state, extending the same "fully succeed or leave the existing game completely unchanged" contract; verified end-to-end natively with real X11 key input (F5 produced a real save, F9 restored player position after movement) and with an in-process harness covering successful load plus rejection of bad-version/unknown-map/malformed JSON, plus new `savegame-compat-*`/`savegame-reject-*`/`savegame-position-*` checks covering the awake/alert, chase-memory, infighting-target and actor-position round trips (including continuation after load), legacy-version defaulting (including spawn-position fallback), rejection of out-of-range `ActorTargetIndex` values, rejection of non-finite/out-of-range/mismatched-pair actor positions and gameplay fields, and preservation of an in-progress game across a failed load; headless (120/120) and engine (211/211) checks remain green; native checks are unchanged by this fix (CI retains that coverage); in-flight projectiles are not preserved across a save/load cycle |
 | Animated flat/wall textures | Partial | Fixed built-in clean-room cycle table (`TextureAnimation.cs`) for water/nukage/slime/blood/lava/fire flats and walls (e.g. NUKAGE1-3, FWATER1-4, BLODGR1-4, FIREBLU1-2); advances one frame per 8 tics (vanilla's non-switch rate), driven by the existing fixed 1/35s tick clock so animation speed is independent of framerate; both floor/ceiling flats and upper/lower/middle wall textures animate via the existing WAD lookup/renderer sampling paths; a frame only substitutes when it is actually present in the loaded WAD (checked via new `Wad.HasFlat`/`Wad.HasTexture` helpers), so unrelated WADs see no new missing-texture diagnostics; new engine checks `texture-animation-*` and `renderer-animated-*` cover table mapping, deterministic frame-index-from-tics, missing-frame fallback and renderer-facing resolution; headless (108/108) and engine (133/133) checks and `--demo --validate-maps` (0 missing textures across all maps) remain green |
@@ -65,18 +83,179 @@ Build/publish output includes the Phase 1 WAD, BSD license and credits.
 | Pre-level menus, multiplayer and extended maps/mods | Not implemented | No end-to-end capability claimed |
 | Complete authentic WAD campaigns | Unverified | Map rendering alone is not campaign completion; missing behaviors can block progression |
 
-## In-flight work and known limits
+## Classic switch feedback (branch only)
 
-No additional unmerged engine capability is claimed here. Future progress PRs
-must update this page with their verification scope and evidence links, and keep
-branch-only work separate from merged-main status.
+This increment changes front-sidedef textures only after an existing use action
+actually succeeds. S1 switches latch; supported SR buttons restore the initial
+texture after 35 subsequent gameplay ticks, without extending/duplicating a
+pending reset on successful retrigger. Failed actions do not toggle or consume
+S1 specials. Manual doors and crossing actions retain their non-switch behavior.
+The README documents exact actions, pairing precedence and missing-asset policy.
 
-Remaining compatibility work includes stairs/crushers, remaining mover variants,
-all vanilla map specials and switch textures, other boss actions, exact monster states
-and attacks/infighting, remaining weapons (fist, chainsaw, plasma gun, BFG9000),
-telefragging, original physics, menus and multiplayer. These gaps can
-block complete authentic WAD campaigns. Extended maps/mod formats are not
-implemented.
+There are 112 new original fixtures (343 total). The final new engine tests
+against preserved production source `7bf840a` fail 265 of 1,060 switch assertions;
+all 471 earlier engine assertions pass. Baseline uses a newly published AOT
+executable from that production revision, with the candidate's regression tools
+and fixtures; it does not relabel the older qualification executable.
+All 231 pre-existing fixture WADs remain byte-identical to the retained milestone
+manifest.
+
+Local candidate qualification covers 348 executable/CLI checks, 1,531 engine
+assertions and 60 Linux native assertions (1,939 total). Nine new native processes
+observe rendered off/on colors, upper/middle/lower surfaces, latches/resets and
+denied/manual controls; one additionally requires nonzero ALSA-null PCM.
+Engine checks cover every selected action's front/back/missing-tag paths,
+keys, busy/no-motion failures, pair/slot/state precedence, absent partners and
+fallback, unsupported custom pairs, exact tick boundaries, successful/failed
+retrigger, independent timers, pending restart, warning deduplication and map
+transition. The original stair/crusher checks remain in the same suite.
+
+Linux x64 Native AOT publish and local browser Debug/non-AOT Release builds
+are included. All 45 local Chromium runtime assertions pass, additionally
+observing switch latch, reset, key denial and pause preservation through the
+WASM host. Browser runtime checks do not qualify stair/crusher routes or complete
+campaigns. Local results
+and executable/input/fixture identities are under ignored `artifacts/switch-*`;
+these paths are sandbox-local evidence, not owner-accessible downloads. Remote
+CI for this increment must be independently identified before claiming its
+platform or Release-AOT coverage.
+
+The first native development run exposed an invalid manual-door control target;
+the corrected fixture gives manual doors their actual back sector and a visible
+upper surface. Browser fixture transitions needed pointer-unlock completion and
+keyboard focus before Use; the harness now synchronizes these boundaries and
+allows the spawn-card pickup tick. A concurrent native development run also
+missed an existing type136 traversal threshold; retain that failure separately
+from final serial results.
+These are not hidden as successful runs.
+
+**Integration gate:** a fresh authenticated effective-main-rules request at
+2026-10-17T21:59:52Z still returned HTTP 403, API rate limit exceeded, after the
+previously recorded reset. The retained push rejection identifies repository
+rule violations but not the individual rule. Current rule/check/issue state and
+whether owner action is necessary remain unknown. No main retry, PR, bypass,
+rule change or unreconciled help issue was attempted in this increment.
+A final bounded read at 22:28:03Z also returned HTTP 403 with zero core requests
+remaining and a new reset at 22:43:42Z; no polling or wait for reset was used.
+
+Limits: synthetic XTest input/null PCM are not physical devices or audible sound.
+Vanilla pair selection is not custom/extended switch-lump support. Feedback uses
+existing mover dispatch and does not correct every door or moving-sector
+semantic, establish original-engine parity, or prove campaign completion.
+
+## Stair/crusher milestone qualification (branch only)
+
+### Classic stair builders
+
+The [stair increment](https://github.com/davidfowl/doomsharp/commit/010a6045b6b3dc3bc7e0f5c05d69c5428789d699)
+implements actions 7/8 (8-unit stairs) and 127/100 (fast 16-unit stairs), reusing
+shared floor movers. It does not qualify complete campaigns. The bundled Freedoom WAD
+contains these actions on ten maps, including E1M3, E2M1 and E2M4; this is a
+linedef inventory, not evidence of completing those maps.
+
+The baseline at `6325ccd0f837bdf7bdce1467da709ee211c53ff7` failed 90 of
+128 new engine assertions, including all four generated progression routes.
+The candidate passed 432 combined executable/engine/Linux-native assertions:
+147 generated-WAD executable checks, five CLI rejection checks, 249 engine
+checks and 31 native checks. Of these, 128 engine assertions and eight native
+processes cover stairs. Native positives reached X238 or beyond (required
+X>224), while all four missing-tag controls stopped at X173.71 (required
+160<=X<=176). The raised destination is unreachable without building the stairs.
+
+Coverage includes action/side rules, exact 35-Hz per-tick speeds, relative
+starting heights, texture and directed-chain boundaries, multiple seeds,
+busy seed/neighbor preservation and retry, occupied headroom/resumption,
+one-shot consumption, traversal and restart. There are 44 new original fixtures.
+Linux x64 Native AOT publish and the browser Debug build pass. Final qualification
+is retained locally under `artifacts/stairs-final-all`, not a published raw packet
+or completed remote CI run. Its exact committed source and executable identities
+are recorded in the delivery handoff.
+
+Limits of that local packet: no browser runtime stair traversal, physical-device
+input, audible playback, other-platform runtime results, exact original busy-neighbor quirks,
+switch-texture updates or natural-map/campaign completion. Existing floor
+occupancy rules were retained in that increment rather than introducing
+crushers. Cross-platform CI for the combined milestone is recorded below;
+it does not turn these synthetic routes into natural-map completion evidence.
+
+### Classic cycling crushers
+
+The [crusher increment](https://github.com/davidfowl/doomsharp/commit/42a186f1269cd022ae6f68d2bdcb04b2b89fa1d5)
+adds cycling actions 6/25/77/141 and their coupled stop actions 57/74 while
+preserving the stair increment. These four
+start actions occur on 38 linedefs across eight bundled Freedoom maps:
+18 type6, four type25, 15 type77 and one type141. This inventory does not
+establish natural-map or campaign completion.
+
+The implementation uses existing sector geometry and damage/death/barrel
+machinery, with 35/70-unit-per-second motion between the original ceiling and
+floor+8. Slow crushers retain their one-eighth-speed downstroke after contact
+and recover normal upward speed. Four-tick damage respects existing armor and
+footprints, avoids double hits across two sectors, kills monsters/explodes
+barrels and removes crushed drops. Stop actions suspend movement/damage;
+resumption preserves direction, speed and silent mode. Doors, floors, stairs
+and crushers do not overwrite each other's active crusher reservation.
+
+There are 84 new original fixtures and 222 crusher engine assertions. The
+pre-crusher engine at `010a6045b6b3dc3bc7e0f5c05d69c5428789d699` fails
+177 of those assertions, while all 249 earlier engine assertions pass.
+The combined candidate passes 748 checks: 231 generated-WAD executable checks,
+five CLI rejection checks, 471 engine assertions and 41 native assertions.
+Eight new native processes observe all four active traps killing the player,
+versus stopped controls retaining health100 and identical stationary frames
+across four seconds; two cases additionally verify ALSA-null PCM submission.
+Linux x64 Native AOT publishing and browser Debug compilation pass.
+
+Final committed-source results, logs, native frames, input schedules and hashes
+are retained locally under `artifacts/crusher-final-all`; exact source and
+binary identities are in the delivery handoff. That local packet is separate
+from the downloadable CI evidence below. The simplified 56-unit living-body/16-unit-drop
+model retains placed pickups and corpse artwork rather than implementing
+original actor heights/gibbing or exact obstruction/visual/audio parity.
+Other crusher/ceiling specials and full campaigns remain unfinished.
+
+### Cross-platform CI and integration review
+
+[Run39067803717](https://github.com/davidfowl/doomsharp/actions/runs/39067803717)
+completed successfully on exact implementation `42a186f`: all six native
+OS/architecture jobs and Chromium/Firefox/WebKit jobs passed. Native jobs
+publish AOT, run executable/engine checks and render bounded desktop windows;
+both Linux targets additionally run the synthetic-input native suite.
+The downloaded [Linux x64 artifact](https://github.com/davidfowl/doomsharp/actions/runs/39067803717/artifacts/12113923142)
+confirms 236 executable/CLI, 471 engine and 41 native assertions, all passing
+with matching source revision and executable hash.
+
+Browser jobs publish Release AOT and exercise the actual hosted application.
+Downloaded results pass 38 Chromium, 38 Firefox and 37 WebKit assertions:
+autoload, rendering, keyboard input, firing, pause/restart, audio scheduling,
+local WADs and visible failure/retry behavior. WebKit pointer lock was unavailable,
+so its mouse-look behavior is explicitly unverified. These checks do **not**
+exercise browser stair/crusher routes, establish physical devices/audible sound,
+Safari/mobile behavior or campaign completion. Pages deployment was skipped for
+the feature-branch run; this is not live-site deployment evidence.
+
+Integration review covered shared mover ownership, footprint occupancy and
+four-tick damage, stopping/resuming in both directions, action consumption and
+stair preservation. No material correctness issue was found within the stated
+contract. The qualification documentation changes no engine, host, fixture,
+check, workflow or dependency inputs; runtime evidence remains pinned to `42a186f`
+rather than being mislabeled as a later execution.
+
+Candidate `8af8ca2` also passed a fresh 748 local checks (236 executable/CLI,
+471 engine and 41 native), Linux x64 AOT publishing, both local browser build
+configurations and 36 map-start renders. Only README/progress documentation
+differs from `42a186f`; no runtime inputs changed. Its own CI status could not
+be retrieved after a renewed API rate limit. Neither that unavailable status
+nor the rejected main push is reported as success. Resolving the repository
+rule gate is required before remote integration.
+
+### Remaining compatibility work
+
+Remaining compatibility work includes other stair/crusher and mover variants,
+remaining vanilla map specials and switch action families, other boss actions, exact monster states
+and attacks/infighting, remaining weapons and exact powerup behavior,
+telefragging, original physics, pre-level menus and multiplayer. These gaps can block complete
+authentic WAD campaigns. Extended maps/mod formats are not implemented.
 
 An in-game menu (`Game.cs` `MenuScreen`/`HandleMenu`, rendered by
 `Renderer.DrawMenu`) is now implemented: `F1` toggles a Main menu with
@@ -533,7 +712,7 @@ Owning a proprietary WAD does not permit redistribution; none is bundled.
 
 ## Next milestones
 
-- Complete vanilla map-special dispatch, mover variants, switches and boss actions.
+- Complete vanilla map-special dispatch, remaining mover/switch families and boss actions.
 - Implement remaining combat/weapon/powerup behavior and original gameplay semantics.
 - Add saves and menus, then verify full campaigns with lawful user-supplied WADs.
 - Improve music fidelity (General MIDI soundfont/OPL-quality synthesis) beyond the
