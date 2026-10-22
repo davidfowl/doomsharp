@@ -8,6 +8,8 @@
 
 <h1>DoomSharp</h1>
 <p>The same C# engine, running locally in WebAssembly. Incomplete DOOM compatibility.</p>
+<p>Choose a runtime: <strong>.NET WASM (Blazor AOT)</strong> · <a href="netwasm/">NetWasm</a>.
+The two versions share the C# game engine and bundled Freedoom assets.</p>
 <div class="controls">
     <button @onclick="LoadFreedoom" disabled="@loading">Restart Freedoom</button>
     <label>Local WAD <InputFile OnChange="LoadFile" accept=".wad" disabled="@loading" /></label>
@@ -15,12 +17,13 @@
     <label><input type="checkbox" checked="@muted" @onchange="ToggleMute" /> Mute</label>
     <button @onclick="TriggerSave" disabled="@loading">Save Game</button>
     <button @onclick="TriggerLoad" disabled="@loading">Load Game</button>
+    <button @onclick="RunBenchmark" disabled="@loading">Benchmark 120 renders</button>
 </div>
 <p id="status" role="status">@status</p>
 <canvas id="game" width="640" height="400" tabindex="0" aria-label="DoomSharp game"></canvas>
 <p>Freedoom starts automatically without sound. Click the game to enable sound and capture the mouse. WASD moves, arrows turn,
 Ctrl/click fires, E/Space uses, Shift runs, 1/2/4/5 selects weapons, Tab maps,
-R restarts, F5/Save Game saves, F9/Load Game loads. Esc releases the pointer and pauses. Click to resume.</p>
+R restarts, F1 opens the menu, F5/Save Game saves, F9/Load Game loads. Esc releases the pointer and pauses. Click to resume.</p>
 <p>Local WADs stay on your device (64 MiB limit). Map defaults to the first map.
 No proprietary assets included. <a href="assets/freedoom/COPYING.txt">Freedoom license</a>,
 <a href="assets/freedoom/CREDITS.txt">credits</a>,
@@ -28,6 +31,7 @@ No proprietary assets included. <a href="assets/freedoom/COPYING.txt">Freedoom l
 
 @code {
     readonly Renderer renderer = new();
+    readonly Renderer benchmarkRenderer = new();
     readonly Input input = new();
     readonly Queue<(Buttons Button, bool Down)> inputEvents = new();
     readonly byte[] rgba = new byte[640 * 400 * 4];
@@ -37,6 +41,7 @@ No proprietary assets included. <a href="assets/freedoom/COPYING.txt">Freedoom l
     bool musicChanged;
     string? musicLumpName;
     Game? game;
+    Game? benchmarkGame;
     IJSObjectReference? host;
     DotNetObjectReference<App>? reference;
     string status = "Loading Freedoom...", map = "";
@@ -77,6 +82,7 @@ No proprietary assets included. <a href="assets/freedoom/COPYING.txt">Freedoom l
         status = "Loading WAD...";
         StateHasChanged();
         game = null;
+        benchmarkGame = null;
         Array.Clear(rgba);
         sounds.Clear(); soundCache.Clear(); musicCache.Clear();
         musicChanged = false; musicLumpName = null;
@@ -88,6 +94,7 @@ No proprietary assets included. <a href="assets/freedoom/COPYING.txt">Freedoom l
                 wad.Maps.FirstOrDefault() ?? throw new InvalidDataException("WAD contains no classic maps.") :
                 map.Trim().ToUpperInvariant();
             game = new(wad, selected);
+            benchmarkGame = new(wad, selected);
             game.PlaySound = QueueSound;
             game.PlayMusic = QueueMusic;
             game.SaveGame = SaveToStorage;
@@ -129,6 +136,25 @@ No proprietary assets included. <a href="assets/freedoom/COPYING.txt">Freedoom l
 
     void TriggerSave() { inputEvents.Enqueue((Buttons.Save, true)); inputEvents.Enqueue((Buttons.Save, false)); }
     void TriggerLoad() { inputEvents.Enqueue((Buttons.Load, true)); inputEvents.Enqueue((Buttons.Load, false)); }
+
+    async Task RunBenchmark()
+    {
+        double[] result = await host!.InvokeAsync<double[]>("benchmark", reference, 120);
+        status = $"120 software renders: {result[0]:F1} ms (checksum {(int)result[1]}). Reload to benchmark the initial scene.";
+    }
+
+    [JSInvokable]
+    public int Benchmark(int frames)
+    {
+        if (benchmarkGame == null || frames < 1 || frames > 1000) throw new ArgumentOutOfRangeException(nameof(frames));
+        int checksum = 0;
+        for (int i = 0; i < frames; i++)
+        {
+            benchmarkRenderer.Render(benchmarkGame);
+            checksum = unchecked(checksum * 31 + benchmarkRenderer.Pixels[(i * 7919) % benchmarkRenderer.Pixels.Length]);
+        }
+        return checksum;
+    }
 
     void QueueMusic(string? name)
     {
@@ -217,21 +243,7 @@ No proprietary assets included. <a href="assets/freedoom/COPYING.txt">Freedoom l
     [JSInvokable]
     public void Key(string code, bool down)
     {
-        Buttons button = code switch
-        {
-            "KeyW" or "ArrowUp" => Buttons.Forward,
-            "KeyS" or "ArrowDown" => Buttons.Back,
-            "KeyA" => Buttons.Left, "KeyD" => Buttons.Right,
-            "ArrowLeft" => Buttons.TurnLeft, "ArrowRight" => Buttons.TurnRight,
-            "KeyE" or "Space" => Buttons.Use,
-            "ShiftLeft" or "ShiftRight" => Buttons.Run,
-            "ControlLeft" or "ControlRight" or "Mouse0" => Buttons.Fire,
-            "Digit1" => Buttons.Pistol, "Digit2" => Buttons.Shotgun,
-            "Digit4" => Buttons.Chaingun, "Digit5" => Buttons.RocketLauncher,
-            "Tab" => Buttons.Map, "KeyR" => Buttons.Restart, "F1" => Buttons.Menu,
-            "F5" => Buttons.Save, "F9" => Buttons.Load,
-            _ => Buttons.None
-        };
+        Buttons button = BrowserInput.FromCode(code);
         if (button != Buttons.None) inputEvents.Enqueue((button, down));
     }
 

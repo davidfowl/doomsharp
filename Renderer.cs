@@ -463,6 +463,7 @@ public sealed class Renderer
         }
     }
 
+#if !NETWASM
     public void SavePpm(string path)
     {
         using FileStream file = File.Create(path);
@@ -470,4 +471,5 @@ public sealed class Renderer
         file.Write(header);
         foreach (int pixel in Pixels) { file.WriteByte((byte)(pixel >> 16)); file.WriteByte((byte)(pixel >> 8)); file.WriteByte((byte)pixel); }
     }
+#endif
 }

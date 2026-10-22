@@ -184,6 +184,12 @@ export function stopMusic() {
     if (musicVoice) { musicVoice.stop(); musicVoice.disconnect(); musicVoice = null; }
 }
 
+export async function benchmark(reference, frames) {
+    const start = performance.now();
+    const checksum = await reference.invokeMethodAsync("Benchmark", frames);
+    return [performance.now() - start, checksum];
+}
+
 const saveKey = "doomsharp-save";
 
 export function saveGame(json) {
