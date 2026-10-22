@@ -71,11 +71,11 @@ internal static class NetWasmChecks
                 () => {
                     const context = document.querySelector('#game').getContext('2d');
                     const original = context.putImageData;
-                    window.frameFault = { draws: 0 };
+                    window.frameFault = { draws: 0, faulted: false };
                     context.putImageData = function (...args) {
-                        if (window.frameFault.draws === 0) {
+                        if (!window.frameFault.faulted) {
                             context.clearRect(0, 0, 640, 400);
-                            window.frameFault.draws = -1;
+                            window.frameFault.faulted = true;
                             throw new Error('Injected frame fault');
                         }
                         window.frameFault.draws++;
@@ -91,7 +91,7 @@ internal static class NetWasmChecks
             await page.WaitForFunctionAsync("""
                 () => {
                     if (!document.querySelector('#status')?.textContent.startsWith('Playing E1M1.') ||
-                        window.frameFault.draws < 0) return false;
+                        window.frameFault.draws < 1) return false;
                     const data = document.querySelector('#game').getContext('2d').getImageData(0, 0, 640, 400).data;
                     let nonblack = 0;
                     for (let i = 0; i < data.length; i += 4)
