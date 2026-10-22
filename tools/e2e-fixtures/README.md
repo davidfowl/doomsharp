@@ -99,5 +99,8 @@ In particular, an invalid BLOCKMAP offset is now rejected rather than accepted
 by an unused lump path; empty BLOCKMAP data remains supported because collision
 scans linedefs directly.
 
-Browser checks are separate in `tools/BrowserChecks`. See the root README for
-static publishing, the C# static server and Chromium/Firefox/WebKit commands.
+Browser checks are separate in `tools/BrowserChecks`. See
+[playing and publishing](../../docs/PLAYING.md#browser-webassembly) for static
+publishing and the C# static server, and
+[development and verification](../../docs/DEVELOPMENT.md#verification-and-development-tools)
+for Chromium/Firefox/WebKit commands.

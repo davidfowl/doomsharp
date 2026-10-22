@@ -1,8 +1,8 @@
 # Progress
 
 **Current tooling:** the repository now uses C# fixture/regression tools and a
-shared-engine browser WebAssembly host. See [README.md](README.md) for current
-commands and verification boundaries. Entries below are historical: Python
+shared-engine browser WebAssembly host. See [development and verification](docs/DEVELOPMENT.md)
+for current commands and verification boundaries. Entries below are historical: Python
 commands and old runner hashes refer to their recorded revisions, not current
 tooling. Historical platform results do not qualify a newer local revision.
 
@@ -393,7 +393,8 @@ qualify lowering, boarding, stationary wait, automatic carry, stable height64
 The latter compares the first cleared native frame with the same build's focused
 passing pose before issuing the second activation. This is a static original
 fixture oracle, not an original-game visual oracle or complete lift compatibility.
-Reproduction and output-directory rules are in [README](README.md).
+Current reproduction and output-directory rules are in
+[development and verification](docs/DEVELOPMENT.md).
 Two deliberately planned fresh native processes each completed both cycles;
 both returned to X=-111.14 with health100. Their cleared native frames matched
 the focused accepted pose exactly. These are local executable results; current
@@ -598,7 +599,8 @@ move the target from2400 to2096; at most three pre-death impacts cannot kill the
 1000-health Baron. The wrong-episode fixture also supplies original SKY2 artwork
 instead of its initially logged fallback. Failed processes/frames remain in
 the worker-local packet, alongside sources, exact ELF/input/tool hashes and
-all native events/results. Public reproduction is in [README](README.md).
+all native events/results. Current public reproduction is in
+[development and verification](docs/DEVELOPMENT.md).
 These original synthetic maps are not original E1M8, real-map navigation or
 campaign completion. No physical/audible or Windows/macOS boss-gameplay result
 is claimed; existing CI remains three-host AOT/demo/presentation.
@@ -737,7 +739,7 @@ dotnet run -c Release -- --wad /path/to/freedoom1.wad --validate-maps
 ```
 
 Publish on the matching host OS, not across OSes. Native compiler prerequisites
-and controls are in [README](README.md).
+and controls are in [playing and publishing](docs/PLAYING.md).
 
 | Host | Native AOT publish | Run the published executable |
 | --- | --- | --- |

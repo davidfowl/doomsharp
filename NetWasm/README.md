@@ -31,5 +31,7 @@ Review its terms before using the SDK in a commercial build pipeline; generated
 applications retain their authors' chosen license subject to included notices.
 
 The `NETWASM` conditional only excludes unused desktop filesystem helpers;
-engine/rendering/gameplay sources otherwise remain shared. Benchmark methodology,
-runtime limitations and site deployment instructions are in the root README.
+engine/rendering/gameplay sources otherwise remain shared. See
+[development and verification](../docs/DEVELOPMENT.md#published-build-comparison)
+for benchmark methodology and [playing and publishing](../docs/PLAYING.md#browser-webassembly)
+for browser limitations and site deployment instructions.
