@@ -640,6 +640,26 @@ try
             Check("boss-" + name, (game.Map.Sectors[1].Floor == -32) == activates && !game.Finished,
                 new { game.Kills, floor = game.Map.Sectors[1].Floor, game.Health });
         }
+        foreach (string name in new[] { "cyber-exit", "cyber-two", "cyber-wrong-map", "cyber-wrong-monster",
+            "spider-exit", "spider-wrong-map", "spider-wrong-monster" })
+        {
+            Game game = Load("boss-" + name); Tick(game);
+            foreach (Actor boss in game.Actors.Where(a => a.Enemy)) boss.Health = 1;
+            Tick(game, Buttons.Fire, 70);
+            bool shouldExit = name is "cyber-exit" or "spider-exit";
+            Check("boss-" + name + "-first-kill", game.Finished == shouldExit && game.Kills == 1,
+                new { game.Map.Name, game.Kills, game.Finished, game.Health });
+            if (name == "cyber-two")
+            {
+                Actor remaining = game.Actors.Single(a => a.Enemy && a.Health > 0);
+                double angle = Math.Atan2(remaining.Position.Y - game.Position.Y, remaining.Position.X - game.Position.X);
+                game.Tick(new Input { MouseX = (game.Angle - angle) / .003 }, 1.0 / 35);
+                Tick(game, Buttons.Fire, 70);
+                Check("boss-cyber-two-final-kill", game.Kills == 2 && game.Finished &&
+                    game.CompletionPrompt == "END OF AVAILABLE MAPS - R TO REPLAY",
+                    new { game.Kills, game.Finished, game.CompletionPrompt });
+            }
+        }
         foreach (string name in new[] { "combat", "miss", "splash", "occlusion", "thin-wall", "barrel" })
         {
             Game game = Load("rocket-" + name); Tick(game); Tick(game, Buttons.Fire);
