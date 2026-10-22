@@ -1360,6 +1360,11 @@ try
             using NativeGame game = await NativeGame.Start(executable, ["--wad", Path.Combine(fixtures, name + ".wad")],
                 Path.Combine(output, "native-" + name), source, audio: special == 99 && variant == "middle");
             Frame before = game.Capture("before");
+            for (int attempt = 1; attempt <= 20 && before.SwitchPixels(false) <= 500; attempt++)
+            {
+                Thread.Sleep(100);
+                before = game.Capture($"before-retry-{attempt}");
+            }
             game.Hold("e", .06); Thread.Sleep(100);
             Frame activated = game.Capture("activated");
             Thread.Sleep(1100);
