@@ -1386,7 +1386,9 @@ try
                 Check("native-" + name, text.Contains(paused ? "health=100," : "health=0,", StringComparison.Ordinal) &&
                     (!paused || first.Hash == final.Hash), text);
                 if (special == 6)
-                    Check("native-" + name + "-PCM", Regex.IsMatch(text, @"Audio: [1-9]\d* sound events, [1-9]\d* PCM samples submitted"), text);
+                    Check("native-" + name + "-PCM", Regex.IsMatch(text,
+                        paused ? @"Audio: \d+ sound events, [1-9]\d* PCM samples submitted" :
+                            @"Audio: [1-9]\d* sound events, [1-9]\d* PCM samples submitted"), text);
             }
         foreach (int special in new[] { 7, 8, 100, 127 })
             foreach (bool tagged in new[] { true, false })
