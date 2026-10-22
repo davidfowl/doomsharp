@@ -471,6 +471,18 @@ try
     await WaitForLoad();
     await WaitForPixels();
     Check("Freedoom-recovers-after-download-failure", (await page.GetByRole(AriaRole.Status).InnerTextAsync()).StartsWith("Playing E1M1.", StringComparison.Ordinal));
+    if (type.Name == BrowserType.Webkit)
+    {
+        await page.RouteAsync("**/assets/freedoom/freedoom1.wad",
+            route => route.FulfillAsync(new() { Status = 503, Body = "WAD unavailable" }));
+        await page.ReloadAsync();
+        await page.GetByRole(AriaRole.Status).Filter(new() { HasText = "Cannot load WAD:" }).WaitForAsync();
+        await page.UnrouteAsync("**/assets/freedoom/freedoom1.wad");
+        await page.GetByRole(AriaRole.Button, new() { Name = "Restart Freedoom", Exact = true }).ClickAsync();
+        await WaitForLoad();
+        await WaitForPixels();
+        Check("webkit-repeated-download-retry-renders", (await page.GetByRole(AriaRole.Status).InnerTextAsync()).StartsWith("Playing E1M1.", StringComparison.Ordinal));
+    }
     Check("no-unhandled-browser-errors", errors.Count == 0, errors);
     Check("resources-stay-under-base-path", outsideBase.Count == 0, outsideBase);
     Check("no-false-fatal-error-banner", !await page.Locator("#blazor-error-ui").IsVisibleAsync());

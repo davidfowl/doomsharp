@@ -160,7 +160,8 @@ No proprietary assets included. <a href="assets/freedoom/COPYING.txt">Freedoom l
     [JSInvokable]
     public async Task<byte[]> Frame(double milliseconds, double mouseX, bool active)
     {
-        if (game != null)
+        Game? frameGame = game;
+        if (frameGame != null)
         {
             if (active)
             {
@@ -174,13 +175,13 @@ No proprietary assets included. <a href="assets/freedoom/COPYING.txt">Freedoom l
                         inputEvents.Dequeue();
                         input.Set(next.Button, next.Down);
                     }
-                    game.Tick(input, 1.0 / 35);
+                    frameGame.Tick(input, 1.0 / 35);
                     accumulator -= 1.0 / 35;
                 }
                 previous = milliseconds;
             }
             else ResetInput();
-            renderer.Render(game);
+            renderer.Render(frameGame);
             for (int i = 0; i < renderer.Pixels.Length; i++)
             {
                 int color = renderer.Pixels[i];
