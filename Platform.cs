@@ -36,6 +36,7 @@ static class Platform
         '6' => Buttons.PlasmaRifle,
         '7' => Buttons.BFG9000,
         '\t' => Buttons.Map,
+        0xffbe => Buttons.Menu,
         0xffc2 or 0x74 => Buttons.Save, 0xffc6 or 0x78 => Buttons.Load,
         _ => Buttons.None
     };
@@ -231,7 +232,7 @@ sealed unsafe class WindowsPlatform : IPlatform
                 Buttons button = key switch
                 {
                     38 => Buttons.Forward, 40 => Buttons.Back, 37 => Buttons.TurnLeft, 39 => Buttons.TurnRight,
-                    16 => Buttons.Run, 17 => Buttons.Fire, _ => Platform.Key(key)
+                    16 => Buttons.Run, 17 => Buttons.Fire, 0x70 => Buttons.Menu, _ => Platform.Key(key)
                 };
                 input.Set(button, down); return 0;
             }
