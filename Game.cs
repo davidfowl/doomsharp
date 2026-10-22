@@ -730,9 +730,21 @@ public sealed class Game
 
     void BossDeath(Actor actor)
     {
-        if (bossDeathActivated || Map.Name != "E1M8" || actor.Type != 3003 || Health <= 0 ||
-            Actors.Any(a => a.Type == 3003 && !a.Removed && a.Health > 0)) return;
+        int bossType = Map.Name switch
+        {
+            "E1M8" => 3003,
+            "E2M8" => 16,
+            "E3M8" => 7,
+            _ => 0
+        };
+        if (bossDeathActivated || bossType == 0 || actor.Type != bossType || Health <= 0 ||
+            Actors.Any(a => a.Type == bossType && !a.Removed && a.Health > 0)) return;
         bossDeathActivated = true;
+        if (Map.Name is "E2M8" or "E3M8")
+        {
+            FinishLevel(false);
+            return;
+        }
         bool targeted = false, activated = false;
         for (int i = 0; i < Map.Sectors.Length; i++)
         {
