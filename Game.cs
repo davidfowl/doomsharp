@@ -35,6 +35,18 @@ public sealed class Actor
     public bool Removed, Dropped;
     public char? FixedFrame;
     public bool Hanging;
+    // Null means "fight the player" (the default); set by infighting when another monster's attack hurts this one.
+    public Actor? Target;
+    // "Chase memory": the target's position the last time it was actually seen, and a countdown (seconds)
+    // during which the monster keeps pursuing that remembered spot after losing line-of-sight. Null/zero
+    // means the monster has never seen its target (or has fully forgotten it) and sits idle.
+    public Vec? LastKnownTargetPosition;
+    public double ChaseMemory;
+    // Set by Game.NoiseAlert when a propagated sound reaches this monster's sector while it has no direct
+    // line of sight to the player; AlertPosition is the sound's origin to blindly head toward until the
+    // monster either arrives there, regains direct sight of the player, or is hurt into infighting instead.
+    public bool Awake;
+    public Vec? AlertPosition;
     public Actor(Thing thing, string sprite, bool enemy, bool solid, double radius, int health)
     {
         Position = thing.Position; Type = thing.Type; Sprite = sprite; Enemy = enemy; Solid = solid;
@@ -48,6 +60,9 @@ public sealed class Projectile
     public double Z, Time = 5;
     public bool Rocket, Exploded;
     public int ExplosionTicks;
+    // The monster that fired this projectile; null for player-fired projectiles. Used to attribute
+    // infighting damage and to exclude the shooter from its own projectile's hit test.
+    public Actor? Owner;
 }
 
 public sealed class Game
@@ -81,6 +96,9 @@ public sealed class Game
     public int Kills { get; private set; }
     public int TotalEnemies => Actors.Count(a => a.Enemy);
     public int Secrets { get; private set; }
+    public int TotalSecrets => Map.Sectors.Count(s => s.Special == 9);
+    public int Items { get; private set; }
+    public int TotalItems => Actors.Count(a => IsItemType(a.Type));
     public double Time { get; private set; }
     public double FireTime { get; private set; }
     public double DamageFlash { get; private set; }
@@ -96,6 +114,9 @@ public sealed class Game
     public bool Automap { get; private set; }
     public bool Finished { get; private set; }
     public string CompletionPrompt { get; private set; } = "";
+    /// <summary>Classic end-of-level stats lines (map name, kills/items/secrets percentages, time,
+    /// continue prompt), populated by <see cref="FinishLevel"/> and rendered while <see cref="Finished"/>.</summary>
+    public string[] IntermissionStats { get; private set; } = [];
     public string Message { get; private set; } = "";
     public List<Actor> Actors { get; } = [];
     public List<Projectile> Projectiles { get; } = [];
@@ -126,24 +147,41 @@ public sealed class Game
 
     void Spawn()
     {
-        Thing? start = Map.Things.Cast<Thing?>().FirstOrDefault(t => t!.Value.Type == 1);
-        if (start == null) throw new InvalidDataException($"{Map.Name} has no player-one start.");
-        Position = start.Value.Position; Angle = start.Value.Angle * Math.PI / 180;
-        Feet = Map.FloorAt(Position, 16);
-        Actors.Clear(); Projectiles.Clear(); foundSecrets.Clear(); visitedSectors.Clear();
+        (Vec position, double angle, double feet, List<Actor> actors, int unsupportedThings) = BuildSpawnState(Map);
+        Position = position; Angle = angle; Feet = feet;
+        Actors.Clear(); Actors.AddRange(actors);
+        Projectiles.Clear(); foundSecrets.Clear(); visitedSectors.Clear();
         bossDeathActivated = false;
-        UnsupportedThings = 0;
-        foreach (Thing thing in Map.Things)
+        UnsupportedThings = unsupportedThings;
+    }
+
+    /// <summary>
+    /// Computes the player start position/angle/feet and the deterministic spawn-order actor list for
+    /// <paramref name="map"/>, purely as a function of <paramref name="map"/> (no instance state is read or
+    /// mutated). Shared by <see cref="Spawn"/> (which commits the result to the live game) and
+    /// <see cref="TryLoad"/> (which uses it to validate a save's actor layout against its target map
+    /// <em>before</em> committing any mutation, so a malformed save never partially mutates an in-progress
+    /// game).
+    /// </summary>
+    static (Vec Position, double Angle, double Feet, List<Actor> Actors, int UnsupportedThings) BuildSpawnState(Map map)
+    {
+        Thing? start = map.Things.Cast<Thing?>().FirstOrDefault(t => t!.Value.Type == 1);
+        if (start == null) throw new InvalidDataException($"{map.Name} has no player-one start.");
+        Vec position = start.Value.Position; double angle = start.Value.Angle * Math.PI / 180;
+        double feet = map.FloorAt(position, 16);
+        List<Actor> actors = []; int unsupportedThings = 0;
+        foreach (Thing thing in map.Things)
         {
             if (thing.Type is >= 1 and <= 4 or 11 or 14 || (thing.Flags & 16) != 0 || (thing.Flags & 2) == 0) continue;
             Actor? actor = CreateActor(thing);
             if (actor == null)
             {
-                UnsupportedThings++;
+                unsupportedThings++;
                 Console.Error.WriteLine($"Unsupported thing type {thing.Type} at {thing.Position}; skipped.");
             }
-            else Actors.Add(actor);
+            else actors.Add(actor);
         }
+        return (position, angle, feet, actors, unsupportedThings);
     }
 
     static Actor? CreateActor(Thing t) => t.Type switch
@@ -379,10 +417,12 @@ public sealed class Game
         {
             Sector sector = Map.Sectors[Map.FindSector(destination.Position)];
             if (line.Tag == 0 || sector.Tag != line.Tag) continue;
-            if (!Map.CanMove(destination.Position, destination.Position, 16, 56, sector.Floor) ||
-                Actors.Any(a => !a.Removed && a.Solid && a.Health > 0 &&
-                    (a.Position - destination.Position).Length < a.Radius + 16))
+            if (!Map.CanMove(destination.Position, destination.Position, 16, 56, sector.Floor))
             { Say("TELEPORT DESTINATION BLOCKED"); return true; }
+            // Telefrag: anything occupying the destination is instantly killed, and the teleport still succeeds.
+            foreach (Actor blocker in Actors.Where(a => !a.Removed && a.Solid && a.Health > 0 &&
+                (a.Position - destination.Position).Length < a.Radius + 16).ToArray())
+                Hurt(blocker, blocker.Health);
             Position = destination.Position; Feet = Map.FloorAt(Position, 16); Angle = destination.Angle * Math.PI / 180;
             PickupFlash = .3; PlaySound?.Invoke("TELEPT");
             if (line.Special == 39) line.Special = 0;
@@ -658,6 +698,7 @@ public sealed class Game
         PlaySound?.Invoke("PISTOL");
         double spread = chaingunAccuratePair ? 0 : (random.NextDouble() - random.NextDouble()) * Math.PI / 32;
         Hitscan(Angle + spread);
+        NoiseAlert(Position);
         return true;
     }
 
@@ -673,6 +714,7 @@ public sealed class Game
             double angle = Angle + (random.NextDouble() - .5) * (shotgun ? .12 : .015);
             Hitscan(angle);
         }
+        NoiseAlert(Position);
     }
 
     void ShootRocket()
@@ -686,6 +728,7 @@ public sealed class Game
             Velocity = new Vec(Math.Cos(Angle), Math.Sin(Angle)) * 700
         });
         PlaySound?.Invoke("RLAUNC");
+        NoiseAlert(Position);
     }
 
     void Hitscan(double angle)
@@ -705,12 +748,19 @@ public sealed class Game
         if (target != null) Hurt(target, random.Next(1, 4) * 5);
     }
 
-    void Hurt(Actor actor, int damage)
+    // instigator is the attacking actor (null for the player), used only to drive infighting retargeting:
+    // a monster hurt by another monster switches to fight its attacker, while player damage never retargets.
+    void Hurt(Actor actor, int damage, Actor? instigator = null)
     {
         if (actor.Removed || actor.Health <= 0) return;
         actor.Health -= damage; actor.HurtTime = .2;
         PlaySound?.Invoke("POPAIN");
-        if (actor.Health > 0) return;
+        if (actor.Health > 0)
+        {
+            if (actor.Enemy && instigator != null && instigator != actor && instigator.Enemy && instigator.Health > 0)
+                actor.Target = instigator;
+            return;
+        }
         if (actor.Enemy)
         {
             Kills++; PlaySound?.Invoke("PODTH1");
@@ -727,59 +777,155 @@ public sealed class Game
         if (actor.Type == 2035)
         {
             actor.Removed = true; PlaySound?.Invoke("BAREXP");
-            Blast(actor.Position, Map.Sectors[Map.FindSector(actor.Position)].Floor + 32, false);
+            Blast(actor.Position, Map.Sectors[Map.FindSector(actor.Position)].Floor + 32, false, instigator);
         }
     }
 
-    void Blast(Vec origin, double z, bool rocket)
+    void Blast(Vec origin, double z, bool rocket, Actor? instigator = null)
     {
         foreach (Actor other in Actors.ToArray())
             if (!other.Removed && other.Health > 0 && (other.Enemy || other.Type == 2035))
             {
                 double distance = Math.Max(0, (other.Position - origin).Length - (rocket ? other.Radius : 0));
                 if (distance < 128 && Map.ClearSight(origin, other.Position, z))
-                    Hurt(other, Math.Max(1, (int)(128 - distance)));
+                    Hurt(other, Math.Max(1, (int)(128 - distance)), instigator);
             }
         double playerDistance = Math.Max(0, (Position - origin).Length - (rocket ? 16 : 0));
         if (playerDistance < 128 && Map.ClearSight(origin, Position, rocket ? z : Eye))
             Damage(rocket ? Math.Max(1, (int)(128 - playerDistance)) : (int)(128 - playerDistance));
     }
 
+    // Classic DOOM monsters keep a few seconds of "memory" of where their target last stood after losing
+    // line-of-sight, continuing to close on that spot instead of freezing in place; the window here is a
+    // few seconds' worth of ticks, matching that behavior without depending on the original movecount table.
+    const double ChaseMemoryDuration = 3.0;
+
     void UpdateActor(Actor actor, double dt)
     {
         actor.HurtTime = Math.Max(0, actor.HurtTime - dt); actor.Cooldown -= dt;
         if (actor.Removed) return;
         if (actor.Health <= 0) { actor.DeathTime += dt; return; }
-        if (!actor.Enemy || Health <= 0 || Finished) return;
-        Vec delta = Position - actor.Position;
-        double distance = delta.Length;
+        if (!actor.Enemy || Finished) return;
+        // A monster normally fights the player; infighting (see Hurt) can instead point it at another monster.
+        Actor? rival = actor.Target != null && actor.Target != actor && !actor.Target.Removed && actor.Target.Health > 0
+            ? actor.Target : null;
+        if (rival == null && Health <= 0) return;
+        Vec targetPosition = rival?.Position ?? Position;
+        double meleeRadius = rival?.Radius ?? 0, stopRadius = rival?.Radius ?? 20;
         double floor = Map.Sectors[Map.FindSector(actor.Position)].Floor;
-        if (distance > 1500 || !Map.ClearSight(actor.Position, Position, floor + 40)) return;
-        if (actor.Cooldown <= 0 && (distance < 64 || actor.Type is not (3002 or 58) && distance < 800))
+        Vec delta = targetPosition - actor.Position;
+        double distance = delta.Length;
+        bool sighted = distance <= 1500 && Map.ClearSight(actor.Position, targetPosition, floor + 40);
+        if (sighted)
+        {
+            // Target is actually visible: refresh the remembered spot and reset the pursuit window.
+            actor.LastKnownTargetPosition = targetPosition;
+            actor.ChaseMemory = ChaseMemoryDuration;
+        }
+        else
+        {
+            actor.ChaseMemory = Math.Max(0, actor.ChaseMemory - dt);
+            if (actor.ChaseMemory > 0 && actor.LastKnownTargetPosition is { } remembered)
+            {
+                // Sight is lost but the memory window hasn't expired: keep closing on the last-known
+                // position instead of attacking (can't see the target) or standing still.
+                targetPosition = remembered;
+                delta = targetPosition - actor.Position;
+                distance = delta.Length;
+            }
+            else if (rival == null && actor.Awake && actor.AlertPosition is { } alert)
+            {
+                // Chase memory of the player has run out (or never existed): a monster that was woken by a
+                // propagated noise (see NoiseAlert) still blindly heads for the sound's origin until it
+                // arrives, regains sight of the player (handled above once close enough), or is blocked.
+                Vec toAlert = alert - actor.Position;
+                double alertDistance = toAlert.Length;
+                if (alertDistance > actor.Radius + 20 && actor.HurtTime == 0)
+                    MoveToward(actor, toAlert, alertDistance, floor, dt);
+                else
+                    actor.Awake = false; // reached the noise's source without finding the player; go back to sleep
+                return;
+            }
+            else return;
+        }
+        if (sighted && actor.Cooldown <= 0 && (distance < 64 + meleeRadius || actor.Type is not (3002 or 58) && distance < 800))
         {
             actor.Cooldown = 1.1 + random.NextDouble();
-            double invisibility = InvisibilityTime > 0 ? .25 : 1;
-            if (distance < 64) { if (random.NextDouble() < invisibility) Damage(random.Next(3, 9) * 3); }
+            if (distance < 64 + meleeRadius)
+            {
+                int damage = random.Next(3, 9) * 3;
+                if (rival != null) Hurt(rival, damage, actor);
+                else if (random.NextDouble() < (InvisibilityTime > 0 ? .25 : 1)) Damage(damage);
+            }
             else if (actor.Type is 3004 or 9 or 65 or 7)
             {
                 PlaySound?.Invoke(actor.Type == 9 ? "SHOTGN" : "PISTOL");
-                if (random.NextDouble() < Math.Clamp(1 - distance / 1200, .15, .9) * invisibility)
-                    Damage(random.Next(1, 5) * (actor.Type == 9 ? 5 : 3));
+                double hitChance = Math.Clamp(1 - distance / 1200, .15, .9);
+                if (rival == null && InvisibilityTime > 0) hitChance *= .25;
+                if (random.NextDouble() < hitChance)
+                {
+                    int damage = random.Next(1, 5) * (actor.Type == 9 ? 5 : 3);
+                    if (rival != null) Hurt(rival, damage, actor); else Damage(damage);
+                }
             }
             else
             {
-                Projectiles.Add(new() { Position = actor.Position, Z = floor + 32, Velocity = delta * (220 / distance) });
+                Projectiles.Add(new() { Position = actor.Position, Z = floor + 32, Velocity = delta * (220 / distance), Owner = actor });
                 PlaySound?.Invoke("FIRSHT");
             }
         }
-        if (distance > actor.Radius + 20 && actor.HurtTime == 0)
+        if (distance > actor.Radius + stopRadius && actor.HurtTime == 0) MoveToward(actor, delta, distance, floor, dt);
+    }
+
+    void MoveToward(Actor actor, Vec delta, double distance, double floor, double dt)
+    {
+        Vec move = delta * (dt * (actor.Type is 3002 or 58 ? 90 : 42) / distance);
+        Vec next = actor.Position + move;
+        if (Map.CanMove(actor.Position, next, actor.Radius, 56, floor, true) &&
+            !Actors.Any(a => a != actor && a.Solid && !a.Removed && a.Health > 0 &&
+                (a.Position - next).Length < actor.Radius + a.Radius))
+            actor.Position = next;
+    }
+
+    // Floods the sector graph from a loud sound's origin (player gunfire or pain) across currently-open
+    // connections, waking any monster whose sector the flood reaches so it can start blindly chasing the
+    // player (see UpdateActor) even without direct line of sight — a clean-room analogue of classic DOOM's
+    // P_NoiseAlert. A connection only propagates sound when it currently has an open gap between the two
+    // sectors' floor/ceiling (so a closed door blocks it, matching how it also blocks sight/movement) and
+    // is not a classic sound-blocking linedef (flag bit 0x40, ML_SOUNDBLOCK). The flood is additionally
+    // capped at the same 1500-unit range monsters already use for direct sight, so distant noise fades out.
+    void NoiseAlert(Vec origin)
+    {
+        const double range = 1500;
+        const int soundBlock = 0x40;
+        int start = Map.FindSector(origin);
+        Dictionary<int, double> reached = new() { [start] = 0 };
+        Queue<int> frontier = new();
+        frontier.Enqueue(start);
+        while (frontier.Count > 0)
         {
-            Vec move = delta * (dt * (actor.Type is 3002 or 58 ? 90 : 42) / distance);
-            Vec next = actor.Position + move;
-            if (Map.CanMove(actor.Position, next, actor.Radius, 56, floor, true) &&
-                !Actors.Any(a => a != actor && a.Solid && !a.Removed && a.Health > 0 &&
-                    (a.Position - next).Length < actor.Radius + a.Radius))
-                actor.Position = next;
+            int sector = frontier.Dequeue();
+            double baseDistance = reached[sector];
+            foreach (int index in Map.SectorLines[sector])
+            {
+                Line line = Map.Lines[index];
+                if (line.Left == 65535 || (line.Flags & soundBlock) != 0) continue;
+                int right = Map.Sides[line.Right].Sector, left = Map.Sides[line.Left].Sector;
+                int other = right == sector ? left : right;
+                if (other == sector) continue;
+                Sector a = Map.Sectors[right], b = Map.Sectors[left];
+                if (Math.Min(a.Ceiling, b.Ceiling) - Math.Max(a.Floor, b.Floor) <= 0) continue; // closed door
+                double distance = baseDistance + (Map.Vertices[line.A] - Map.Vertices[line.B]).Length;
+                if (distance > range || (reached.TryGetValue(other, out double existing) && existing <= distance))
+                    continue;
+                reached[other] = distance;
+                frontier.Enqueue(other);
+            }
+        }
+        foreach (Actor actor in Actors)
+        {
+            if (actor.Enemy && !actor.Removed && actor.Health > 0 && reached.ContainsKey(Map.FindSector(actor.Position)))
+            { actor.Awake = true; actor.AlertPosition = origin; }
         }
     }
 
@@ -800,7 +946,7 @@ public sealed class Game
             {
                 foreach (Actor actor in Actors)
                 {
-                    if (actor.Removed || !actor.Solid || actor.Health <= 0) continue;
+                    if (actor == p.Owner || actor.Removed || !actor.Solid || actor.Health <= 0) continue;
                     double floor = Map.Sectors[Map.FindSector(actor.Position)].Floor;
                     if (p.Z + 4 <= floor || p.Z - 4 >= floor + 56) continue;
                     double hit = Map.CircleImpact(p.Position, next, actor.Position, actor.Radius + 11);
@@ -815,6 +961,15 @@ public sealed class Game
                     double hit = Map.CircleImpact(p.Position, next, Position, 20);
                     if (hit < impact) { impact = hit; playerHit = true; }
                 }
+                // Monster fireballs can also strike other monsters in their path, triggering infighting.
+                foreach (Actor actor in Actors)
+                {
+                    if (actor == p.Owner || actor.Removed || !actor.Solid || actor.Health <= 0) continue;
+                    double floor = Map.Sectors[Map.FindSector(actor.Position)].Floor;
+                    if (p.Z + 4 <= floor || p.Z - 4 >= floor + 56) continue;
+                    double hit = Map.CircleImpact(p.Position, next, actor.Position, actor.Radius);
+                    if (hit < impact) { impact = hit; target = actor; playerHit = false; }
+                }
             }
             if (impact <= 1)
             {
@@ -824,13 +979,14 @@ public sealed class Game
                     // Mark the impact before damage: barrel chains cannot apply it a second time.
                     p.Exploded = true; p.ExplosionTicks = 18;
                     if (target != null && (target.Enemy || target.Type == 2035))
-                        Hurt(target, random.Next(1, 9) * 20);
-                    Blast(p.Position, p.Z, true);
+                        Hurt(target, random.Next(1, 9) * 20, p.Owner);
+                    Blast(p.Position, p.Z, true, p.Owner);
                     PlaySound?.Invoke("BAREXP");
                 }
                 else
                 {
                     if (playerHit) { Damage(random.Next(1, 9) * 3); PlaySound?.Invoke("FIRXPL"); }
+                    else if (target != null) { Hurt(target, random.Next(1, 9) * 3, p.Owner); PlaySound?.Invoke("FIRXPL"); }
                     p.Time = 0;
                 }
                 continue;
@@ -845,8 +1001,18 @@ public sealed class Game
         if (InvulnerabilityTime > 0) return;
         int absorb = Math.Min(Armor, amount / 3); Armor -= absorb; Health = Math.Max(0, Health - amount + absorb);
         DamageFlash = .3; PlaySound?.Invoke(Health > 0 ? "PLPAIN" : "PLDETH");
+        NoiseAlert(Position); // player pain/death cries are also loud enough to wake nearby monsters
         if (Health == 0) Say("YOU DIED - PRESS R TO RESTART");
     }
+
+    /// <summary>
+    /// Thing types counted toward the classic "items" intermission stat: health/armor bonuses,
+    /// megaspheres/soulspheres, powerups and keycards/skull keys. Ammo and weapon pickups are
+    /// excluded, matching the original engine's <c>itemcount</c> semantics.
+    /// </summary>
+    static bool IsItemType(int type) => type is 2011 or 2012 or 2014 or 2015 or 2018 or 2019 or 2013 or 2023
+        or 2022 or 2024 or 2025 or 2026 or 2045
+        or 5 or 40 or 6 or 39 or 13 or 38;
 
     void Pickup(Actor actor)
     {
@@ -896,16 +1062,29 @@ public sealed class Game
         }
         if (!taken) return;
         actor.Removed = true; PickupFlash = .15; PlaySound?.Invoke("ITEMUP");
+        if (IsItemType(actor.Type)) Items++;
     }
 
     void Say(string text) { Message = text; messageTime = 4; }
+
+    /// <summary>Rounds a value/total ratio to a whole percentage, treating a zero total as 100% (no
+    /// kills/items/secrets required means full credit, matching the original intermission screen).</summary>
+    static int Percent(int value, int total) => total <= 0 ? 100 : (int)Math.Round(value * 100.0 / total);
 
     void FinishLevel(bool secret)
     {
         Finished = true; secretExit = secret;
         string? next = NextMapName(Map.Name, secretExit);
         CompletionPrompt = next != null && Wad.Maps.Contains(next) ?
-            "LEVEL COMPLETE - FIRE TO CONTINUE" : "END OF AVAILABLE MAPS - R TO REPLAY";
+            "FIRE TO CONTINUE" : "END OF AVAILABLE MAPS - R TO REPLAY";
+        int minutes = (int)(Time / 60), seconds = (int)Time % 60;
+        IntermissionStats =
+        [
+            Map.Name + " FINISHED",
+            $"KILLS {Percent(Kills, TotalEnemies)}%  ITEMS {Percent(Items, TotalItems)}%  SECRETS {Percent(Secrets, TotalSecrets)}%",
+            $"TIME {minutes:D2}:{seconds:D2}",
+            CompletionPrompt,
+        ];
         Say(CompletionPrompt);
     }
 
@@ -966,8 +1145,8 @@ public sealed class Game
             HasShotgun = false; HasChaingun = false; HasRocketLauncher = false;
             SelectedWeapon = Weapon.Pistol;
         }
-        Keys = 0; Kills = 0; Secrets = 0; Time = 0; FireTime = 0; Finished = false; secretExit = false;
-        CompletionPrompt = "";
+        Keys = 0; Kills = 0; Secrets = 0; Items = 0; Time = 0; FireTime = 0; Finished = false; secretExit = false;
+        CompletionPrompt = ""; IntermissionStats = [];
         DamageFlash = 0; PickupFlash = 0; damageTick = 0; WalkTime = 0;
         InvulnerabilityTime = 0; InvisibilityTime = 0; RadiationSuitTime = 0; LightAmpTime = 0;
         HasComputerMap = false; HasBerserk = false;
@@ -978,22 +1157,35 @@ public sealed class Game
     }
 
     /// <summary>
-    /// Serializes the current map, player stats/inventory and per-actor removed/health state to JSON.
-    /// In-flight projectiles are not preserved; <see cref="TryLoad"/> always resumes with none airborne.
+    /// Serializes the current map, player stats/inventory and per-actor removed/health/alert/position state
+    /// to JSON. In-flight projectiles are not preserved; <see cref="TryLoad"/> always resumes with none
+    /// airborne.
     /// </summary>
     public string Save() => JsonSerializer.Serialize(new SaveGameState(
-        1, Map.Name, Position.X, Position.Y, Angle, Feet,
+        5, Map.Name, Position.X, Position.Y, Angle, Feet,
         Health, Armor, Bullets, Shells, Rockets, HasShotgun, HasChaingun, HasRocketLauncher, SelectedWeapon,
         Keys, Kills, Secrets, Time, [.. foundSecrets],
-        [.. Actors.Select(a => a.Removed)], [.. Actors.Select(a => a.Health)]),
+        [.. Actors.Select(a => a.Removed)], [.. Actors.Select(a => a.Health)], Items,
+        [.. Actors.Select(a => a.Awake)],
+        [.. Actors.Select(a => a.AlertPosition?.X)],
+        [.. Actors.Select(a => a.AlertPosition?.Y)],
+        [.. Actors.Select(a => a.ChaseMemory)],
+        [.. Actors.Select(a => a.LastKnownTargetPosition?.X)],
+        [.. Actors.Select(a => a.LastKnownTargetPosition?.Y)],
+        [.. Actors.Select(a => a.Target == null ? -1 : Actors.IndexOf(a.Target))],
+        [.. Actors.Select(a => a.Position.X)],
+        [.. Actors.Select(a => a.Position.Y)]),
         SaveJsonContext.Default.SaveGameState);
 
     /// <summary>
-    /// Restores a snapshot produced by <see cref="Save"/>: reloads its map, replays <see cref="Spawn"/> to
-    /// rebuild the deterministic actor list, then reapplies each actor's saved removed/health state by
-    /// index and the player's saved position/stats/inventory. Returns false (with <paramref name="error"/>
-    /// set) for an unreadable, version-mismatched, unknown-map or actor-count-mismatched save, leaving the
-    /// current game state untouched.
+    /// Restores a snapshot produced by <see cref="Save"/>: validates the entire save (version, map,
+    /// gameplay-field finiteness, actor-array shapes and target indices) against the save's target map
+    /// <em>before touching any live game state</em>, then only on success reloads the map, rebuilds the
+    /// deterministic actor list and reapplies each actor's saved removed/health/alert/chase-memory/
+    /// infighting-target/position state by index plus the player's saved position/stats/inventory. Returns
+    /// false (with <paramref name="error"/> set) for an unreadable, version-mismatched, unknown-map,
+    /// non-finite, actor-count-mismatched, out-of-range-target-index or out-of-range-position save, leaving
+    /// the current game state completely unchanged (no partial mutation of an in-progress game).
     /// </summary>
     public bool TryLoad(string json, out string? error)
     {
@@ -1001,26 +1193,173 @@ public sealed class Game
         try { state = JsonSerializer.Deserialize(json, SaveJsonContext.Default.SaveGameState); }
         catch (JsonException ex) { error = $"malformed save ({ex.Message})"; return false; }
         if (state == null) { error = "empty save."; return false; }
-        if (state.Version != 1) { error = $"unsupported save version {state.Version}."; return false; }
+        if (state.Version is not (1 or 2 or 3 or 4 or 5)) { error = $"unsupported save version {state.Version}."; return false; }
         if (!Wad.Maps.Contains(state.Map)) { error = $"save references unknown map {state.Map}."; return false; }
-        Map = new(Wad, state.Map); Assets = new(Wad, state.Map);
-        Spawn();
-        if (state.ActorRemoved.Length != Actors.Count || state.ActorHealth.Length != Actors.Count)
+        if (!double.IsFinite(state.PositionX) || !double.IsFinite(state.PositionY) || !double.IsFinite(state.Angle) ||
+            !double.IsFinite(state.Feet) || !double.IsFinite(state.Time))
+        {
+            error = "save contains a non-finite gameplay value."; return false;
+        }
+        // ActorRemoved/ActorHealth/FoundSecretSectors are declared non-nullable in SaveGameState, but that
+        // is only a compile-time (nullable-reference) annotation: a hand-edited or otherwise corrupted save
+        // can still deserialize an explicit JSON `null` into any of them, and dereferencing that null below
+        // (.Length, foreach) would throw an unhandled NullReferenceException instead of the explicit
+        // malformed-save error every other corrupt-save case already returns.
+        if (state.ActorRemoved == null || state.ActorHealth == null || state.FoundSecretSectors == null)
+        {
+            error = "save is missing required actor/secret array data."; return false;
+        }
+
+        // Compute the target map's deterministic actor list in a local (not yet committed to the live
+        // game) so every shape/index check below can run before any mutation, honoring the "fully succeed
+        // or leave the existing game completely unchanged" contract.
+        Map candidateMap = new(Wad, state.Map);
+        (_, _, _, List<Actor> candidateActors, int candidateUnsupportedThings) = BuildSpawnState(candidateMap);
+        // Candidate Assets are constructed here too, alongside the candidate map/actors, so a failure
+        // partway through assembling the candidate state (map, assets, or actor layout) can never leave
+        // the live Map/Assets pair inconsistent with each other or with the live Actors list.
+        Assets candidateAssets = new(Wad, state.Map);
+        if (state.ActorRemoved.Length != candidateActors.Count || state.ActorHealth.Length != candidateActors.Count ||
+            state.ActorAwake != null && state.ActorAwake.Length != candidateActors.Count ||
+            state.ActorAlertX != null && state.ActorAlertX.Length != candidateActors.Count ||
+            state.ActorAlertY != null && state.ActorAlertY.Length != candidateActors.Count ||
+            state.ActorChaseMemory != null && state.ActorChaseMemory.Length != candidateActors.Count ||
+            state.ActorLastKnownTargetX != null && state.ActorLastKnownTargetX.Length != candidateActors.Count ||
+            state.ActorLastKnownTargetY != null && state.ActorLastKnownTargetY.Length != candidateActors.Count ||
+            state.ActorTargetIndex != null && state.ActorTargetIndex.Length != candidateActors.Count ||
+            state.ActorPositionX != null && state.ActorPositionX.Length != candidateActors.Count ||
+            state.ActorPositionY != null && state.ActorPositionY.Length != candidateActors.Count)
         {
             error = "save's actor layout no longer matches this map."; return false;
         }
+        // -1 is the documented "no infighting target" sentinel (fight the player); any other negative
+        // value or an index at/beyond the actor count is corrupt save data and must reject the whole load,
+        // not silently coerce to the harmless "no target" default.
+        if (state.ActorTargetIndex != null)
+        {
+            foreach (int targetIndex in state.ActorTargetIndex)
+            {
+                if (targetIndex != -1 && (targetIndex < 0 || targetIndex >= candidateActors.Count))
+                {
+                    error = $"save contains an out-of-range actor target index {targetIndex}."; return false;
+                }
+            }
+        }
+        // ChaseMemory is a countdown timer (see ChaseMemoryDuration/UpdateActor) that only ever runs from
+        // its full duration down to its 0 "no chase memory" sentinel/default; a negative or non-finite
+        // value can never arise from normal play and is corrupt save data, not a tighter gameplay cap.
+        if (state.ActorChaseMemory != null)
+        {
+            foreach (double chaseMemory in state.ActorChaseMemory)
+            {
+                if (!double.IsFinite(chaseMemory) || chaseMemory < 0)
+                {
+                    error = $"save contains an invalid actor chase-memory value {chaseMemory}."; return false;
+                }
+            }
+        }
+        // ActorLastKnownTargetX/Y encode "no remembered position" as both elements null together; either
+        // whole array present without the other, or one element present without its paired element, is an
+        // impossible half-a-position and must be rejected rather than silently dropped (which previously
+        // lost the remembered position instead of flagging the corruption).
+        if (state.ActorLastKnownTargetX == null != (state.ActorLastKnownTargetY == null))
+        {
+            error = "save's actor last-known-target X/Y arrays are inconsistently present."; return false;
+        }
+        if (state.ActorLastKnownTargetX != null && state.ActorLastKnownTargetY != null)
+        {
+            for (int i = 0; i < state.ActorLastKnownTargetX.Length; i++)
+            {
+                double? lastX = state.ActorLastKnownTargetX[i], lastY = state.ActorLastKnownTargetY[i];
+                if (lastX.HasValue != lastY.HasValue)
+                {
+                    error = $"save contains an actor last-known-target position with only one of X/Y set at index {i}.";
+                    return false;
+                }
+                // double.IsFinite(double?) isn't a thing; check the underlying value once we know it's
+                // present. A non-finite literal such as 1e999 deserializes to double.PositiveInfinity,
+                // which NaN-only checks would miss.
+                if (lastX.HasValue && (!double.IsFinite(lastX.Value) || !double.IsFinite(lastY!.Value)))
+                {
+                    error = $"save contains a non-finite actor last-known-target position at index {i}."; return false;
+                }
+            }
+        }
+        // ActorPositionX/ActorPositionY are the only trailing actor fields that are not optional *per
+        // element* (every actor always has a position, live or spawned), only optional as a whole pair
+        // (absent together on a version 1-4 save, falling back to each actor's deterministic spawn
+        // position already computed into candidateActors above). Either array present without the other
+        // is corrupt save data, as is any non-finite value or a value outside the WAD vertex/thing
+        // coordinate format's signed 16-bit range (see Wad.I16), which bounds every legitimate map
+        // coordinate; validating this before the live-mutation point below keeps the atomic-load contract
+        // established by the chase-memory/target-index fix (a malformed save must never partially mutate
+        // an in-progress game).
+        if (state.ActorPositionX == null != (state.ActorPositionY == null))
+        {
+            error = "save's actor position X/Y arrays are inconsistently present."; return false;
+        }
+        if (state.ActorPositionX != null && state.ActorPositionY != null)
+        {
+            const double MapCoordinateLimit = 32768;
+            for (int i = 0; i < state.ActorPositionX.Length; i++)
+            {
+                double x = state.ActorPositionX[i], y = state.ActorPositionY[i];
+                if (!double.IsFinite(x) || !double.IsFinite(y))
+                {
+                    error = $"save contains a non-finite actor position at index {i}."; return false;
+                }
+                if (Math.Abs(x) > MapCoordinateLimit || Math.Abs(y) > MapCoordinateLimit)
+                {
+                    error = $"save contains an out-of-range actor position at index {i}."; return false;
+                }
+            }
+        }
+
+        // All validation above is complete; only now may live game state actually change.
+        Map = candidateMap; Assets = candidateAssets;
+        Actors.Clear(); Actors.AddRange(candidateActors);
+        Projectiles.Clear(); foundSecrets.Clear(); bossDeathActivated = false;
+        UnsupportedThings = candidateUnsupportedThings;
         for (int i = 0; i < Actors.Count; i++)
         {
             Actors[i].Removed = state.ActorRemoved[i];
             Actors[i].Health = state.ActorHealth[i];
+            // Absent (version 1/2) means "not awake", matching how those saves always behaved before
+            // this field existed; present means round-trip the monster's noise-alert pursuit exactly.
+            Actors[i].Awake = state.ActorAwake?[i] ?? false;
+            double? alertX = state.ActorAlertX?[i], alertY = state.ActorAlertY?[i];
+            Actors[i].AlertPosition = Actors[i].Awake && alertX.HasValue && alertY.HasValue
+                ? new Vec(alertX.Value, alertY.Value) : null;
+            // Absent (version 1/2/3) means "no chase memory/infighting target", matching how those saves
+            // always behaved before these fields existed; present (version 4) round-trips a monster's
+            // remembered-position pursuit and its infighting target exactly.
+            Actors[i].ChaseMemory = state.ActorChaseMemory?[i] ?? 0;
+            double? lastX = state.ActorLastKnownTargetX?[i], lastY = state.ActorLastKnownTargetY?[i];
+            Actors[i].LastKnownTargetPosition = Actors[i].ChaseMemory > 0 && lastX.HasValue && lastY.HasValue
+                ? new Vec(lastX.Value, lastY.Value) : null;
+            int targetIndex = state.ActorTargetIndex?[i] ?? -1;
+            Actors[i].Target = targetIndex == -1 ? null : Actors[targetIndex];
+            // Absent (version 1-4) means "keep this map's deterministic spawn position", which is exactly
+            // what candidateActors (just copied into Actors above) already holds via BuildSpawnState;
+            // present (version 5) round-trips each actor's actual live position, so a monster that had
+            // moved before the save reloads where it actually was instead of snapping back to its spawn.
+            if (state.ActorPositionX != null && state.ActorPositionY != null)
+            {
+                Actors[i].Position = new Vec(state.ActorPositionX[i], state.ActorPositionY[i]);
+            }
         }
         foundSecrets.Clear();
         foreach (int sector in state.FoundSecretSectors) foundSecrets.Add(sector);
         Position = new(state.PositionX, state.PositionY); Angle = state.Angle; Feet = state.Feet;
+        visitedSectors.Clear();
+        visitedSectors.Add(Map.FindSector(Position));
+        InvulnerabilityTime = InvisibilityTime = RadiationSuitTime = LightAmpTime = 0;
+        HasComputerMap = HasBerserk = false;
         Health = state.Health; Armor = state.Armor; Bullets = state.Bullets; Shells = state.Shells; Rockets = state.Rockets;
         HasShotgun = state.HasShotgun; HasChaingun = state.HasChaingun; HasRocketLauncher = state.HasRocketLauncher;
         SelectedWeapon = state.SelectedWeapon; Keys = state.Keys; Kills = state.Kills; Secrets = state.Secrets; Time = state.Time;
-        Finished = false; CompletionPrompt = ""; secretExit = false; DamageFlash = 0; PickupFlash = 0;
+        Items = state.Items;
+        Finished = false; CompletionPrompt = ""; IntermissionStats = []; secretExit = false; DamageFlash = 0; PickupFlash = 0;
         chaingunTicks = 0; chaingunFollowup = false; chaingunRefiring = false; pendingWeapon = null;
         ChaingunFrame = 0; ChaingunFlashFrame = 0; ChaingunFlashTicks = 0; RocketFireTicks = 0;
         PlayMusic?.Invoke(MusicLumpName(Map.Name));

@@ -81,12 +81,22 @@ try
         response => response.Url == new Uri(baseUri, "assets/freedoom/freedoom1.wad").AbsoluteUri);
     await page.GetByRole(AriaRole.Button, new() { Name = "Restart Freedoom", Exact = true }).WaitForAsync();
     ILocator canvas = page.Locator("#game");
+    // A fixed sleep here raced with the browser's main thread staying busy servicing the
+    // WASM autoplay render loop (this runs before the game is paused), which could leave
+    // the scroll unprocessed by the time the assertion ran under Firefox on loaded CI
+    // runners. Poll for the scroll to actually land instead, bounded by Playwright's
+    // default WaitForFunction timeout, falling back to the last observed value on timeout
+    // so the assertion still reports a meaningful diagnostic.
     async Task CheckPageScroll(string name, bool overCanvas)
     {
         await page.EvaluateAsync("window.scrollTo(0, 0)");
         await page.Mouse.MoveAsync(overCanvas ? 400 : 10, overCanvas ? 350 : 20);
         await page.Mouse.WheelAsync(0, 400);
-        await page.WaitForTimeoutAsync(400);
+        try
+        {
+            await page.WaitForFunctionAsync("() => window.scrollY > 100");
+        }
+        catch (TimeoutException) { }
         double scroll = await page.EvaluateAsync<double>("window.scrollY");
         Check(name, scroll > 100, scroll);
     }
@@ -141,6 +151,22 @@ try
                 return count > 200000;
             }
             """, automap);
+    }
+    // The fixed Hold() delay after releasing Tab is not guaranteed to outlast the automap
+    // teardown render, which caused rare flakiness in "Tab-closes-automap". Explicitly poll
+    // for the automap-background color to actually disappear (bounded by Playwright's
+    // default WaitForFunction timeout) before taking the pixel snapshot used by the assertion.
+    async Task WaitForAutomapClosed()
+    {
+        await page.WaitForFunctionAsync("""
+            () => {
+                const p = document.querySelector('#game').getContext('2d').getImageData(0,0,640,350).data;
+                let count = 0;
+                for(let i=0;i<p.length;i+=4)
+                    if(p[i]===8&&p[i+1]===9&&p[i+2]===11) count++;
+                return count < 12000;
+            }
+            """);
     }
     async Task WaitForLoad()
     {
@@ -210,6 +236,7 @@ try
     JsonElement map = await Pixels();
     Check("Tab-opens-automap", map.GetProperty("background").GetInt32() > 200000, map);
     await Hold("Tab", 100);
+    await WaitForAutomapClosed();
     JsonElement off = await Pixels();
     Check("Tab-closes-automap", off.GetProperty("background").GetInt32() < 12000, off);
     await Hold("w", 500);
