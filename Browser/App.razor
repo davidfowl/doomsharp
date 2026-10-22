@@ -22,7 +22,7 @@ The two versions share the C# game engine and bundled Freedoom assets.</p>
 <p id="status" role="status">@status</p>
 <canvas id="game" width="640" height="400" tabindex="0" aria-label="DoomSharp game"></canvas>
 <p>Freedoom starts automatically without sound. Click the game to enable sound and capture the mouse. WASD moves, arrows turn,
-Ctrl/click fires, E/Space uses, Shift runs, 1/2/4/5 selects weapons, Tab maps,
+Ctrl/click fires, E/Space uses, Shift runs, 1-7 selects weapons, Tab maps,
 R restarts, F1 opens the menu, F5/Save Game saves, F9/Load Game loads. Esc releases the pointer and pauses. Click to resume.</p>
 <p>Local WADs stay on your device (64 MiB limit). Map defaults to the first map.
 No proprietary assets included. <a href="assets/freedoom/COPYING.txt">Freedoom license</a>,
@@ -186,7 +186,8 @@ No proprietary assets included. <a href="assets/freedoom/COPYING.txt">Freedoom l
     [JSInvokable]
     public async Task<byte[]> Frame(double milliseconds, double mouseX, bool active)
     {
-        if (game != null)
+        Game? frameGame = game;
+        if (frameGame != null)
         {
             if (active)
             {
@@ -200,13 +201,13 @@ No proprietary assets included. <a href="assets/freedoom/COPYING.txt">Freedoom l
                         inputEvents.Dequeue();
                         input.Set(next.Button, next.Down);
                     }
-                    game.Tick(input, 1.0 / 35);
+                    frameGame.Tick(input, 1.0 / 35);
                     accumulator -= 1.0 / 35;
                 }
                 previous = milliseconds;
             }
             else ResetInput();
-            renderer.Render(game);
+            renderer.Render(frameGame);
             for (int i = 0; i < renderer.Pixels.Length; i++)
             {
                 int color = renderer.Pixels[i];

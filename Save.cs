@@ -44,6 +44,8 @@ namespace DoomSharp;
 /// (present together, or both absent together) to stay absent on older saves. There is no separate
 /// per-actor facing/angle field: <see cref="Game.Actor"/> never stores one (monsters do not have a
 /// persisted facing distinct from their position), so there is nothing else live to round-trip here.
+/// <see cref="Cells"/> and the three new weapon ownership flags are trailing optional fields (version 6);
+/// older saves default them to zero/false without changing the version-5 actor-position format.
 /// </summary>
 public sealed record SaveGameState(
     int Version, string Map, double PositionX, double PositionY, double Angle, double Feet,
@@ -54,7 +56,8 @@ public sealed record SaveGameState(
     bool[]? ActorAwake = null, double?[]? ActorAlertX = null, double?[]? ActorAlertY = null,
     double[]? ActorChaseMemory = null, double?[]? ActorLastKnownTargetX = null,
     double?[]? ActorLastKnownTargetY = null, int[]? ActorTargetIndex = null,
-    double[]? ActorPositionX = null, double[]? ActorPositionY = null);
+    double[]? ActorPositionX = null, double[]? ActorPositionY = null,
+    int Cells = 0, bool HasChainsaw = false, bool HasPlasmaRifle = false, bool HasBFG9000 = false);
 
 [JsonSerializable(typeof(SaveGameState))]
 public sealed partial class SaveJsonContext : JsonSerializerContext;

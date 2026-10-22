@@ -73,7 +73,8 @@ public static partial class PageExports
     [JSExport("frame")]
     public static byte[] Frame(double milliseconds, double mouseX, bool active)
     {
-        if (game == null) return Rgba;
+        Game? frameGame = game;
+        if (frameGame == null) return Rgba;
         if (active)
         {
             if (previous >= 0) accumulator += Math.Clamp((milliseconds - previous) / 1000, 0, .25);
@@ -86,13 +87,13 @@ public static partial class PageExports
                     Events.Dequeue();
                     Input.Set(next.Button, next.Down);
                 }
-                game.Tick(Input, 1.0 / 35);
+                frameGame.Tick(Input, 1.0 / 35);
                 accumulator -= 1.0 / 35;
             }
             previous = milliseconds;
         }
         else ResetInput();
-        Renderer.Render(game);
+        Renderer.Render(frameGame);
         for (int i = 0; i < Renderer.Pixels.Length; i++)
         {
             int color = Renderer.Pixels[i];

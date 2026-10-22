@@ -12,37 +12,50 @@ public static class ScenarioFixtures
         int spriteEnd = assets.FindIndex(l => l.Name == "S_END");
         List<Lump> patches = [];
         foreach (string prefix in new[] { "MGUN", "LAUN", "ROCK", "BROK", "CLIP", "AMMO", "SHOT",
-            "BKEY", "RKEY", "YKEY", "BSKU", "RSKU", "YSKU", "BAR1", "ARM1" })
+            "BKEY", "RKEY", "YKEY", "BSKU", "RSKU", "YSKU", "BAR1", "PLAS", "CSAW", "BFUG", "CELL", "CELP" })
             patches.Add(new(prefix + "A0", Patch(32, 32, 16, 32, 186)));
         foreach (string prefix in new[] { "POSS", "CPOS", "TROO", "HEAD", "BOSS", "BOS2", "SARG", "CYBR", "SPID" })
             foreach (char frame in "ABCDEFGHIJKLMNOPQRSTU")
                 patches.Add(new($"{prefix}{frame}0", Patch(32, 56, 16, 56, 80)));
-        foreach (string prefix in new[] { "PISG", "SHTG", "CHGG", "MISG" })
-            foreach (char frame in "AB")
+        foreach (string prefix in new[] { "PISG", "SHTG", "CHGG", "MISG", "PLSG", "BFGG", "SAWG" })
+            foreach (char frame in "ABC")
                 patches.Add(new($"{prefix}{frame}0", Patch(64, 44, -128, -131, (byte)(frame == 'A' ? 151 : 173))));
         foreach (char frame in "ABCD")
         {
             patches.Add(new($"MISF{frame}0", Patch(16, 16, -152, -116, 237)));
             patches.Add(new($"MISL{frame}0", Patch(32, 32, 16, 16, 219)));
         }
-        foreach (char frame in "AB") patches.Add(new($"CHGF{frame}0", Patch(16, 16, -152, -116, 237)));
+        foreach (char frame in "AB")
+        {
+            patches.Add(new($"CHGF{frame}0", Patch(16, 16, -152, -116, 237)));
+            patches.Add(new($"PLSF{frame}0", Patch(16, 16, -152, -116, 237)));
+            patches.Add(new($"BFGF{frame}0", Patch(16, 16, -152, -116, 237)));
+        }
         foreach (int rotation in Enumerable.Range(1, 8))
             patches.Add(new($"MISLA{rotation}", Patch(16, 8, 8, 4, 214)));
+        patches.Add(new("PLSSA0", Patch(16, 16, 8, 8, 214)));
+        patches.Add(new("BFS1A0", Patch(16, 16, 8, 8, 214)));
+        foreach (char frame in "ABCDE") patches.Add(new($"PLSE{frame}0", Patch(16, 16, 8, 8, 214)));
+        foreach (char frame in "ABCDEF") patches.Add(new($"BFE1{frame}0", Patch(16, 16, 8, 8, 214)));
         assets.InsertRange(spriteEnd, patches);
         byte[] tone = Enumerable.Range(0, 4032).Select(i => (byte)(i < 16 || i >= 4016 ? 128 : i % 50 < 25 ? 168 : 88)).ToArray();
-        foreach (string effect in new[] { "PISTOL", "RLAUNC", "BAREXP", "ITEMUP", "SHOTGN", "PLPAIN", "PLDETH", "PODTH1", "STNMOV", "PSTOP" })
+        foreach (string effect in new[] { "PISTOL", "RLAUNC", "BAREXP", "ITEMUP", "SHOTGN", "PLPAIN", "PODTH1",
+            "PLASMA", "BFG", "SAWFUL", "SAWIDL", "FIRXPL", "RXPLOD" })
             assets.Add(new("DS" + effect, Pack(w => { w.Write((ushort)3); w.Write((ushort)11025); w.Write(tone.Length); w.Write(tone); })));
 
-        foreach (int weapon in new[] { 2002, 2003 })
+        foreach (var (weapon, prefix, capacityItem, missingPrefix) in new[]
+            { (2002, "chaingun", 2048, "CHG"), (2003, "rocket", 2046, "MIS"), (2004, "plasma", 2047, "PLS"), (2006, "bfg", 2047, "BFG") })
         {
-            string prefix = weapon == 2002 ? "chaingun" : "rocket";
-            foreach (string mode in new[] { "pickup", "capacity", "combat", "empty", "carry", "death", "missing", "audio-missing", "unowned",
-                "miss", "barrel", "splash", "occlusion", "thin-wall", "drop" })
+            string[] modes = weapon is 2002 or 2003
+                ? ["pickup", "capacity", "combat", "empty", "carry", "death", "missing", "audio-missing", "unowned",
+                    "miss", "barrel", "splash", "occlusion", "thin-wall", "drop"]
+                : ["pickup", "capacity", "combat", "empty", "carry", "death", "unowned"];
+            foreach (string mode in modes)
             {
                 List<(int X, int Y, int Type)> things = [(0, 0, 1)];
                 if (mode != "unowned") things.Add((0, 0, weapon));
                 if (mode == "capacity")
-                    things.AddRange(Enumerable.Repeat((0, 0, weapon == 2002 ? 2048 : 2046), 10));
+                    things.AddRange(Enumerable.Repeat((0, 0, capacityItem), weapon is 2004 or 2006 ? 20 : 10));
                 if (mode == "combat") things.Add((600, 0, 3004));
                 if (mode == "miss") things.Add((600, 180, 3004));
                 if (mode == "drop") { things.RemoveAll(t => t.Type == weapon); things.Add((600, 0, 65)); }
@@ -52,7 +65,7 @@ public static class ScenarioFixtures
                     things.Add((600, 0, 3004)); things.Add((600, -80, 3004)); things.Add((600, 80, 3004));
                 }
                 if (mode == "thin-wall") things.Add((256, 0, 3004));
-                var selected = assets.Where(l => mode != "missing" || !(l.Name.StartsWith(weapon == 2002 ? "CHG" : "MIS", StringComparison.Ordinal))).ToList();
+                var selected = assets.Where(l => mode != "missing" || !l.Name.StartsWith(missingPrefix, StringComparison.Ordinal)).ToList();
                 if (mode == "audio-missing")
                     selected.RemoveAll(l => l.Name == (weapon == 2002 ? "DSPISTOL" : "DSRLAUNC"));
                 var room = Room("E1M1", things, mode == "death" ? 5 : 0, mode == "carry");
@@ -63,6 +76,19 @@ public static class ScenarioFixtures
                 if (mode == "carry") selected.AddRange(Room("E1M2", [(-64, 0, 1)]));
                 yield return ($"{prefix}-{mode}", Write(selected));
             }
+        }
+        // The chainsaw is melee-only and carries no ammo, so its fixture set omits the
+        // ammo/capacity/projectile-travel modes that only apply to the ranged weapons above.
+        foreach (string mode in new[] { "pickup", "combat", "carry", "death", "unowned" })
+        {
+            List<(int X, int Y, int Type)> things = [(0, 0, 1)];
+            if (mode != "unowned") things.Add((0, 0, 2005));
+            // Close enough to be within the chainsaw's short melee reach immediately.
+            if (mode == "combat") things.Add((56, 0, 3004));
+            var room = Room("E1M1", things, mode == "death" ? 5 : 0, mode == "carry");
+            List<Lump> selected = [.. assets, .. room];
+            if (mode == "carry") selected.AddRange(Room("E1M2", [(-64, 0, 1)]));
+            yield return ($"chainsaw-{mode}", Write(selected));
         }
         int[] locks = [99, 133, 134, 135, 136, 137];
         foreach (int special in locks)

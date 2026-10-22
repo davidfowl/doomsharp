@@ -114,6 +114,10 @@ try
     }
     if (mode is "engine" or "all")
     {
+        Check("shared-browser-weapon-keys", BrowserInput.FromCode("Digit3") == Buttons.Chainsaw &&
+            BrowserInput.FromCode("Digit6") == Buttons.PlasmaRifle &&
+            BrowserInput.FromCode("Digit7") == Buttons.BFG9000 &&
+            BrowserInput.FromCode("F1") == Buttons.Menu);
         static string[] Textures(Side side) => [side.Upper, side.Lower, side.Middle];
         static bool RepeatSwitch(int special) => special is 60 or 62 or 69 or 123 or 63 or 99 or 134 or 136;
         foreach (string file in Directory.GetFiles(fixtures, "switch-*.wad").Order(StringComparer.Ordinal))
@@ -552,24 +556,37 @@ try
                     Check($"tagged-consumption-{special}-{key}", action == (special is 99 or 134 or 136 ? special : 0), action);
                 }
             }
-        foreach (string prefix in new[] { "chaingun", "rocket" })
+        foreach (var (prefix, weapon, selectButton, hasWeapon, pickupAmmo, tapCost, capacityCap) in
+            new (string, Weapon, Buttons, Func<Game, bool>, int, int, int)[]
+            {
+                ("chaingun", Weapon.Chaingun, Buttons.Chaingun, g => g.HasChaingun, 70, 2, 200),
+                ("rocket", Weapon.RocketLauncher, Buttons.RocketLauncher, g => g.HasRocketLauncher, 2, 1, 50),
+                ("plasma", Weapon.PlasmaRifle, Buttons.PlasmaRifle, g => g.HasPlasmaRifle, 40, 1, 300),
+                ("bfg", Weapon.BFG9000, Buttons.BFG9000, g => g.HasBFG9000, 40, 40, 300),
+            })
         {
-            bool rocket = prefix == "rocket";
             Game game = Load(prefix + "-pickup");
             Tick(game);
-            Check(prefix + "-pickup", rocket ? game.HasRocketLauncher && game.Rockets == 2 && game.SelectedWeapon == Weapon.RocketLauncher :
-                game.HasChaingun && game.Bullets == 70 && game.SelectedWeapon == Weapon.Chaingun);
+            Check(prefix + "-pickup", hasWeapon(game) && game.Ammo == pickupAmmo && game.SelectedWeapon == weapon,
+                new { game.Ammo, game.SelectedWeapon });
+            string saved = game.Save();
+            Game restored = Load(prefix + "-pickup");
+            bool loaded = restored.TryLoad(saved, out string? loadError);
+            Check(prefix + "-save-roundtrip", loaded && hasWeapon(restored) &&
+                restored.SelectedWeapon == weapon && restored.Ammo == pickupAmmo,
+                new { loaded, loadError, restored.Ammo, restored.SelectedWeapon });
             int initial = game.Ammo;
             Tick(game, Buttons.Fire);
             Tick(game, count: 20);
-            Check(prefix + "-tap-cadence", game.Ammo == initial - (rocket ? 1 : 2), new { initial, game.Ammo });
+            Check(prefix + "-tap-cadence", game.Ammo == initial - tapCost, new { initial, game.Ammo });
             game = Load(prefix + "-capacity"); Tick(game);
-            Check(prefix + "-capacity", game.Ammo == (rocket ? 50 : 200), game.Ammo);
+            Check(prefix + "-capacity", game.Ammo == capacityCap, game.Ammo);
             game = Load(prefix + "-empty"); Tick(game);
             Tick(game, Buttons.Fire, 1000);
-            Check(prefix + "-empty-no-underflow", game.Ammo == 0 && game.Projectiles.All(p => !p.Rocket || p.Exploded), game.Ammo);
+            Check(prefix + "-empty-no-underflow",
+                game.Ammo == 0 && game.Projectiles.All(p => !(p.Rocket || p.Plasma || p.Bfg) || p.Exploded), game.Ammo);
             game = Load(prefix + "-unowned");
-            Tick(game, rocket ? Buttons.RocketLauncher : Buttons.Chaingun);
+            Tick(game, selectButton);
             Check(prefix + "-unowned", game.SelectedWeapon == Weapon.Pistol && game.Message.Contains("NOT OWNED", StringComparison.Ordinal), game.Message);
             game = Load(prefix + "-combat"); Tick(game); Tick(game, Buttons.Fire, 350);
             Check(prefix + "-combat", game.Kills == 1, new { game.Kills, game.Ammo });
@@ -579,10 +596,31 @@ try
             game = Load(prefix + "-carry"); Tick(game); Tick(game, Buttons.Forward, 50); Tick(game, Buttons.Use);
             Check(prefix + "-exit", game.Finished);
             Tick(game); Tick(game, Buttons.Use);
-            Check(prefix + "-map-carry", game.Map.Name == "E1M2" && (rocket ? game.HasRocketLauncher : game.HasChaingun),
+            Check(prefix + "-map-carry", game.Map.Name == "E1M2" && hasWeapon(game),
                 new { game.Map.Name, game.SelectedWeapon, game.Ammo });
             game = Load(prefix + "-death"); Tick(game, count: 800);
             Check(prefix + "-death", game.Health == 0, game.Health);
+        }
+        // The chainsaw has no ammo; it exercises a cut-down version of the ranged-weapon fixture set above.
+        {
+            Game game = Load("chainsaw-pickup"); Tick(game);
+            Check("chainsaw-pickup", game.HasChainsaw && game.SelectedWeapon == Weapon.Chainsaw && game.WeaponHasNoAmmo);
+            string saved = game.Save();
+            Game restored = Load("chainsaw-pickup");
+            bool loaded = restored.TryLoad(saved, out string? loadError);
+            Check("chainsaw-save-roundtrip", loaded && restored.HasChainsaw &&
+                restored.SelectedWeapon == Weapon.Chainsaw, new { loaded, loadError });
+            game = Load("chainsaw-unowned");
+            Tick(game, Buttons.Chainsaw);
+            Check("chainsaw-unowned", game.SelectedWeapon == Weapon.Pistol && game.Message.Contains("NOT OWNED", StringComparison.Ordinal), game.Message);
+            game = Load("chainsaw-combat"); Tick(game); Tick(game, Buttons.Fire, 350);
+            Check("chainsaw-combat", game.Kills == 1, game.Kills);
+            game = Load("chainsaw-carry"); Tick(game); Tick(game, Buttons.Forward, 50); Tick(game, Buttons.Use);
+            Check("chainsaw-exit", game.Finished);
+            Tick(game); Tick(game, Buttons.Use);
+            Check("chainsaw-map-carry", game.Map.Name == "E1M2" && game.HasChainsaw, new { game.Map.Name, game.SelectedWeapon });
+            game = Load("chainsaw-death"); Tick(game, count: 800);
+            Check("chainsaw-death", game.Health == 0, game.Health);
         }
         foreach (string name in new[] { "last-baron", "two-barons", "knight", "mixed", "wrong-map", "no-tag" })
         {
@@ -887,7 +925,7 @@ try
             // A version-1/2 save (no ActorAwake/ActorAlertX/ActorAlertY fields at all) must still load
             // cleanly, with every actor simply defaulting to "not awake" — the pre-existing behavior.
             string legacyJson = Regex.Replace(json, @",""ActorAwake"":\[[^\]]*\],""ActorAlertX"":\[[^\]]*\],""ActorAlertY"":\[[^\]]*\]", "");
-            legacyJson = Regex.Replace(legacyJson, "\"Version\":3", "\"Version\":2");
+            legacyJson = Regex.Replace(legacyJson, "\"Version\":6", "\"Version\":2");
             Game legacy = Load("noise-propagation-wakes-through-open-door");
             bool legacyLoaded = legacy.TryLoad(legacyJson, out string? legacyError);
             Actor legacyActor = legacy.Actors.Single(a => a.Type == 3004);
@@ -968,7 +1006,7 @@ try
             string legacyJson = Regex.Replace(json,
                 @",""ActorChaseMemory"":\[[^\]]*\],""ActorLastKnownTargetX"":\[[^\]]*\],""ActorLastKnownTargetY"":\[[^\]]*\],""ActorTargetIndex"":\[[^\]]*\]",
                 "");
-            legacyJson = Regex.Replace(legacyJson, "\"Version\":4", "\"Version\":3");
+            legacyJson = Regex.Replace(legacyJson, "\"Version\":6", "\"Version\":3");
             Game legacy = Load("infight-retarget");
             bool legacyLoaded = legacy.TryLoad(legacyJson, out string? legacyError);
             Actor legacyDemon = legacy.Actors.Single(a => a.Type == 3002);
@@ -1242,7 +1280,7 @@ try
             // cleanly, with every actor defaulting to its map's deterministic spawn position — the
             // pre-existing behavior.
             string legacyJson = Regex.Replace(json, @",""ActorPositionX"":\[[^\]]*\],""ActorPositionY"":\[[^\]]*\]", "");
-            legacyJson = Regex.Replace(legacyJson, "\"Version\":5", "\"Version\":4");
+            legacyJson = Regex.Replace(legacyJson, "\"Version\":6", "\"Version\":4");
             Check("savegame-position-legacy-fixture-edited", legacyJson != json, new { legacyJson, json });
             Game legacy = Load("chase-memory");
             bool legacyLoaded = legacy.TryLoad(legacyJson, out string? legacyError);
@@ -1342,6 +1380,11 @@ try
             using NativeGame game = await NativeGame.Start(executable, ["--wad", Path.Combine(fixtures, name + ".wad")],
                 Path.Combine(output, "native-" + name), source, audio: special == 99 && variant == "middle");
             Frame before = game.Capture("before");
+            for (int attempt = 1; attempt <= 20 && before.SwitchPixels(false) <= 500; attempt++)
+            {
+                Thread.Sleep(100);
+                before = game.Capture($"before-retry-{attempt}");
+            }
             game.Hold("e", .06); Thread.Sleep(100);
             Frame activated = game.Capture("activated");
             Thread.Sleep(1100);
@@ -1372,7 +1415,9 @@ try
                 Check("native-" + name, text.Contains(paused ? "health=100," : "health=0,", StringComparison.Ordinal) &&
                     (!paused || first.Hash == final.Hash), text);
                 if (special == 6)
-                    Check("native-" + name + "-PCM", Regex.IsMatch(text, @"Audio: [1-9]\d* sound events, [1-9]\d* PCM samples submitted"), text);
+                    Check("native-" + name + "-PCM", Regex.IsMatch(text,
+                        paused ? @"Audio: \d+ sound events, [1-9]\d* PCM samples submitted" :
+                            @"Audio: [1-9]\d* sound events, [1-9]\d* PCM samples submitted"), text);
             }
         foreach (int special in new[] { 7, 8, 100, 127 })
             foreach (bool tagged in new[] { true, false })

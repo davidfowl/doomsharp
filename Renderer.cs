@@ -205,6 +205,9 @@ public sealed class Renderer
 
     void Triangle(Screen a, Screen b, Screen c, Picture texture, int light, int kind)
     {
+        // Hold the texture array throughout the hot loop; WebAssembly AOT can otherwise fault after WAD reloads.
+        int[] texels = texture.Pixels;
+        int textureWidth = texture.Width, textureHeight = texture.Height;
         double area = Edge(a, b, c.X, c.Y);
         if (Math.Abs(area) < 1e-6) return;
         int minX = (int)Math.Clamp(Math.Floor(Math.Min(a.X, Math.Min(b.X, c.X))), 0, Width - 1);
@@ -229,8 +232,11 @@ public sealed class Renderer
                 }
                 int u = (int)Math.Floor((w0 * a.U + w1 * b.U + w2 * c.U) * distance);
                 int v = (int)Math.Floor((w0 * a.V + w1 * b.V + w2 * c.V) * distance);
-                if (kind == 2 && (u < 0 || v < 0 || u >= texture.Width || v >= texture.Height)) continue;
-                int color = texture.Sample(u, v);
+                if (kind == 2 && (u < 0 || v < 0 || u >= textureWidth || v >= textureHeight)) continue;
+                int wrappedU = u % textureWidth, wrappedV = v % textureHeight;
+                if (wrappedU < 0) wrappedU += textureWidth;
+                if (wrappedV < 0) wrappedV += textureHeight;
+                int color = texels[wrappedV * textureWidth + wrappedU];
                 if (color < 0) continue;
                 depth[index] = distance;
                 Pixels[index] = Shade(color, light, distance);
@@ -262,14 +268,33 @@ public sealed class Renderer
         foreach (Projectile projectile in game.Projectiles)
         {
             Picture? picture = ProjectileSprite(projectile);
+            bool playerFired = projectile.Rocket || projectile.Plasma || projectile.Bfg;
             if (picture != null)
-                Billboard(projectile.Position, projectile.Rocket ? projectile.Z + picture.Height / 2 -
+                Billboard(projectile.Position, playerFired ? projectile.Z + picture.Height / 2 -
                     (picture.Top > 0 ? picture.Top : picture.Height) : projectile.Z - picture.Height / 2, picture, 255);
         }
     }
 
     Picture? ProjectileSprite(Projectile projectile)
     {
+        if (projectile.Plasma)
+        {
+            string name = projectile.Exploded ? (projectile.ExplosionTicks > 2 ? "PLSEA0" : "PLSEB0") : "PLSSA0";
+            Picture? sprite = game.Assets.Patch(name);
+            if (sprite == null && missingSprites.Add(name))
+                Console.Error.WriteLine($"Missing projectile patch {name}; plasma ball cannot be drawn.");
+            return sprite;
+        }
+        if (projectile.Bfg)
+        {
+            string name = projectile.Exploded ?
+                (projectile.ExplosionTicks > 6 ? "BFE1A0" : projectile.ExplosionTicks > 3 ? "BFE1B0" : "BFE1C0") :
+                "BFS1A0";
+            Picture? sprite = game.Assets.Patch(name);
+            if (sprite == null && missingSprites.Add(name))
+                Console.Error.WriteLine($"Missing projectile patch {name}; BFG ball cannot be drawn.");
+            return sprite;
+        }
         if (!projectile.Rocket) return game.Assets.Patch("BAL1A0");
         if (projectile.Exploded)
         {
@@ -343,6 +368,9 @@ public sealed class Renderer
             Weapon.RocketLauncher => game.RocketFireTicks > 12 ? "MISGB0" : "MISGA0",
             Weapon.Chaingun => game.ChaingunFrame == 0 ? "CHGGA0" : "CHGGB0",
             Weapon.Shotgun => game.FireTime > .65 ? "SHTGB0" : "SHTGA0",
+            Weapon.PlasmaRifle => game.FireTime > .05 ? "PLSGB0" : "PLSGA0",
+            Weapon.BFG9000 => game.FireTime > .4 ? "BFGGC0" : game.FireTime > 0 ? "BFGGB0" : "BFGGA0",
+            Weapon.Chainsaw => game.FireTime > 0 ? "SAWGB0" : "SAWGA0",
             _ => game.FireTime > .15 ? "PISGB0" : "PISGA0"
         };
         DrawWeaponPatch(name);
@@ -350,6 +378,10 @@ public sealed class Renderer
             DrawWeaponPatch(game.ChaingunFlashFrame == 0 ? "CHGFA0" : "CHGFB0");
         if (game.SelectedWeapon == Weapon.RocketLauncher && game.RocketFireTicks > 4)
             DrawWeaponPatch($"MISF{(char)('A' + (20 - game.RocketFireTicks) / 4)}0");
+        if (game.SelectedWeapon == Weapon.PlasmaRifle && game.PlasmaFlashTicks > 0)
+            DrawWeaponPatch(game.PlasmaFlashTicks > 2 ? "PLSFA0" : "PLSFB0");
+        if (game.SelectedWeapon == Weapon.BFG9000 && game.BFGFlashTicks > 0)
+            DrawWeaponPatch(game.BFGFlashTicks > 5 ? "BFGFA0" : "BFGFB0");
     }
 
     void DrawWeaponPatch(string name)

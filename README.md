@@ -183,8 +183,9 @@ documented below.
 
 WASD moves/strafes; arrows turn (up/down also move). Click once to capture the
 mouse, then move it to turn. Ctrl or left click fires; E/Space uses; Shift runs.
-1 selects the pistol, 2 an acquired shotgun, 4 an acquired chaingun, and 5 an
-acquired rocket launcher. Tab toggles the automap; R restarts. F1 opens an
+1 selects the pistol, 2 an acquired shotgun, 3 an acquired chainsaw, 4 an
+acquired chaingun, 5 an acquired rocket launcher, 6 an acquired plasma rifle,
+and 7 an acquired BFG9000. Tab toggles the automap; R restarts. F1 opens an
 in-game menu (Resume, New Game, Options, Quit Game; arrows navigate, E/Space/
 fire selects, left/right adjusts mouse sensitivity and toggles messages in
 Options). Esc quits desktop or pauses the browser. Losing focus clears input
@@ -364,7 +365,9 @@ dispatch, not new action families or full door/mover/gameplay parity.
 
 Implemented: classic IWAD/PWAD directory/geometry/BSP validation; textured
 walls/floors/ceilings, sky, masked walls and sprites; collision, sliding and
-24-unit steps; pistol, shotgun, chaingun and swept rocket/explosion combat;
+24-unit steps; pistol, shotgun, chaingun, chainsaw, plasma rifle, BFG9000 and
+swept rocket/explosion combat (see [PROGRESS.md](PROGRESS.md) for the BFG's
+documented simplification versus classic tracer-spray);
 pickups, keys, armor, simplified enemies/barrels; common doors, tagged locks,
 lifts/floors, teleports, damaging floors, secrets, exits and map progression;
 E1M8 last-Baron/tag666 floors and E2M8/E3M8 last-boss episode exits; animated flat/wall textures (water, nukage,
@@ -373,12 +376,13 @@ MUS/Standard-MIDI music playback
 (approximate software synthesis, see [PROGRESS.md](PROGRESS.md)), HUD, automap,
 an end-of-level intermission stats screen (Kills/Items/Secrets percentages and
 time; see [PROGRESS.md](PROGRESS.md) for the exact "item" definition),
-an in-game pause/options menu (F1), and a single-slot JSON save/load (F5/F9,
-see [PROGRESS.md](PROGRESS.md) for
-scope and verification; in-flight projectiles are not preserved).
+an in-game pause/options menu (F1), and a single-slot JSON save/load (F5/F9;
+see [PROGRESS.md](PROGRESS.md) for scope and verification; in-flight projectiles
+are not preserved).
 Classic switch textures and buttons supply the bounded feedback above.
 
-Still incomplete: other weapons and exact powerup parity, monster states/AI/physics/RNG,
+Still incomplete: fist/Berserk melee and exact powerup parity,
+monster states/AI/physics/RNG,
 other moving-sector/switch specials, E4 boss actions,
 pre-level menus, multiplayer and original visual/timing/audio
 parity. No PWAD overlay stacking, Hexen/UDMF, extended nodes, Boom/MBF/DEHACKED or
