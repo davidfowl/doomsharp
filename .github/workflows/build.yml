@@ -145,19 +145,38 @@ jobs:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
+      - uses: actions/checkout@v4
+      - name: Check whether this run is still current
+        id: current
+        shell: bash
+        run: |
+          latest_sha="$(git ls-remote origin refs/heads/main | cut -f1)"
+          if [[ -z "$latest_sha" ]]; then
+            echo "::error::Could not resolve the current main commit"
+            exit 1
+          fi
+          if [[ "$latest_sha" == "$GITHUB_SHA" ]]; then
+            echo "deploy=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::notice::Skipping stale Pages deployment ($GITHUB_SHA); main is $latest_sha"
+          fi
       - name: Deploy tested browser application
         id: deployment
+        if: steps.current.outputs.deploy == 'true'
         uses: actions/deploy-pages@v4
-      - uses: actions/checkout@v4
       - uses: actions/setup-dotnet@v4
+        if: steps.current.outputs.deploy == 'true'
         with:
           dotnet-version: 10.0.x
-      - run: dotnet run --project tools/e2e-fixtures/FixtureGenerator.csproj -c Release -- tools/e2e-fixtures/generated
+      - if: steps.current.outputs.deploy == 'true'
+        run: dotnet run --project tools/e2e-fixtures/FixtureGenerator.csproj -c Release -- tools/e2e-fixtures/generated
       - name: Install live browser check dependencies
+        if: steps.current.outputs.deploy == 'true'
         run: |
           dotnet run --project tools/BrowserChecks -c Release -- install --with-deps chromium
           sudo apt-get install -y pulseaudio
       - name: Verify live Pages gameplay
+        if: steps.current.outputs.deploy == 'true'
         env:
           PAGES_URL: ${{ steps.deployment.outputs.page_url }}
         shell: bash
@@ -180,7 +199,7 @@ jobs:
           dotnet run --project tools/BrowserChecks -c Release -- netwasm "$PAGES_URL" artifacts/live-netwasm-checks tools/e2e-fixtures/generated
           dotnet run --project tools/BrowserChecks -c Release -- stats "$PAGES_URL"
       - uses: actions/upload-artifact@v4
-        if: always()
+        if: always() && steps.current.outputs.deploy == 'true'
         with:
           name: doomsharp-live-pages
           path: artifacts/
