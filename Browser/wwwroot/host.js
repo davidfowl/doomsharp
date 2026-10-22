@@ -13,7 +13,7 @@ function listen(target, name, callback, options) {
 export function initialize(reference) {
     dotnet = reference;
     canvas = document.getElementById("game");
-    context = canvas.getContext("2d", { alpha: false });
+    context = canvas.getContext("2d", { alpha: false, willReadFrequently: true });
     if (!context) throw new Error("A Canvas 2D context is required.");
     stopped = false;
     listen(canvas, "click", async () => {
@@ -42,6 +42,15 @@ export function initialize(reference) {
     listen(canvas, "keyup", event => {
         event.preventDefault();
         dotnet.invokeMethodAsync("Key", event.code, false).catch(fail);
+    });
+    // Safety net: if canvas DOM focus shifts away at the exact moment a key is released (observed under
+    // headless Firefox automation, where a keyup can land on document/body instead of the canvas), the
+    // canvas-scoped listener above never sees it and the button stays stuck "down" in the engine. A
+    // window-level listener sits further up the same event path regardless of which element has focus,
+    // so it still delivers the release. Duplicate releases (when canvas also sees the same event) are
+    // harmless since Key(down: false) is idempotent.
+    listen(window, "keyup", event => {
+        if (active) dotnet.invokeMethodAsync("Key", event.code, false).catch(fail);
     });
     listen(canvas, "wheel", event => {
         if (active) event.preventDefault();
