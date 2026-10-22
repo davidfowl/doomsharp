@@ -106,9 +106,16 @@ try
         double scroll = await page.EvaluateAsync<double>("window.scrollY");
         Check(name, scroll > 100, scroll);
     }
-    async Task<JsonElement> Pixels() => await canvas.EvaluateAsync<JsonElement>("""
-        c => {
-            const p = c.getContext('2d').getImageData(0, 0, 640, 400).data;
+    async Task<JsonElement> Pixels(bool freshReadback = false) => await canvas.EvaluateAsync<JsonElement>("""
+        (c, freshReadback) => {
+            let p;
+            if (freshReadback) {
+                const image = document.createElement('canvas');
+                image.width = 640; image.height = 400;
+                const copy = image.getContext('2d', { willReadFrequently: true });
+                copy.drawImage(c, 0, 0);
+                p = copy.getImageData(0, 0, 640, 400).data;
+            } else p = c.getContext('2d').getImageData(0, 0, 640, 400).data;
             let nonblack=0, background=0, white=0, switchOff=0, switchOn=0, hash=2166136261;
             for(let i=0;i<p.length;i+=4) {
                 if(p[i]||p[i+1]||p[i+2]) nonblack++;
@@ -122,7 +129,7 @@ try
             }
             return {nonblack, background, white, switchOff, switchOn, hash:hash>>>0};
         }
-        """);
+        """, freshReadback);
     async Task Hold(string key, int ms)
     {
         await page.Keyboard.DownAsync(key);
@@ -141,8 +148,13 @@ try
         bool satisfied = await canvas.EvaluateAsync<bool>($$"""
             c => new Promise(resolve => {
                 const deadline = Date.now() + {{timeoutMs}};
+                // Firefox can return stale pixels from the canvas's own 2D context after a WAD swap.
+                const image = {{(type.Name == "firefox" ? "document.createElement('canvas')" : "null")}};
+                if (image) { image.width = 640; image.height = 400; }
+                const copy = image?.getContext('2d', { willReadFrequently: true });
                 const check = () => {
-                    const p = c.getContext('2d').getImageData(0, 0, 640, 400).data;
+                    if (copy) copy.drawImage(c, 0, 0);
+                    const p = (copy ?? c.getContext('2d')).getImageData(0, 0, 640, 400).data;
                     let switchOn = 0;
                     for (let i = 0; i < 640 * 350 * 4; i += 4)
                         if (p[i + 1] > p[i] * 2 && p[i + 1] > p[i + 2] * 2) switchOn++;
@@ -156,7 +168,7 @@ try
             })
             """);
         if (!satisfied) diagnostics.Add($"WaitForSwitchState(tag={tag}, on={on}, pauseOnSuccess={pauseOnSuccess}) timed out after {timeoutMs}ms.");
-        return await Pixels();
+        return await Pixels(type.Name == "firefox");
     }
     async Task<string> Hud(int y, int color, int left = 8, int columns = 52)
     {
@@ -369,7 +381,7 @@ try
                     return switchOff > 50000;
                 }
                 """);
-            before = await Pixels();
+            before = await Pixels(type.Name == "firefox");
             // A programmatic FocusAsync() does not count as a user gesture to Firefox, so headless Firefox's
             // background/inactive-tab timer throttling can keep requestAnimationFrame (and therefore every
             // engine tick) from running at all for several seconds after a WAD swap -- unlike every other
