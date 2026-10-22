@@ -14,6 +14,6 @@
     <Content Include="index.html;app.mjs" CopyToPublishDirectory="PreserveNewest" />
     <Content Include="../Browser/wwwroot/host.js" Link="host.js" CopyToPublishDirectory="PreserveNewest" />
     <Content Include="../Browser/wwwroot/style.css" Link="style.css" CopyToPublishDirectory="PreserveNewest" />
-    <Compile Include="../Assets.cs;../Font.cs;../Game.cs;../Instruments.cs;../Music.cs;../Renderer.cs;../Save.cs;../TextureAnimation.cs;../Wad.cs" Link="Engine/%(Filename)%(Extension)" />
+    <Compile Include="../Assets.cs;../BrowserInput.cs;../Font.cs;../Game.cs;../Instruments.cs;../Music.cs;../Renderer.cs;../Save.cs;../TextureAnimation.cs;../Wad.cs" Link="Engine/%(Filename)%(Extension)" />
   </ItemGroup>
 </Project>
