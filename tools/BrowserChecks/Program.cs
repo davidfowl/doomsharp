@@ -352,12 +352,23 @@ try
                 // scratch, which is what actually gives Firefox's renderer a clean slate to paint correctly.
                 await page.ReloadAsync();
                 await page.GetByRole(AriaRole.Button, new() { Name = "Restart Freedoom", Exact = true }).WaitForAsync();
+                await WaitForLoad();
+                await WaitForPixels();
             }
             await page.WaitForFunctionAsync("document.pointerLockElement === null");
             await page.WaitForTimeoutAsync(200);
             await page.Locator("input[type=file]").SetInputFilesAsync(Path.Combine(fixtures, name + ".wad"));
             await WaitForLoad();
             await WaitForPixels();
+            await page.WaitForFunctionAsync("""
+                () => {
+                    const p = document.querySelector('#game').getContext('2d').getImageData(0,0,640,350).data;
+                    let switchOff = 0;
+                    for (let i = 0; i < p.length; i += 4)
+                        if (p[i] > p[i + 1] * 2 && p[i] > p[i + 2] * 2) switchOff++;
+                    return switchOff > 50000;
+                }
+                """);
             before = await Pixels();
             // A programmatic FocusAsync() does not count as a user gesture to Firefox, so headless Firefox's
             // background/inactive-tab timer throttling can keep requestAnimationFrame (and therefore every
