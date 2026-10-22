@@ -130,6 +130,28 @@ try
             return {nonblack, background, white, switchOff, switchOn, hash:hash>>>0};
         }
         """, freshReadback);
+    async Task<JsonElement> ScreenshotPixels(string name)
+    {
+        byte[] png = await canvas.ScreenshotAsync(new() { Path = Path.Combine(output, name) });
+        return await page.EvaluateAsync<JsonElement>("""
+            async encoded => {
+                const bytes = Uint8Array.from(atob(encoded), c => c.charCodeAt(0));
+                const image = await createImageBitmap(new Blob([bytes], { type: 'image/png' }));
+                const copy = document.createElement('canvas');
+                copy.width = 640; copy.height = 400;
+                const context = copy.getContext('2d', { willReadFrequently: true });
+                context.drawImage(image, 0, 0, 640, 400);
+                image.close();
+                const pixels = context.getImageData(0, 0, 640, 350).data;
+                let switchOff = 0, switchOn = 0;
+                for (let i = 0; i < pixels.length; i += 4) {
+                    if (pixels[i] > pixels[i + 1] * 2 && pixels[i] > pixels[i + 2] * 2) switchOff++;
+                    if (pixels[i + 1] > pixels[i] * 2 && pixels[i + 1] > pixels[i + 2] * 2) switchOn++;
+                }
+                return {switchOff, switchOn};
+            }
+            """, Convert.ToBase64String(png));
+    }
     async Task Hold(string key, int ms)
     {
         await page.Keyboard.DownAsync(key);
@@ -143,8 +165,26 @@ try
     // (not via a follow-up Playwright round trip), so a repeatable button's real-time 35-tick reset
     // cannot race ahead of the pause while slower browsers finish their own condition check and the
     // separate IPC call needed to send a synthetic key press.
-    async Task<JsonElement> WaitForSwitchState(bool on, int timeoutMs = 6000, bool pauseOnSuccess = false, string? tag = null)
+    async Task<JsonElement> WaitForSwitchState(bool on, int timeoutMs = 6000, bool pauseOnSuccess = false,
+        string? tag = null, bool afterPause = false, bool afterReset = false)
     {
+        if (type.Name == "firefox")
+        {
+            string frame = afterPause ? "pausedFrame" : afterReset ? "resetFrame" : on ? "onFrame" : "last";
+            try
+            {
+                await page.WaitForFunctionAsync("frame => Boolean(window.switchProbe?.[frame])", frame,
+                    new() { Timeout = timeoutMs });
+                return await page.EvaluateAsync<JsonElement>(
+                    "frame => frame === 'last' && window.switchProbe.onFrame ? window.switchProbe.onFrame : window.switchProbe[frame]",
+                    frame);
+            }
+            catch (TimeoutException)
+            {
+                diagnostics.Add($"WaitForSwitchState(tag={tag}, on={on}, pauseOnSuccess={pauseOnSuccess}) timed out after {timeoutMs}ms.");
+                return JsonSerializer.SerializeToElement(new { switchOff = -1, switchOn = -1 });
+            }
+        }
         bool satisfied = await canvas.EvaluateAsync<bool>($$"""
             c => new Promise(resolve => {
                 const deadline = Date.now() + {{timeoutMs}};
@@ -382,6 +422,44 @@ try
                 }
                 """);
             before = await Pixels(type.Name == "firefox");
+            if (type.Name == "firefox")
+                // Capture transient submitted frames before Firefox's stale canvas readback can miss them.
+                await canvas.EvaluateAsync("""
+                    (c, pauseOnOn) => {
+                        const context = c.getContext('2d');
+                        if (!context.doomsharpSwitchProbeInstalled) {
+                            const putImageData = context.putImageData.bind(context);
+                            context.putImageData = (image, ...args) => {
+                                putImageData(image, ...args);
+                                const probe = window.switchProbe;
+                                if (!probe) return;
+                                probe.frames = (probe.frames ?? 0) + 1;
+                                const pixels = image.data;
+                                let switchOff = 0, switchOn = 0;
+                                for (let i = 0; i < 640 * 350 * 4; i += 4) {
+                                    if (pixels[i] > pixels[i + 1] * 2 && pixels[i] > pixels[i + 2] * 2) switchOff++;
+                                    if (pixels[i + 1] > pixels[i] * 2 && pixels[i + 1] > pixels[i + 2] * 2) switchOn++;
+                                }
+                                const frame = {switchOff, switchOn};
+                                probe.last = frame;
+                                if (switchOn > 500) {
+                                    if (!probe.onFrame) {
+                                        probe.onFrame = frame;
+                                        if (probe.pauseOnOn) {
+                                            probe.pauseOnOn = false;
+                                            c.dispatchEvent(new KeyboardEvent('keydown', { code: 'Escape', bubbles: true }));
+                                        }
+                                    } else if (!probe.pausedFrame && document.pointerLockElement !== c)
+                                        probe.pausedFrame = frame;
+                                }
+                                if (probe.resumed && switchOn === 0 && switchOff > 500)
+                                    probe.resetFrame = frame;
+                            };
+                            context.doomsharpSwitchProbeInstalled = true;
+                        }
+                        window.switchProbe = {pauseOnOn};
+                    }
+                    """, repeat);
             // A programmatic FocusAsync() does not count as a user gesture to Firefox, so headless Firefox's
             // background/inactive-tab timer throttling can keep requestAnimationFrame (and therefore every
             // engine tick) from running at all for several seconds after a WAD swap -- unlike every other
@@ -410,7 +488,12 @@ try
                     await page.WaitForTimeoutAsync(100);
                 }
             }
+            int framesBeforeUse = type.Name == "firefox" && !changed ?
+                await page.EvaluateAsync<int>("window.switchProbe.frames ?? 0") : 0;
             await Hold("e", 150);
+            if (type.Name == "firefox" && !changed)
+                await page.WaitForFunctionAsync("before => window.switchProbe.frames > before", framesBeforeUse,
+                    new() { Timeout = 15000 });
             // For the repeatable button scenario, dispatch the pausing Escape atomically from inside the
             // same in-page poll that detects the toggle (see WaitForSwitchState), so there is no gap for the
             // button's real-time 35-tick reset to slip past the pause. The timeout here is generous: headless
@@ -434,8 +517,12 @@ try
             }
             if (repeat)
             {
-                pausedState = await WaitForSwitchState(true, 15000, tag: $"{name}-paused (attempt {attempt}/{attempts})");
-                pauseOk = pausedState.GetProperty("switchOn").GetInt32() > 500;
+                pausedState = await WaitForSwitchState(true, 15000, tag: $"{name}-paused (attempt {attempt}/{attempts})",
+                    afterPause: true);
+                JsonElement displayedPaused = type.Name == "firefox" ?
+                    await ScreenshotPixels($"switch-99-paused-{attempt}.png") : default;
+                pauseOk = pausedState.GetProperty("switchOn").GetInt32() > 500 &&
+                    (type.Name != "firefox" || displayedPaused.GetProperty("switchOn").GetInt32() > 500);
                 if (toggleOk && !pauseOk && attempt < attempts)
                 {
                     diagnostics.Add($"{name}: pause-preserves-button not observed on attempt {attempt}/{attempts}; reloading the WAD and retrying the whole scenario.");
@@ -443,12 +530,20 @@ try
                     await page.Keyboard.PressAsync("Escape");
                     continue;
                 }
+                if (type.Name == "firefox") await page.EvaluateAsync("window.switchProbe.resumed = true");
                 await canvas.ClickAsync();
             }
-            settled = await WaitForSwitchState(repeat || !changed ? false : true, 2000, tag: $"{name}-settled (attempt {attempt}/{attempts})");
+            settled = await WaitForSwitchState(repeat || !changed ? false : true, 2000,
+                tag: $"{name}-settled (attempt {attempt}/{attempts})", afterReset: repeat);
             settledOk = repeat || !changed ?
                 settled.GetProperty("switchOn").GetInt32() == 0 && settled.GetProperty("switchOff").GetInt32() > 500 :
                 settled.GetProperty("switchOn").GetInt32() > 500;
+            if (repeat && type.Name == "firefox")
+            {
+                JsonElement displayedReset = await ScreenshotPixels($"switch-99-reset-{attempt}.png");
+                settledOk &= displayedReset.GetProperty("switchOn").GetInt32() == 0 &&
+                    displayedReset.GetProperty("switchOff").GetInt32() > 500;
+            }
             break;
         }
         Check(name + "-visible-toggle", toggleOk,
