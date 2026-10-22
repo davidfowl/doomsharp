@@ -12,6 +12,7 @@ public sealed class Renderer
     readonly double focal;
     Vec position, forward, right;
     double eye, horizon;
+    bool fullBright;
     Game game = null!;
     public int VisibleWallPixels { get; private set; }
     public int VisiblePlanePixels { get; private set; }
@@ -34,6 +35,7 @@ public sealed class Renderer
         game = state; position = state.Position; eye = state.Eye;
         tics = (int)Math.Round(state.Time * 35.0);
         forward = new(Math.Cos(state.Angle), Math.Sin(state.Angle)); right = new(forward.Y, -forward.X);
+        fullBright = state.LightAmpTime > 0;
         Array.Fill(depth, double.PositiveInfinity);
         Array.Fill(Pixels, 0x15151b);
         VisibleWallPixels = VisiblePlanePixels = VisibleSpritePixels = VisibleWeaponPixels = 0;
@@ -61,6 +63,14 @@ public sealed class Renderer
         if (state.Automap) DrawMap();
         else DrawWeapon();
         DrawHud();
+        if (state.InvulnerabilityTime > 0)
+            for (int i = 0; i < Width * viewHeight; i++)
+            {
+                int color = Pixels[i];
+                int gray = ((color >> 16 & 255) + (color >> 8 & 255) + (color & 255)) / 3;
+                int inverted = 255 - gray;
+                Pixels[i] = inverted << 16 | inverted << 8 | inverted;
+            }
         if (state.DamageFlash > 0 || state.PickupFlash > 0)
         {
             int tint = state.DamageFlash > 0 ? 0x900000 : 0x806000;
@@ -214,9 +224,9 @@ public sealed class Renderer
     }
 
     static double Edge(Screen a, Screen b, double x, double y) => (x - a.X) * (b.Y - a.Y) - (y - a.Y) * (b.X - a.X);
-    static int Shade(int color, int light, double distance)
+    int Shade(int color, int light, double distance)
     {
-        double factor = Math.Clamp(light / 255.0 - distance / 2400, .12, 1);
+        double factor = fullBright ? 1 : Math.Clamp(light / 255.0 - distance / 2400, .12, 1);
         return (int)((color >> 16 & 255) * factor) << 16 |
             (int)((color >> 8 & 255) * factor) << 8 | (int)((color & 255) * factor);
     }
@@ -381,8 +391,15 @@ public sealed class Renderer
     {
         for (int i = 0; i < Width * viewHeight; i++) Pixels[i] = 0x08090b;
         Vec ScreenPoint(Vec p) => new(Width / 2.0 + (p.X - position.X) * .3, viewHeight / 2.0 - (p.Y - position.Y) * .3);
+        bool revealAll = game.HasComputerMap;
         foreach (Line line in game.Map.Lines)
         {
+            if (!revealAll)
+            {
+                int front = game.Map.Sides[line.Right].Sector;
+                int back = line.Left == 65535 ? -1 : game.Map.Sides[line.Left].Sector;
+                if (!game.VisitedSectors.Contains(front) && !game.VisitedSectors.Contains(back)) continue;
+            }
             Vec a = ScreenPoint(game.Map.Vertices[line.A]), b = ScreenPoint(game.Map.Vertices[line.B]);
             DrawLine(a, b, line.Left == 65535 ? 0xd06040 : line.Special != 0 ? 0xffff40 : 0x505050);
         }
@@ -416,6 +433,16 @@ public sealed class Renderer
             8, viewHeight + 5, scale, 0xffdb8a);
         Text($"{game.Map.Name}  KILLS {game.Kills}/{game.TotalEnemies}  KEYS {game.Keys}  SECRETS {game.Secrets}",
             8, viewHeight + 5 + 9 * scale, scale, 0xc0c0c0);
+        string powerups = string.Join("  ", new[]
+        {
+            game.HasBerserk ? "BERSERK" : null,
+            game.InvulnerabilityTime > 0 ? $"INVULN {(int)game.InvulnerabilityTime}" : null,
+            game.InvisibilityTime > 0 ? $"INVIS {(int)game.InvisibilityTime}" : null,
+            game.RadiationSuitTime > 0 ? $"RADSUIT {(int)game.RadiationSuitTime}" : null,
+            game.LightAmpTime > 0 ? $"VISOR {(int)game.LightAmpTime}" : null,
+            game.HasComputerMap ? "COMPMAP" : null,
+        }.Where(s => s != null));
+        if (powerups.Length > 0) Text(powerups, 8, viewHeight + 5 + 18 * scale, scale, 0x90e0ff);
         if (game.Message.Length > 0) Text(game.Message, 8, 8, scale, 0xffee90);
         if (game.Finished)
             for (int i = 0; i < game.IntermissionStats.Length; i++)

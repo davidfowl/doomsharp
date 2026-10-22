@@ -121,6 +121,11 @@ public static class ScenarioFixtures
             int special = mode == "full" ? 9 : 0; // secret sector only for the "full" (100%-everything) case
             yield return ($"intermission-{mode}", Write(assets.Concat(Room("E1M1", things, special, true))));
         }
+        foreach (int type in new[] { 2022, 2023, 2024, 2025, 2026, 2045 })
+            yield return ($"powerup-{type}", Write(assets.Concat(Room("E1M1", [(0, 0, 1), (0, 0, type)]))));
+        yield return ("powerup-floor-control", Write(assets.Concat(Room("E1M1", [(0, 0, 1)], 5))));
+        yield return ("powerup-floor-invulnerability", Write(assets.Concat(Room("E1M1", [(0, 0, 1), (0, 0, 2022)], 5))));
+        yield return ("powerup-floor-radsuit", Write(assets.Concat(Room("E1M1", [(0, 0, 1), (0, 0, 2025)], 5))));
         List<Lump> retarget = Room("E1M1", [(0, 0, 1), (600, 0, 3001), (300, 0, 3002)]);
         yield return ("infight-retarget", Write(assets.Concat(retarget)));
         List<Lump> playerSafe = Room("E1M1", [(0, 0, 1), (120, 0, 3002)]);
