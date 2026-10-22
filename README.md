@@ -151,6 +151,19 @@ Use/fire advances after an exit where a next map exists. Living players retain
 health/inventory; dead players start fresh. Episode finales offer replay.
 `--help` lists desktop options; `--frames N` also bounds desktop presentation.
 
+## Powerups
+
+Picking up Berserk, Invulnerability, Partial Invisibility, a Radiation Suit, a
+Computer Area Map or a Light Amplification Visor grants their classic timed (or,
+for Berserk/Computer Area Map, persistent) effect, shown in the HUD with the
+remaining duration. Invulnerability blocks all damage and inverts the view; a
+Radiation Suit stops most floor-damage; Partial Invisibility makes monsters miss
+more often; the Visor renders at full brightness; and the Computer Area Map
+reveals the whole automap instead of only the sectors you have visited (the
+automap is fog-of-war without it). Powerups reset on level changes and are not
+stored in savegames; loading a save also resets explored automap sectors. See
+[PROGRESS.md](PROGRESS.md) for exact scope and limits.
+
 ## Verification and development tools
 
 All repository-owned tools are C#; there are no Python scripts or commands.
@@ -319,7 +332,7 @@ and a single-slot JSON save/load (F5/F9, see [PROGRESS.md](PROGRESS.md) for
 scope and verification; in-flight projectiles are not preserved).
 Classic switch textures and buttons supply the bounded feedback above.
 
-Still incomplete: other weapons/powerups, exact monster states/AI/physics/RNG,
+Still incomplete: other weapons and exact powerup parity, monster states/AI/physics/RNG,
 other moving-sector/switch specials, other boss actions,
 menus, multiplayer and original visual/timing/audio
 parity. No PWAD overlay stacking, Hexen/UDMF, extended nodes, Boom/MBF/DEHACKED or
