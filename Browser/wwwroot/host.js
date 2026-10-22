@@ -1,5 +1,6 @@
 let canvas, context, dotnet, audio, animation, mouseX = 0, active = false, stopped = false;
 let activation = 0;
+let frameGeneration = 0;
 let awaitingMouse = true;
 let audioReady = false;
 const listeners = [];
@@ -15,6 +16,7 @@ export function initialize(reference) {
     canvas = document.getElementById("game");
     context = canvas.getContext("2d", { alpha: false, willReadFrequently: true });
     if (!context) throw new Error("A Canvas 2D context is required.");
+    frameGeneration++;
     stopped = false;
     listen(canvas, "click", async () => {
         const current = ++activation;
@@ -75,10 +77,14 @@ export function initialize(reference) {
     listen(window, "blur", pause);
     listen(canvas, "blur", pause);
     listen(document, "visibilitychange", () => { if (document.hidden) pause(); });
-    animation = requestAnimationFrame(frame);
+    scheduleFrame();
 }
 
 export function start() {
+    if (stopped) {
+        stopped = false;
+        scheduleFrame();
+    }
     activation++;
     mouseX = 0;
     awaitingMouse = true;
@@ -99,20 +105,29 @@ function pause() {
 }
 
 function fail(error) {
+    if (stopped) return;
     stopped = true;
+    frameGeneration++;
+    cancelAnimationFrame(animation);
     dotnet.invokeMethodAsync("HostError", `Game stopped: ${error.message}`).catch(console.error);
     console.error(error);
 }
 
-async function frame(time) {
-    if (stopped) return;
+function scheduleFrame() {
+    const generation = frameGeneration;
+    animation = requestAnimationFrame(time => frame(time, generation));
+}
+
+async function frame(time, generation) {
+    if (stopped || generation !== frameGeneration) return;
     try {
         const delta = mouseX;
         mouseX = 0;
         const pixels = await dotnet.invokeMethodAsync("Frame", time, delta, active);
+        if (stopped || generation !== frameGeneration) return;
         context.putImageData(new ImageData(new Uint8ClampedArray(pixels), 640, 400), 0, 0);
-        if (!stopped) animation = requestAnimationFrame(frame);
-    } catch (error) { fail(error); }
+        if (!stopped && generation === frameGeneration) scheduleFrame();
+    } catch (error) { if (generation === frameGeneration) fail(error); }
 }
 
 export function playSound(bytes, sampleRate) {
@@ -204,6 +219,7 @@ export function loadGame() {
 
 export async function dispose() {
     stopped = true;
+    frameGeneration++;
     cancelAnimationFrame(animation);
     for (const remove of listeners.splice(0)) remove();
     for (const voice of voices) voice.stop();

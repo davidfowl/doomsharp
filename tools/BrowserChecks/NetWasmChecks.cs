@@ -67,6 +67,41 @@ internal static class NetWasmChecks
                     return hash >>> 0;
                 }
                 """;
+            await page.EvaluateAsync("""
+                () => {
+                    const context = document.querySelector('#game').getContext('2d');
+                    const original = context.putImageData;
+                    window.frameFault = { draws: 0 };
+                    context.putImageData = function (...args) {
+                        if (window.frameFault.draws === 0) {
+                            context.clearRect(0, 0, 640, 400);
+                            window.frameFault.draws = -1;
+                            throw new Error('Injected frame fault');
+                        }
+                        window.frameFault.draws++;
+                        return original.apply(this, args);
+                    };
+                }
+                """);
+            await page.WaitForFunctionAsync("""
+                () => document.querySelector('#status')?.textContent === 'Game stopped: Injected frame fault'
+                """);
+            uint blank = await page.EvaluateAsync<uint>(pixelHash);
+            await page.GetByRole(AriaRole.Button, new() { Name = "Restart Freedoom", Exact = true }).ClickAsync();
+            await page.WaitForFunctionAsync("""
+                () => {
+                    if (!document.querySelector('#status')?.textContent.startsWith('Playing E1M1.') ||
+                        window.frameFault.draws < 0) return false;
+                    const data = document.querySelector('#game').getContext('2d').getImageData(0, 0, 640, 400).data;
+                    let nonblack = 0;
+                    for (let i = 0; i < data.length; i += 4)
+                        if (data[i] || data[i+1] || data[i+2]) nonblack++;
+                    return nonblack > 200000;
+                }
+                """);
+            uint recovered = await page.EvaluateAsync<uint>(pixelHash);
+            if (blank == recovered || errors.Count > 0)
+                throw new InvalidOperationException($"{runtime}: frame-fault retry did not restore rendering; browser errors: {string.Join("; ", errors)}");
             uint before = await page.EvaluateAsync<uint>(pixelHash);
             await page.Keyboard.DownAsync("ArrowRight");
             await page.WaitForTimeoutAsync(400);
