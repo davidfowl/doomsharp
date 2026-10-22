@@ -14,7 +14,7 @@ public static class ScenarioFixtures
         foreach (string prefix in new[] { "MGUN", "LAUN", "ROCK", "BROK", "CLIP", "AMMO", "SHOT",
             "BKEY", "RKEY", "YKEY", "BSKU", "RSKU", "YSKU", "BAR1" })
             patches.Add(new(prefix + "A0", Patch(32, 32, 16, 32, 186)));
-        foreach (string prefix in new[] { "POSS", "CPOS", "TROO", "HEAD", "BOSS", "BOS2" })
+        foreach (string prefix in new[] { "POSS", "CPOS", "TROO", "HEAD", "BOSS", "BOS2", "CYBR", "SPID" })
             foreach (char frame in "ABCDEFGHIJKLMNOPQRSTU")
                 patches.Add(new($"{prefix}{frame}0", Patch(32, 56, 16, 56, 80)));
         foreach (string prefix in new[] { "PISG", "SHTG", "CHGG", "MISG" })
@@ -83,6 +83,9 @@ public static class ScenarioFixtures
         }
         foreach (string mode in new[] { "last-baron", "two-barons", "knight", "mixed", "wrong-map", "no-tag" })
             yield return ($"boss-{mode}", Write(assets.Concat(Boss(mode))));
+        foreach (string mode in new[] { "cyber-exit", "cyber-two", "cyber-wrong-map", "cyber-wrong-monster",
+            "spider-exit", "spider-wrong-map", "spider-wrong-monster" })
+            yield return ($"boss-{mode}", Write(assets.Concat(FinaleBoss(mode))));
 
         // Intermission/stats scenarios: a single secret room with keycard/armor-bonus items and an S1
         // exit line, used to verify the end-of-level Kills/Items/Secrets percentages and time display.
@@ -220,6 +223,18 @@ public static class ScenarioFixtures
         if (mode is "two-barons" or "mixed") things.Add((600, 200, mode == "mixed" ? 69 : 3003));
         return Corridor(mode == "wrong-map" ? "E1M1" : "E1M8", [-128, 768, 832, 960],
             [0, 64, -32], [256, 256, 256], [0, mode == "no-tag" ? 667 : 666, 0], things);
+    }
+
+    static List<Lump> FinaleBoss(string mode)
+    {
+        bool cyber = mode.StartsWith("cyber", StringComparison.Ordinal);
+        int bossType = cyber ? 16 : 7;
+        List<(int X, int Y, int Type)> things = [(0, 0, 1), (0, 0, 2003), (600, 0,
+            mode.EndsWith("wrong-monster", StringComparison.Ordinal) ? 3003 : bossType)];
+        things.AddRange(Enumerable.Repeat((0, 0, 2046), 10));
+        if (mode == "cyber-two") things.Add((600, 200, bossType));
+        string map = mode.EndsWith("wrong-map", StringComparison.Ordinal) ? "E1M1" : cyber ? "E2M8" : "E3M8";
+        return Room(map, things);
     }
 
     static List<Lump> Corridor(string label, int[] bounds, int[] floors, int[] ceilings, int[] tags,

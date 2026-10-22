@@ -50,7 +50,7 @@ Build/publish output includes the Phase 1 WAD, BSD license and credits.
 | Rocket launcher/inventory/projectiles | Partial | Type2003/key5, separate2010/2046 ammo/cap50, real20-unit/tick swept missiles, direct/occluded radial damage and supplied weapon/flight/explosion patches; bounded native scenarios described below, not exact original autoaim/windup/RNG/visual or campaign parity |
 | Movement, collision and sector actions | Partial | Native door/lift paths and selected boundaries; tagged locked fast-door99/133-137 action scope has dedicated executable scenarios below, not every mover/trigger |
 | Map progression and damaging exits | Partial | Native Linux input observes E1M1 to E1M2 with inventory/health retained; local classic-map scenarios qualify sector-11 damage/exit, fresh dead-player next-map state and finale/missing-map stop; not original campaign completion |
-| E1M8 Baron/tag666 floor action | Partial | Last living type3003 with a live player, all eligible tagged floors lower to lowest neighbors through shared movers;14 synthetic native cases below, not original E1M8/campaign or exact death-state timing |
+| Episode boss actions | Partial | E1M8 last-Baron/tag666 floor action; this branch also exits E2M8 on the last Cyberdemon and E3M8 on the last Spider Mastermind, with wrong-map/type and multiple-boss engine checks. E4 boss actions and actual campaign playthroughs remain unverified. |
 | Actors, sprites, pickups and barrels | Partial | Native demo observes pickup and one enemy kill; exact states/attacks, infighting, boss behavior and many item/visual cases remain unfinished or unverified |
 | HUD, weapon overlays and automap | Partial | Actual executable exports HUD/weapon frames; local Linux native Tab on/off plus W/Ctrl controls qualify automap input, not original visuals or other-platform interactive behavior |
 | Native window presentation | Working | Bounded actual-engine desktop smoke runs pass on three OSes; interactive input coverage differs by platform below |
@@ -109,8 +109,9 @@ harmonic content and attack/decay/sustain/release envelopes (`Instruments.cs`).
 This is still an approximation of General MIDI timbres, not a soundfont-accurate
 renderer, and SMPTE-divisioned MIDI files fall back to a default PPQ. See
 the "Built vs. runtime-tested" verification below for exact evidence.
-Sector-11 exit handling and E1M8's last-Baron/tag666 floor action are implemented;
-other original finale boss actions remain absent. Damaging-floor timing is approximate.
+Sector-11 exit handling, E1M8's last-Baron/tag666 floor action, and E2M8/E3M8
+last-boss exits are implemented; E4 finale boss actions remain absent.
+Damaging-floor timing is approximate.
 
 ## Built vs. runtime-tested
 

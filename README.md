@@ -214,7 +214,7 @@ walls/floors/ceilings, sky, masked walls and sprites; collision, sliding and
 24-unit steps; pistol, shotgun, chaingun and swept rocket/explosion combat;
 pickups, keys, armor, simplified enemies/barrels; common doors, tagged locks,
 lifts/floors, teleports, damaging floors, secrets, exits and map progression;
-E1M8 last-Baron/tag666 floors; animated flat/wall textures (water, nukage,
+E1M8 last-Baron/tag666 floors and E2M8/E3M8 last-boss episode exits; animated flat/wall textures (water, nukage,
 slime, blood, lava and fire cycles on a fixed 8-tic interval); DMX effects,
 MUS/Standard-MIDI music playback
 (approximate software synthesis, see [PROGRESS.md](PROGRESS.md)), HUD, automap,
@@ -224,7 +224,7 @@ and a single-slot JSON save/load (F5/F9, see [PROGRESS.md](PROGRESS.md) for
 scope and verification; in-flight projectiles are not preserved).
 
 Still incomplete: other weapons/powerups, exact monster states/AI/physics/RNG,
-stairs/crushers and every moving-sector/switch special, other boss actions,
+stairs/crushers and every moving-sector/switch special, E4 boss actions,
 menus, multiplayer and original visual/timing/audio
 parity. No PWAD overlay stacking, Hexen/UDMF, extended nodes, Boom/MBF/DEHACKED or
 mod compatibility. Only medium-skill single-player flags are selected. Missing
