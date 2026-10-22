@@ -10,7 +10,7 @@
   <ItemGroup>
     <PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly" Version="10.0.13" />
     <PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly.DevServer" Version="10.0.13" PrivateAssets="all" />
-    <Compile Include="../Assets.cs;../Font.cs;../Game.cs;../Instruments.cs;../Music.cs;../Renderer.cs;../Save.cs;../TextureAnimation.cs;../Wad.cs" Link="Engine/%(Filename)%(Extension)" />
+    <Compile Include="../Assets.cs;../BrowserInput.cs;../Font.cs;../Game.cs;../Instruments.cs;../Music.cs;../Renderer.cs;../Save.cs;../TextureAnimation.cs;../Wad.cs" Link="Engine/%(Filename)%(Extension)" />
     <Content Include="../assets/freedoom/*" Link="wwwroot/assets/freedoom/%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="../LICENSE" Link="wwwroot/LICENSE.txt" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>

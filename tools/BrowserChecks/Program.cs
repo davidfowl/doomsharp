@@ -6,6 +6,12 @@ using DoomSharp;
 const string FreedoomSha256 = "7323bcc168c5a45ff10749b339960e98314740a734c30d4b9f3337001f9e703d";
 
 if (args.Length > 0 && args[0] == "install") return Microsoft.Playwright.Program.Main(args);
+if (args.Length == 3 && args[0] == "netwasm") return await NetWasmChecks.Run(args[1], args[2]);
+if (args.Length == 3 && args[0] == "netwasm-only") return await NetWasmChecks.Run(args[1], args[2], onlyNetWasm: true);
+if (args.Length == 4 && args[0] == "netwasm") return await NetWasmChecks.Run(args[1], args[2], fixtures: args[3]);
+if (args.Length == 4 && args[0] == "netwasm-only") return await NetWasmChecks.Run(args[1], args[2], onlyNetWasm: true, fixtures: args[3]);
+if (args.Length == 3 && args[0] == "sizes") return BrowserSizes.Write(args[1], args[2]);
+if (args.Length == 2 && args[0] == "stats") return await BrowserSizes.CheckSite(args[1]);
 
 if (args.Length is < 3 or > 4)
 {

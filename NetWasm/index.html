@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <base href="./" />
+  <title>DoomSharp — NetWasm</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <main>
+    <h1>DoomSharp — NetWasm</h1>
+    <p>The same C# engine, compiled with <a href="https://github.com/zion-sati/NetWasm">NetWasm</a>. <a href="../">Play the .NET WASM version</a>.</p>
+    <div class="controls">
+      <button id="restart" disabled>Restart Freedoom</button>
+      <label>Local WAD <input id="wad" type="file" accept=".wad" disabled /></label>
+      <label>Map <input id="map" aria-label="Map" size="8" /></label>
+      <label><input id="mute" type="checkbox" /> Mute</label>
+      <button id="save" disabled>Save Game</button>
+      <button id="load" disabled>Load Game</button>
+      <button id="benchmark" disabled>Benchmark 120 renders</button>
+    </div>
+    <p id="status" role="status">Loading NetWasm...</p>
+    <canvas id="game" width="640" height="400" tabindex="0" aria-label="DoomSharp game"></canvas>
+    <p>Freedoom starts automatically without sound. Click the game to enable sound and capture the mouse. WASD moves, arrows turn,
+    Ctrl/click fires, E/Space uses, Shift runs, 1/2/4/5 selects weapons, Tab maps,
+    R restarts, F1 opens the menu, F5/Save Game saves, F9/Load Game loads. Esc releases the pointer and pauses. Click to resume.</p>
+    <p>Local WADs stay on your device (64 MiB limit). Map defaults to the first map.
+    No proprietary assets included. <a href="../assets/freedoom/COPYING.txt">Freedoom license</a>,
+    <a href="../assets/freedoom/CREDITS.txt">credits</a>,
+    <a href="../assets/freedoom/CREDITS-MUSIC.txt">music credits</a>.</p>
+    <section id="comparison" aria-label="Published build comparison">Loading published comparison...</section>
+  </main>
+  <script type="module" src="app.mjs"></script>
+  <script type="module" src="../comparison.js"></script>
+</body>
+</html>
