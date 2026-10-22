@@ -205,6 +205,9 @@ public sealed class Renderer
 
     void Triangle(Screen a, Screen b, Screen c, Picture texture, int light, int kind)
     {
+        // Hold the texture array throughout the hot loop; WebAssembly AOT can otherwise fault after WAD reloads.
+        int[] texels = texture.Pixels;
+        int textureWidth = texture.Width, textureHeight = texture.Height;
         double area = Edge(a, b, c.X, c.Y);
         if (Math.Abs(area) < 1e-6) return;
         int minX = (int)Math.Clamp(Math.Floor(Math.Min(a.X, Math.Min(b.X, c.X))), 0, Width - 1);
@@ -229,8 +232,11 @@ public sealed class Renderer
                 }
                 int u = (int)Math.Floor((w0 * a.U + w1 * b.U + w2 * c.U) * distance);
                 int v = (int)Math.Floor((w0 * a.V + w1 * b.V + w2 * c.V) * distance);
-                if (kind == 2 && (u < 0 || v < 0 || u >= texture.Width || v >= texture.Height)) continue;
-                int color = texture.Sample(u, v);
+                if (kind == 2 && (u < 0 || v < 0 || u >= textureWidth || v >= textureHeight)) continue;
+                int wrappedU = u % textureWidth, wrappedV = v % textureHeight;
+                if (wrappedU < 0) wrappedU += textureWidth;
+                if (wrappedV < 0) wrappedV += textureHeight;
+                int color = texels[wrappedV * textureWidth + wrappedU];
                 if (color < 0) continue;
                 depth[index] = distance;
                 Pixels[index] = Shade(color, light, distance);
