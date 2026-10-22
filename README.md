@@ -132,10 +132,13 @@ documented below.
 WASD moves/strafes; arrows turn (up/down also move). Click once to capture the
 mouse, then move it to turn. Ctrl or left click fires; E/Space uses; Shift runs.
 1 selects the pistol, 2 an acquired shotgun, 4 an acquired chaingun, and 5 an
-acquired rocket launcher. Tab toggles the automap; R restarts. Esc quits desktop
-or pauses the browser. Losing focus clears input and releases mouse capture.
-F5 saves and F9 loads game state (desktop: a `doomsharp.sav` file next to the
-executable; browser: `localStorage`, also reachable via Save/Load buttons).
+acquired rocket launcher. Tab toggles the automap; R restarts. F1 opens an
+in-game menu (Resume, New Game, Options, Quit Game; arrows navigate, E/Space/
+fire selects, left/right adjusts mouse sensitivity and toggles messages in
+Options). Esc quits desktop or pauses the browser. Losing focus clears input
+and releases mouse capture. F5 saves and F9 loads game state (desktop: a
+`doomsharp.sav` file next to the executable; browser: `localStorage`, also
+reachable via Save/Load buttons).
 
 Use/fire advances after an exit where a next map exists. Living players retain
 health/inventory; dead players start fresh. Episode finales offer replay.
@@ -233,12 +236,13 @@ MUS/Standard-MIDI music playback
 (approximate software synthesis, see [PROGRESS.md](PROGRESS.md)), HUD, automap,
 an end-of-level intermission stats screen (Kills/Items/Secrets percentages and
 time; see [PROGRESS.md](PROGRESS.md) for the exact "item" definition),
-and a single-slot JSON save/load (F5/F9, see [PROGRESS.md](PROGRESS.md) for
-scope and verification; in-flight projectiles are not preserved).
+an in-game pause/options menu (F1), and a single-slot JSON save/load (F5/F9,
+see [PROGRESS.md](PROGRESS.md) for scope and verification; in-flight projectiles
+are not preserved).
 
-Still incomplete: other weapons/powerups, exact monster states/AI/physics/RNG,
+Still incomplete: other weapons/powerup behavior, exact monster states/AI/physics/RNG,
 stairs/crushers and every moving-sector/switch special, E4 boss actions,
-menus, multiplayer and original visual/timing/audio
+pre-level menus, multiplayer and original visual/timing/audio
 parity. No PWAD overlay stacking, Hexen/UDMF, extended nodes, Boom/MBF/DEHACKED or
 mod compatibility. Only medium-skill single-player flags are selected. Missing
 assets/types produce explicit diagnostics; missing textures use a diagnostic

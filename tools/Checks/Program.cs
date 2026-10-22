@@ -288,6 +288,48 @@ try
                 new { game.Health, projectiles = game.Projectiles.Count });
         }
         {
+            Game game = Load("rocket-pickup"); Tick(game);
+            void Press(Buttons b) { Tick(game, b); Tick(game); }
+            Press(Buttons.Menu);
+            Check("menu-open", game.MenuOpen && game.MenuScreen == MenuScreen.Main && game.MenuIndex == 0,
+                new { game.MenuOpen, game.MenuScreen, game.MenuIndex });
+            double timeAtOpen = game.Time;
+            Tick(game, count: 10);
+            Check("menu-pauses-simulation", game.Time == timeAtOpen, new { game.Time, timeAtOpen });
+            Press(Buttons.Back);
+            Check("menu-navigate-down", game.MenuIndex == 1, game.MenuIndex);
+            Press(Buttons.Forward);
+            Check("menu-navigate-up", game.MenuIndex == 0, game.MenuIndex);
+            Press(Buttons.Back); Press(Buttons.Back); Press(Buttons.Use);
+            Check("menu-enter-options", game.MenuScreen == MenuScreen.Options && game.MenuIndex == 0,
+                new { game.MenuScreen, game.MenuIndex });
+            double sensitivity = game.MouseSensitivity;
+            Press(Buttons.TurnRight);
+            Check("menu-sensitivity-increase", game.MouseSensitivity > sensitivity, new { sensitivity, game.MouseSensitivity });
+            Press(Buttons.TurnLeft);
+            Check("menu-sensitivity-decrease", Math.Abs(game.MouseSensitivity - sensitivity) < 1e-9, new { sensitivity, game.MouseSensitivity });
+            Press(Buttons.Back); Press(Buttons.Use);
+            Check("menu-messages-toggle", !game.MessagesOn, game.MessagesOn);
+            Press(Buttons.Back); Press(Buttons.Use);
+            Check("menu-options-back", game.MenuScreen == MenuScreen.Main && game.MenuIndex == 0,
+                new { game.MenuScreen, game.MenuIndex });
+            Press(Buttons.Back); Press(Buttons.Back); Press(Buttons.Back); Press(Buttons.Use);
+            Check("menu-enter-quit-confirm", game.MenuScreen == MenuScreen.QuitConfirm && game.MenuIndex == 1,
+                new { game.MenuScreen, game.MenuIndex });
+            Press(Buttons.Use);
+            Check("menu-quit-no-returns", game.MenuScreen == MenuScreen.Main && game.MenuIndex == 0 && !game.Finished,
+                new { game.MenuScreen, game.MenuIndex });
+            Press(Buttons.Menu);
+            Check("menu-toggle-closes", !game.MenuOpen, game.MenuOpen);
+            Press(Buttons.Menu);
+            Press(Buttons.Back); Press(Buttons.Back); Press(Buttons.Back); Press(Buttons.Use);
+            Press(Buttons.Forward);
+            Check("menu-quit-confirm-select-yes", game.MenuIndex == 0, game.MenuIndex);
+            Input quit = new() { Held = Buttons.Use };
+            game.Tick(quit, 1.0 / 35);
+            Check("menu-quit-yes-sets-input-quit", quit.Quit, quit.Quit);
+        }
+        {
             // Full intermission: a keycard and an armor bonus on the walked path (both collected), a
             // secret sector (found on spawn) and no monsters. Percentages should all read 100%.
             Game game = Load("intermission-full"); Tick(game);
