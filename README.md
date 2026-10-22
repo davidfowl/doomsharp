@@ -281,7 +281,7 @@ campaign completion remain unqualified.
 
 ### Switch textures and buttons
 
-On `feat/classic-switch-textures` (not merged into `main`), successful front-side
+The classic switch-texture integration makes successful front-side
 use toggles the 40 canonical vanilla `SW1`/`SW2` pairs on existing switch actions:
 7/127, 11/51, 18/21/23/60/62/69/122/123, and
 29/63/99/103/111/112/113/133/134/135/136/137. Pair-table order is considered
@@ -308,17 +308,20 @@ Implemented: classic IWAD/PWAD directory/geometry/BSP validation; textured
 walls/floors/ceilings, sky, masked walls and sprites; collision, sliding and
 24-unit steps; pistol, shotgun, chaingun and swept rocket/explosion combat;
 pickups, keys, armor, simplified enemies/barrels; common doors, tagged locks,
-lifts/floors, tagged stairs and cycling crushers, teleports, damaging floors,
-secrets, exits and map progression;
-E1M8 last-Baron/tag666 floors; DMX effects, MUS/Standard-MIDI music playback
-(approximate software synthesis, see [PROGRESS.md](PROGRESS.md)), HUD, automap
+lifts/floors, teleports, damaging floors, secrets, exits and map progression;
+E1M8 last-Baron/tag666 floors; animated flat/wall textures (water, nukage,
+slime, blood, lava and fire cycles on a fixed 8-tic interval); DMX effects,
+MUS/Standard-MIDI music playback
+(approximate software synthesis, see [PROGRESS.md](PROGRESS.md)), HUD, automap,
+an end-of-level intermission stats screen (Kills/Items/Secrets percentages and
+time; see [PROGRESS.md](PROGRESS.md) for the exact "item" definition),
 and a single-slot JSON save/load (F5/F9, see [PROGRESS.md](PROGRESS.md) for
 scope and verification; in-flight projectiles are not preserved).
-The switch-texture branch additionally supplies the bounded feedback above.
+Classic switch textures and buttons supply the bounded feedback above.
 
 Still incomplete: other weapons/powerups, exact monster states/AI/physics/RNG,
-remaining crusher/ceiling and moving-sector/switch specials, other boss actions,
-animated textures, menus, multiplayer and original visual/timing/audio
+other moving-sector/switch specials, other boss actions,
+menus, multiplayer and original visual/timing/audio
 parity. No PWAD overlay stacking, Hexen/UDMF, extended nodes, Boom/MBF/DEHACKED or
 mod compatibility. Only medium-skill single-player flags are selected. Missing
 assets/types produce explicit diagnostics; missing textures use a diagnostic

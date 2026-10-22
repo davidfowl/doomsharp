@@ -4,15 +4,20 @@ namespace DoomSharp;
 /// Decodes classic "D_*" music lumps (either id Software's MUS format or a Standard MIDI File, as
 /// bundled by some IWADs such as Freedoom) into looping PCM, using a small built-in additive/noise
 /// synthesizer. There is no General MIDI soundfont or DMX OPL emulation; timbres are approximated
-/// by General MIDI program group, not byte-for-byte original playback.
+/// by General MIDI program group (see <see cref="Instruments"/>), and pitch-bend controller events
+/// are translated to a frequency offset, but this is still not byte-for-byte original playback.
 /// </summary>
 public static class Music
 {
     const double TicksPerSecondMus = 140;
     const double MaxDurationSeconds = 240;
 
-    /// <summary>A resolved note: an absolute time span, pitch and loudness independent of the source format.</summary>
-    readonly record struct NoteSpan(double Start, double End, double Frequency, double Amplitude, int Instrument, bool Percussion);
+    /// <summary>
+    /// A resolved note: an absolute time span, pitch (including any applied pitch-bend) and loudness
+    /// independent of the source format. <see cref="Bend"/> is the pitch-bend offset in semitones that
+    /// was folded into <see cref="Frequency"/>, retained separately for diagnostics/testing.
+    /// </summary>
+    internal readonly record struct NoteSpan(double Start, double End, double Frequency, double Amplitude, int Instrument, bool Percussion, double Bend);
 
     public static short[]? Render(byte[]? lump, int sampleRate)
     {
@@ -24,15 +29,18 @@ public static class Music
         return Synthesize(notes, duration, sampleRate);
     }
 
+    /// <summary>Test-only entry point exposing the resolved MUS note sequence (including pitch-bend).</summary>
+    internal static (List<NoteSpan> Notes, double Duration) ParseMusForTest(byte[] lump) => ParseMus(lump);
+
     static bool IsMus(byte[] b) => b.Length >= 4 && b[0] == 'M' && b[1] == 'U' && b[2] == 'S' && b[3] == 0x1A;
     static bool IsMidi(byte[] b) => b.Length >= 4 && b[0] == 'M' && b[1] == 'T' && b[2] == 'h' && b[3] == 'd';
 
-    static NoteSpan MakeNote(long startTick, long endTick, double ticksPerSecond, int note, int velocity, int volume, int patch, bool percussion)
+    static NoteSpan MakeNote(long startTick, long endTick, double ticksPerSecond, int note, int velocity, int volume, int patch, bool percussion, double bendSemitones)
     {
         double start = startTick / ticksPerSecond, end = Math.Max(start + .01, endTick / ticksPerSecond);
         double amplitude = Math.Clamp(velocity / 127.0, 0, 1) * Math.Clamp(volume / 127.0, 0, 1);
-        double frequency = 440.0 * Math.Pow(2, (Math.Clamp(note, 0, 127) - 69) / 12.0);
-        return new NoteSpan(start, end, frequency, amplitude, patch, percussion);
+        double frequency = 440.0 * Math.Pow(2, (Math.Clamp(note, 0, 127) - 69) / 12.0) * Math.Pow(2, bendSemitones / 12.0);
+        return new NoteSpan(start, end, frequency, amplitude, patch, percussion, bendSemitones);
     }
 
     // --- MUS (id Software's native sequencer format; see e.g. https://moddingwiki.shikadi.net/wiki/MUS_Format) ---
@@ -46,6 +54,7 @@ public static class Music
         int[] patch = new int[16];
         int[] volume = new int[16]; Array.Fill(volume, 127);
         int[] lastVelocity = new int[16]; Array.Fill(lastVelocity, 64);
+        double[] bend = new double[16];
         Dictionary<(int Channel, int Note), (long Tick, int Velocity, int Volume, int Patch)> active = [];
         List<NoteSpan> notes = [];
         int pos = scoreStart, end = scoreStart + scoreLength;
@@ -62,7 +71,7 @@ public static class Music
                     if (pos >= end) throw new InvalidDataException("Truncated MUS release-note event.");
                     int releaseNote = b[pos++] & 0x7F;
                     if (active.Remove((channel, releaseNote), out var released))
-                        notes.Add(MakeNote(released.Tick, tick, TicksPerSecondMus, releaseNote, released.Velocity, released.Volume, released.Patch, channel == 15));
+                        notes.Add(MakeNote(released.Tick, tick, TicksPerSecondMus, releaseNote, released.Velocity, released.Volume, released.Patch, channel == 15, bend[channel]));
                     break;
                 case 1: // play note
                     if (pos >= end) throw new InvalidDataException("Truncated MUS play-note event.");
@@ -74,12 +83,12 @@ public static class Music
                         lastVelocity[channel] = b[pos++] & 0x7F;
                     }
                     if (active.Remove((channel, note), out var retriggered))
-                        notes.Add(MakeNote(retriggered.Tick, tick, TicksPerSecondMus, note, retriggered.Velocity, retriggered.Volume, retriggered.Patch, channel == 15));
+                        notes.Add(MakeNote(retriggered.Tick, tick, TicksPerSecondMus, note, retriggered.Velocity, retriggered.Volume, retriggered.Patch, channel == 15, bend[channel]));
                     active[(channel, note)] = (tick, lastVelocity[channel], volume[channel], patch[channel]);
                     break;
-                case 2: // pitch bend; not modeled, only the data byte is consumed
+                case 2: // pitch bend; the 7-bit wheel value (64 = centered) is translated to semitones
                     if (pos >= end) throw new InvalidDataException("Truncated MUS pitch-bend event.");
-                    pos++;
+                    bend[channel] = Instruments.MusPitchBendSemitones(b[pos++] & 0x7F);
                     break;
                 case 3: // system event (all sounds/notes off, mono, poly, reset controllers)
                     if (pos >= end) throw new InvalidDataException("Truncated MUS system event.");
@@ -88,7 +97,7 @@ public static class Music
                         foreach ((int Channel, int Note) key in active.Keys.Where(k => k.Channel == channel).ToArray())
                         {
                             var info = active[key]; active.Remove(key);
-                            notes.Add(MakeNote(info.Tick, tick, TicksPerSecondMus, key.Note, info.Velocity, info.Volume, info.Patch, channel == 15));
+                            notes.Add(MakeNote(info.Tick, tick, TicksPerSecondMus, key.Note, info.Velocity, info.Volume, info.Patch, channel == 15, bend[channel]));
                         }
                     break;
                 case 4: // controller change; only patch (0) and volume (3) affect playback here
@@ -115,7 +124,7 @@ public static class Music
             }
         }
         foreach (((int Channel, int Note) key, var info) in active)
-            notes.Add(MakeNote(info.Tick, tick, TicksPerSecondMus, key.Note, info.Velocity, info.Volume, info.Patch, key.Channel == 15));
+            notes.Add(MakeNote(info.Tick, tick, TicksPerSecondMus, key.Note, info.Velocity, info.Volume, info.Patch, key.Channel == 15, bend[key.Channel]));
         return (notes, tick / TicksPerSecondMus);
     }
 
@@ -213,6 +222,7 @@ public static class Music
 
         int[] patch = new int[16];
         int[] volume = new int[16]; Array.Fill(volume, 100);
+        double[] bend = new double[16];
         Dictionary<(int Channel, int Note), (long Tick, int Velocity, int Volume, int Patch)> active = [];
         List<NoteSpan> notes = [];
         foreach ((long tick, int status, int data1, int data2) in events)
@@ -223,13 +233,13 @@ public static class Music
             {
                 case 0x90 when data2 > 0: // note on
                     if (active.Remove((channel, data1), out var retriggered))
-                        notes.Add(MakeNote(retriggered.Tick, tick, 1, data1, retriggered.Velocity, retriggered.Volume, retriggered.Patch, percussion));
+                        notes.Add(MakeNote(retriggered.Tick, tick, 1, data1, retriggered.Velocity, retriggered.Volume, retriggered.Patch, percussion, bend[channel]));
                     active[(channel, data1)] = (tick, data2, volume[channel], patch[channel]);
                     break;
                 case 0x90: // note-on with velocity 0 behaves as note off
                 case 0x80:
                     if (active.Remove((channel, data1), out var released))
-                        notes.Add(MakeNote(released.Tick, tick, 1, data1, released.Velocity, released.Volume, released.Patch, percussion));
+                        notes.Add(MakeNote(released.Tick, tick, 1, data1, released.Velocity, released.Volume, released.Patch, percussion, bend[channel]));
                     break;
                 case 0xB0:
                     if (data1 == 7) volume[channel] = data2; // channel volume
@@ -237,15 +247,16 @@ public static class Music
                         foreach ((int Channel, int Note) key in active.Keys.Where(k => k.Channel == channel).ToArray())
                         {
                             var info = active[key]; active.Remove(key);
-                            notes.Add(MakeNote(info.Tick, tick, 1, key.Note, info.Velocity, info.Volume, info.Patch, percussion));
+                            notes.Add(MakeNote(info.Tick, tick, 1, key.Note, info.Velocity, info.Volume, info.Patch, percussion, bend[channel]));
                         }
                     break;
                 case 0xC0: patch[channel] = data1; break; // program change
-                default: break; // pitch bend/aftertouch are not modeled
+                case 0xE0: bend[channel] = Instruments.MidiPitchBendSemitones(data1, data2); break; // pitch bend
+                default: break; // aftertouch is not modeled
             }
         }
         foreach (((int Channel, int Note) key, var info) in active)
-            notes.Add(MakeNote(info.Tick, lastTick, 1, key.Note, info.Velocity, info.Volume, info.Patch, key.Channel == 9));
+            notes.Add(MakeNote(info.Tick, lastTick, 1, key.Note, info.Velocity, info.Volume, info.Patch, key.Channel == 9, bend[key.Channel]));
         // Event ticks above were left in raw MIDI ticks (seconds-per-tick=1); convert through the tempo map now.
         List<NoteSpan> converted = notes.ConvertAll(n => n with
         {
@@ -256,34 +267,22 @@ public static class Music
 
     // --- Synthesis: a small additive-harmonic/noise model, not a General MIDI soundfont. ---
 
-    static double[] HarmonicWeights(int program) => (Math.Clamp(program, 0, 127) / 8) switch
-    {
-        0 or 1 => [1, .5, .25, .12],     // piano / chromatic percussion: fundamental-heavy, fast-decaying
-        2 => [1, .8, .6, .45, .3],       // organ: rich sustained harmonics
-        3 or 4 => [1, .35, .15],         // guitar / bass: fundamental-heavy
-        5 or 6 => [1, .6, .35, .2],      // strings / ensemble
-        7 => [1, .7, .5, .35, .25],      // brass: bright
-        8 or 9 => [1, .45, .25],         // reed / pipe
-        _ => [1, .5, .25],               // synth leads/pads and anything else
-    };
-
     static short[] Synthesize(List<NoteSpan> notes, double duration, int sampleRate)
     {
         duration = Math.Clamp(duration, .05, MaxDurationSeconds);
         int totalSamples = (int)Math.Ceiling(duration * sampleRate);
         if (totalSamples <= 0 || notes.Count == 0) return new short[Math.Max(1, totalSamples)];
         double[] mix = new double[totalSamples];
-        const double attack = .006, release = .03, scale = .2;
+        const double attack = .006, scale = .2;
         foreach (NoteSpan note in notes)
         {
             if (note.Amplitude <= 0) continue;
             int startSample = Math.Max(0, (int)(note.Start * sampleRate));
             int sustainSamples = Math.Max(1, (int)((note.End - note.Start) * sampleRate));
-            int releaseSamples = (int)(release * sampleRate);
-            int attackSamples = Math.Min(sustainSamples, (int)(attack * sampleRate));
-            int length = sustainSamples + releaseSamples;
             if (note.Percussion)
             {
+                int releaseSamples = (int)(.03 * sampleRate);
+                int length = sustainSamples + releaseSamples;
                 int burst = Math.Min(length, (int)(.12 * sampleRate) + releaseSamples);
                 uint rng = (uint)(note.Frequency * 977) ^ 0x9E3779B9u;
                 double cutoff = Math.Clamp(note.Frequency / (sampleRate / 2.0), .02, .6);
@@ -300,14 +299,33 @@ public static class Music
                 }
                 continue;
             }
-            double[] harmonics = HarmonicWeights(note.Instrument);
+            // GM-program-aware voicing: harmonic content plus an attack/decay-to-sustain/release
+            // envelope shaped by the instrument's timbre family (see Instruments.ForProgram).
+            Instruments.Voice voice = Instruments.ForProgram(note.Instrument);
+            double[] harmonics = voice.Harmonics;
             double weightSum = harmonics.Sum();
-            for (int i = 0; i < length; i++)
+            int releaseSamples2 = Math.Max(1, (int)(voice.ReleaseSeconds * sampleRate));
+            int attackSamples = Math.Min(sustainSamples, (int)(attack * sampleRate));
+            int length2 = sustainSamples + releaseSamples2;
+            double peakLevel = 1 + voice.PluckOvershoot;
+            double SustainEnvelope(int i)
+            {
+                if (attackSamples > 0 && i < attackSamples) return peakLevel * (i / (double)attackSamples);
+                if (!double.IsPositiveInfinity(voice.DecaySeconds))
+                {
+                    double t = (i - attackSamples) / (double)sampleRate;
+                    double frac = Math.Clamp(t / voice.DecaySeconds, 0, 1);
+                    return peakLevel + (voice.SustainLevel - peakLevel) * frac;
+                }
+                return peakLevel;
+            }
+            double heldLevel = SustainEnvelope(Math.Max(0, sustainSamples - 1));
+            for (int i = 0; i < length2; i++)
             {
                 int sampleIndex = startSample + i;
                 if (sampleIndex >= totalSamples) break;
                 double t = i / (double)sampleRate;
-                double env = i < attackSamples ? i / (double)attackSamples : i >= length - releaseSamples ? Math.Max(0, (length - i) / (double)releaseSamples) : 1;
+                double env = i < sustainSamples ? SustainEnvelope(i) : heldLevel * Math.Max(0, (length2 - i) / (double)releaseSamples2);
                 double value = 0;
                 for (int h = 0; h < harmonics.Length; h++)
                     value += Math.Sin(2 * Math.PI * note.Frequency * (h + 1) * t) * harmonics[h];
