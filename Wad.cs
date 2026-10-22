@@ -9,7 +9,9 @@ public sealed class Wad
     public List<Lump> Lumps { get; } = [];
     public List<string> Maps => Lumps.Where(l => IsMap(l.Name)).Select(l => l.Name).ToList();
 
+#if !NETWASM
     public Wad(string path) : this(File.ReadAllBytes(path)) { }
+#endif
 
     public Wad(byte[] bytes)
     {

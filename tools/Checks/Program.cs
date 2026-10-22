@@ -114,6 +114,10 @@ try
     }
     if (mode is "engine" or "all")
     {
+        Check("shared-browser-weapon-keys", BrowserInput.FromCode("Digit3") == Buttons.Chainsaw &&
+            BrowserInput.FromCode("Digit6") == Buttons.PlasmaRifle &&
+            BrowserInput.FromCode("Digit7") == Buttons.BFG9000 &&
+            BrowserInput.FromCode("F1") == Buttons.Menu);
         static string[] Textures(Side side) => [side.Upper, side.Lower, side.Middle];
         static bool RepeatSwitch(int special) => special is 60 or 62 or 69 or 123 or 63 or 99 or 134 or 136;
         foreach (string file in Directory.GetFiles(fixtures, "switch-*.wad").Order(StringComparer.Ordinal))
