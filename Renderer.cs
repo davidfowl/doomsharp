@@ -76,6 +76,21 @@ public sealed class Renderer
             int tint = state.DamageFlash > 0 ? 0x900000 : 0x806000;
             for (int i = 0; i < Width * viewHeight; i++) Pixels[i] = Blend(Pixels[i], tint);
         }
+        if (state.MenuOpen) DrawMenu(state);
+    }
+
+    void DrawMenu(Game state)
+    {
+        for (int i = 0; i < Pixels.Length; i++) Pixels[i] = Blend(Pixels[i], 0x000000);
+        string[] items = state.MenuItems;
+        int scale = Math.Max(1, Width / 320);
+        int top = Height / 2 - (items.Length + 2) * 10 * scale / 2;
+        Text(state.MenuTitle, Width / 2 - state.MenuTitle.Length * 3 * scale, top, scale, 0xffdb8a);
+        for (int i = 0; i < items.Length; i++)
+        {
+            string label = (i == state.MenuIndex ? "> " : "  ") + items[i];
+            Text(label, Width / 2 - 60 * scale, top + (i + 2) * 10 * scale, scale, i == state.MenuIndex ? 0xffffff : 0xc0c0c0);
+        }
     }
 
     void DrawSky()
