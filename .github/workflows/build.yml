@@ -80,6 +80,13 @@ jobs:
           dotnet-version: 10.0.x
       - run: dotnet workload install wasm-tools
       - run: dotnet publish Browser/DoomSharp.Browser.csproj -c Release -o artifacts/browser
+      - name: Publish alternative NetWasm browser runtime
+        if: matrix.browser == 'chromium'
+        run: |
+          dotnet publish NetWasm/DoomSharp.NetWasm.csproj -c Release -o artifacts/netwasm
+          mkdir -p artifacts/browser/wwwroot/netwasm
+          cp -a artifacts/netwasm/browser artifacts/browser/wwwroot/netwasm/
+          cp artifacts/netwasm/index.html artifacts/netwasm/app.mjs artifacts/netwasm/host.js artifacts/netwasm/style.css artifacts/browser/wwwroot/netwasm/
       - run: dotnet run --project tools/e2e-fixtures/FixtureGenerator.csproj -c Release -- tools/e2e-fixtures/generated
       - run: dotnet build tools/BrowserChecks -c Release
       - name: Install browser
@@ -109,6 +116,10 @@ jobs:
           done
           pactl info > artifacts/browser-audio-device.log
           dotnet run --project tools/BrowserChecks -c Release -- http://127.0.0.1:5187/doomsharp/ tools/e2e-fixtures/generated artifacts/browser-checks ${{ matrix.browser }}
+          if [[ "${{ matrix.browser }}" == "chromium" ]]; then
+            dotnet run --project tools/BrowserChecks -c Release -- netwasm http://127.0.0.1:5187/doomsharp/ artifacts/netwasm-checks tools/e2e-fixtures/generated
+            dotnet run --project tools/BrowserChecks -c Release -- sizes artifacts/browser/wwwroot artifacts/netwasm-checks
+          fi
       - uses: actions/upload-pages-artifact@v3
         if: github.event_name == 'push' && github.ref == 'refs/heads/main' && matrix.browser == 'chromium'
         with:
@@ -165,6 +176,7 @@ jobs:
           pactl info > artifacts/pages-audio-device.log
           curl --fail --silent --show-error --retry 8 --retry-all-errors --retry-delay 5 "$PAGES_URL" > /dev/null
           dotnet run --project tools/BrowserChecks -c Release -- "$PAGES_URL" tools/e2e-fixtures/generated artifacts/live-browser-checks chromium
+          dotnet run --project tools/BrowserChecks -c Release -- netwasm "$PAGES_URL" artifacts/live-netwasm-checks tools/e2e-fixtures/generated
       - uses: actions/upload-artifact@v4
         if: always()
         with:

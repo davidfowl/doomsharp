@@ -1,0 +1,19 @@
+<Project Sdk="NetWasm.Sdk">
+  <PropertyGroup>
+    <OutputType>JsModule</OutputType>
+    <NetWasmJavaScriptHosts>page</NetWasmJavaScriptHosts>
+    <TargetFramework>netwasm0.1</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <DefineConstants>$(DefineConstants);NETWASM</DefineConstants>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="NetWasm.System.Text.Json" Version="0.10.0" />
+    <PackageReference Include="NetWasm.System.Linq" Version="0.10.0" />
+    <NetWasmJavaScriptModule Include="app.host.mjs" Module="app.host" />
+    <Content Include="index.html;app.mjs" CopyToPublishDirectory="PreserveNewest" />
+    <Content Include="../Browser/wwwroot/host.js" Link="host.js" CopyToPublishDirectory="PreserveNewest" />
+    <Content Include="../Browser/wwwroot/style.css" Link="style.css" CopyToPublishDirectory="PreserveNewest" />
+    <Compile Include="../Assets.cs;../Font.cs;../Game.cs;../Instruments.cs;../Music.cs;../Renderer.cs;../Save.cs;../TextureAnimation.cs;../Wad.cs" Link="Engine/%(Filename)%(Extension)" />
+  </ItemGroup>
+</Project>
