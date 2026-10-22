@@ -102,6 +102,7 @@ serve the merged site with `tools/Serve`, then run:
 dotnet run --project tools/e2e-fixtures/FixtureGenerator.csproj -c Release -- tools/e2e-fixtures/generated
 dotnet run --project tools/BrowserChecks -c Release -- netwasm http://127.0.0.1:5187/doomsharp/ artifacts/netwasm-checks tools/e2e-fixtures/generated
 dotnet run --project tools/BrowserChecks -c Release -- sizes artifacts/browser/wwwroot artifacts/netwasm-checks
+dotnet run --project tools/BrowserChecks -c Release -- stats http://127.0.0.1:5187/doomsharp/
 ```
 
 `artifacts/netwasm-checks/render-comparison.json` and

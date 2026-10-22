@@ -1,7 +1,34 @@
 using System.Text.Json;
+using Microsoft.Playwright;
 
 internal static class BrowserSizes
 {
+    public static async Task<int> CheckSite(string baseUrl)
+    {
+        using IPlaywright playwright = await Playwright.CreateAsync();
+        await using IBrowser browser = await playwright.Chromium.LaunchAsync(new() { Headless = true });
+        foreach (string route in new[] { "", "netwasm/" })
+        {
+            IPage page = await browser.NewPageAsync();
+            await page.GotoAsync(baseUrl.TrimEnd('/') + "/" + route);
+            await page.WaitForFunctionAsync("""
+                () => {
+                    const table = document.querySelector('#comparison table');
+                    return table?.rows.length === 3 &&
+                        table.rows[1].textContent.includes('.NET WASM') &&
+                        table.rows[2].textContent.includes('NetWasm') &&
+                        [...table.rows].slice(1).every(row =>
+                            row.cells.length === 4 &&
+                            row.cells[1].textContent.includes('MiB') &&
+                            row.cells[2].textContent.includes('MiB') &&
+                            row.cells[3].textContent.includes('ms'));
+                }
+                """, null, new() { Timeout = 120000 });
+            await page.CloseAsync();
+        }
+        return 0;
+    }
+
     public static int Write(string site, string measurements)
     {
         string framework = Path.Combine(site, "_framework");

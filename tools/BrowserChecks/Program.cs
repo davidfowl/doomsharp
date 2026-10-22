@@ -11,6 +11,7 @@ if (args.Length == 3 && args[0] == "netwasm-only") return await NetWasmChecks.Ru
 if (args.Length == 4 && args[0] == "netwasm") return await NetWasmChecks.Run(args[1], args[2], fixtures: args[3]);
 if (args.Length == 4 && args[0] == "netwasm-only") return await NetWasmChecks.Run(args[1], args[2], onlyNetWasm: true, fixtures: args[3]);
 if (args.Length == 3 && args[0] == "sizes") return BrowserSizes.Write(args[1], args[2]);
+if (args.Length == 2 && args[0] == "stats") return await BrowserSizes.CheckSite(args[1]);
 
 if (args.Length is < 3 or > 4)
 {

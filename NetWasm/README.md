@@ -25,6 +25,11 @@ a standalone site with bundled game assets. The NetWasm raw Wasm module does not
 load Blazor or .NET assemblies in the browser. It runs on the main thread;
 long synchronous exports can briefly block page interaction.
 
+NetWasm is a pre-1.0 toolchain with a
+[Community License for developer tooling and separate MIT/Apache runtime terms](https://github.com/zion-sati/NetWasm/blob/main/docs/licensing.md).
+Review its terms before using the SDK in a commercial build pipeline; generated
+applications retain their authors' chosen license subject to included notices.
+
 The `NETWASM` conditional only excludes unused desktop filesystem helpers;
 engine/rendering/gameplay sources otherwise remain shared. Benchmark methodology,
 runtime limitations and site deployment instructions are in the root README.
