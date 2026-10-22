@@ -1,29 +1,76 @@
 # DoomSharp
 
-A clean-room C# classic WAD engine, with native desktop and browser WebAssembly
-hosts. Gameplay, WAD loading, software rendering, generated assets and development
-tools are C#. The browser's small JavaScript adapter only bridges Canvas, browser
-events, animation scheduling and WebAudio; there is no JavaScript game engine.
+A clean-room, C# classic WAD engine for native desktop and browser WebAssembly.
+The same engine loads WADs, plays the game and renders in software across both
+hosts; a small JavaScript adapter connects the browser to Canvas, input and
+WebAudio, rather than implementing a second game engine.
 
-**Playable, but not a complete DOOM replacement.** `--demo` plays the bundled,
-freely licensed Freedoom Phase 1. The original two-room encounter is available
-with `--fixture-demo`. No original DOOM source or proprietary assets are included.
-Historical engine qualification and compatibility notes are in [PROGRESS.md](PROGRESS.md);
-the commands and evidence boundaries below supersede its old tooling instructions.
+**Playable, not a complete DOOM replacement.** The bundled, freely licensed
+Freedoom Phase 1 starts automatically in the browser or with `--demo` on desktop.
+No original DOOM source or proprietary assets are included. See
+[compatibility and limitations](#compatibility) before trying another WAD.
 
-## Desktop
+## Play in your browser
 
-Install the **.NET 10 SDK**. Run from the repository root:
+| Version | What runs |
+|---|---|
+| [Play .NET WASM (Blazor AOT)](https://davidfowl.github.io/doomsharp/) | The original browser host, compiled ahead of time. |
+| [Play NetWasm](https://davidfowl.github.io/doomsharp/netwasm/) | The same C# engine compiled with the experimental [NetWasm toolchain](NetWasm/README.md); a separate page/runtime, not a second game. |
+
+These links point to GitHub Pages and require a successful deployment. Both
+versions use the same bundled Freedoom WAD, support a local WAD (up to 64 MiB),
+and keep selected WADs on your device. Click the game to enable sound and mouse
+capture; [controls](#controls) work with either host. Mobile/touch controls and
+gamepads are not implemented.
+
+## Quick start
+
+Install the **.NET 10 SDK** and run from the repository root. To play on desktop:
 
 ```sh
 dotnet run -c Release -- --demo --no-audio
+```
+
+Omit `--no-audio` when an audio device is available. To run the .NET WASM host
+locally (without publishing), install the browser workload and open
+<http://localhost:5187>:
+
+```sh
+dotnet workload install wasm-tools
+dotnet run --project Browser/DoomSharp.Browser.csproj -c Release --urls http://localhost:5187
+```
+
+For a local NetWasm build, follow the [NetWasm host instructions](NetWasm/README.md).
+See [native publishing](#native-desktop), [browser deployment](#browser-webassembly)
+and the [published build comparison](#published-build-comparison) for more.
+
+## Highlights
+
+- Classic WAD loading, BSP geometry and software-rendered walls, floors, skies,
+  sprites and automap, with an in-game HUD and intermission.
+- Single-player movement and combat with seven weapons, pickups, keys, enemies,
+  doors, lifts, stairs, crushers, switches, exits and map progression. These
+  features are bounded implementations, not full original-game parity.
+- Keyboard/mouse input, effects and approximate synthesized music; single-slot
+  save/load (desktop file or browser `localStorage`).
+- Native AOT desktop builds for Linux, Windows and macOS; two static-site
+  WebAssembly hosts. [Verification tools](#verification-and-development-tools)
+  distinguish engine checks from browser and native-input checks. See the
+  [CI workflow](.github/workflows/build.yml) and [qualification history](PROGRESS.md).
+
+## Native desktop
+
+Other desktop modes:
+
+```sh
 dotnet run -c Release -- --fixture-demo
 dotnet run -c Release -- --wad /path/to/game.wad --map E1M1
 ```
 
-Desktop and regression tools use the .NET BCL, without managed game-engine or
-test-framework dependencies. Audio uses the default native device and reports
-failures; pass `--no-audio` if no device is available.
+`--fixture-demo` plays the original two-room encounter. Desktop and regression
+tools use the .NET BCL, without managed game-engine or test-framework
+dependencies. Audio uses the default native device and reports failures; pass
+`--no-audio` if no device is available.
 
 Publish a standalone Native AOT executable **on its target OS**:
 
@@ -59,20 +106,19 @@ Linux x64; neither it nor hosted CI establishes physical-device input, audible
 playback, Safari/mobile support or complete campaign compatibility.
 
 [Stair/crusher milestone CI](https://github.com/davidfowl/doomsharp/actions/runs/39067803717)
-also passed all nine native/browser jobs at implementation `42a186f`.
+passed all nine native/browser jobs at implementation `42a186f`.
 Downloaded Linux x64 results confirm 748 executable/engine/native assertions;
-the browser Release-AOT application passes 38 Chromium, 38 Firefox and 37 WebKit
+the browser Release-AOT application passed 38 Chromium, 38 Firefox and 37 WebKit
 runtime assertions. WebKit mouse look was unavailable, and the browser checks
-do not traverse stair/crusher scenarios. See [PROGRESS.md](PROGRESS.md) for exact
-coverage, downloadable CI evidence and remaining compatibility limits.
-This milestone is still branch-only: a normal main fast-forward was rejected
-by repository rules. The qualified branch is preserved; no rule bypass was used.
+did not traverse stair/crusher scenarios. See [PROGRESS.md](PROGRESS.md) for
+exact historical coverage and remaining compatibility limits; these runs do
+not qualify every later revision.
 
 ## Browser WebAssembly
 
-The site offers two browser runtimes: the original **.NET WASM (Blazor AOT)** at
+The site offers two browser runtimes: **.NET WASM (Blazor AOT)** at
 `/doomsharp/` and **NetWasm** at `/doomsharp/netwasm/`. Both use the same C#
-engine and the same Freedoom WAD, with separate browser modules. NetWasm targets
+engine and Freedoom WAD, with separate browser modules. NetWasm targets
 its narrower `netwasm0.1` API profile; only the desktop-only `Wad(string path)`
 and `Renderer.SavePpm` filesystem methods are excluded from this target. It
 uses the same Canvas/WebAudio browser adapter and supports the same local WAD,
@@ -81,42 +127,10 @@ main browser thread, and a synchronous export (notably WAD initialization) can
 block interaction temporarily. The NetWasm toolchain is pre-1.0; the exact SDK
 version is pinned in `NetWasm/global.json`.
 
-The website's **Published build comparison** reports raw Release browser
-runtime footprint bytes (framework/module, JS, HTML and CSS) and uncompressed
-first-load browser response bytes (`PerformanceResourceTiming.decodedBodySize`
-for same-origin navigation and resources in a fresh Chromium context). The
-identical shared Freedoom WAD/credits and comparison data are excluded from
-first-load size; licenses, `.br`/`.gz` sidecars, maps and PDBs are excluded from
-published runtime footprint. These are raw bytes, **not** a claim about actual
-HTTP transfer size under compression. It also shows the median of five wall-clock `performance.now()`
-samples of 120 consecutive C# software renders of the paused initial E1M1 scene in
-headless Chromium, measured through one browser-call boundary per sample. This compares renderer
-throughput, **not** full gameplay frame rate, WAD loading, startup, audio or
-input latency; the two JS interop paths differ. Results depend on the CI
-runner/browser and should not be extrapolated to other hardware. To reproduce
-on Linux, publish both runtimes per [NetWasm host instructions](NetWasm/README.md),
-install Chromium with `dotnet run --project tools/BrowserChecks -c Release -- install chromium`,
-serve the merged site with `tools/Serve`, then run:
+### Run and deploy the browser host
 
-```sh
-dotnet run --project tools/e2e-fixtures/FixtureGenerator.csproj -c Release -- tools/e2e-fixtures/generated
-dotnet run --project tools/BrowserChecks -c Release -- netwasm http://127.0.0.1:5187/doomsharp/ artifacts/netwasm-checks tools/e2e-fixtures/generated
-dotnet run --project tools/BrowserChecks -c Release -- sizes artifacts/browser/wwwroot artifacts/netwasm-checks
-dotnet run --project tools/BrowserChecks -c Release -- stats http://127.0.0.1:5187/doomsharp/
-```
-
-`artifacts/netwasm-checks/render-comparison.json` and
-`artifacts/browser/wwwroot/comparison.json` retain exact values. The published
-comparison is regenerated by the Chromium CI job after both builds and browser
-checks pass, before Pages deployment. The benchmark button on each page lets
-you time 120 renders on your own machine (reload first for the initial scene).
-
-```sh
-dotnet workload install wasm-tools
-dotnet run --project Browser/DoomSharp.Browser.csproj -c Release --urls http://localhost:5187
-```
-
-Open `http://localhost:5187`. Bundled Freedoom Phase 1 loads and runs automatically,
+The [quick start](#quick-start) runs the .NET WASM host locally. Open
+`http://localhost:5187`. Bundled Freedoom Phase 1 loads and runs automatically,
 without sound or mouse capture until you click the game. **Restart Freedoom**
 reloads the bundled WAD; you can also choose a local classic WAD (up to 64 MiB).
 The browser does not offer the original test level. The optional Map field accepts a
@@ -134,7 +148,7 @@ game and clears held input; click to resume. **Mute** suppresses new sound effec
 and stops music; unchecking it resumes the current track.
 Wheel input over the active game does not scroll the page. Press Esc to pause
 and scroll normally; scrolling outside the game remains available during play.
-Mobile/touch controls, gamepads and persistent saves are not implemented. Music
+Mobile/touch controls and gamepads are not implemented. Music
 plays via a clean-room MUS/Standard-MIDI decoder and an approximate software
 synthesizer; see [PROGRESS.md](PROGRESS.md).
 
@@ -179,6 +193,41 @@ dotnet run --project tools/Serve -c Release -- artifacts/browser/wwwroot --urls 
 Open `http://localhost:5187/doomsharp/`, or pass that URL to the browser checks
 documented below.
 
+## Published build comparison
+
+Each browser page displays a **Published build comparison**. It measures raw
+Release runtime footprint (framework/module, JS, HTML and CSS), uncompressed
+first-load response bytes (`PerformanceResourceTiming.decodedBodySize` for
+same-origin navigation and resources in a fresh headless Chromium context),
+and the median of five `performance.now()` samples of 120 consecutive C#
+software renders of the paused initial E1M1 scene. Each sample crosses the
+browser-call boundary once; the two JS interop paths differ.
+
+The identical shared Freedoom WAD/credits and comparison data are excluded from
+first-load size; licenses, `.br`/`.gz` sidecars, maps and PDBs are excluded from
+published runtime footprint. These are **raw bytes**, not compressed HTTP
+transfer size. Render time measures renderer throughput, **not** full gameplay
+frame rate, startup, WAD loading, audio or input latency. Results depend on the
+CI runner and browser, not just the runtime.
+
+To reproduce on Linux, publish both runtimes per the
+[NetWasm host instructions](NetWasm/README.md), install Chromium with
+`dotnet run --project tools/BrowserChecks -c Release -- install chromium`,
+serve the merged site with `tools/Serve`, then run:
+
+```sh
+dotnet run --project tools/e2e-fixtures/FixtureGenerator.csproj -c Release -- tools/e2e-fixtures/generated
+dotnet run --project tools/BrowserChecks -c Release -- netwasm http://127.0.0.1:5187/doomsharp/ artifacts/netwasm-checks tools/e2e-fixtures/generated
+dotnet run --project tools/BrowserChecks -c Release -- sizes artifacts/browser/wwwroot artifacts/netwasm-checks
+dotnet run --project tools/BrowserChecks -c Release -- stats http://127.0.0.1:5187/doomsharp/
+```
+
+`artifacts/netwasm-checks/render-comparison.json` and
+`artifacts/browser/wwwroot/comparison.json` retain exact values. Chromium CI
+regenerates the comparison after both builds and browser checks pass, before
+Pages deployment. The benchmark button on each page times 120 renders on your
+own machine (reload first for the initial scene).
+
 ## Controls
 
 WASD moves/strafes; arrows turn (up/down also move). Click once to capture the
@@ -214,7 +263,9 @@ stored in savegames; loading a save also resets explored automap sectors. See
 
 All repository-owned tools are C#; there are no Python scripts or commands.
 The .NET WebAssembly workload supplies its upstream native compiler toolchain.
-From the root:
+Run these commands from the root. [PROGRESS.md](PROGRESS.md) records historical
+qualification and compatibility notes; the commands and evidence boundaries
+here supersede its old tooling instructions.
 
 ```sh
 dotnet run --project tools/e2e-fixtures/FixtureGenerator.csproj -c Release -- tools/e2e-fixtures/generated
@@ -396,5 +447,10 @@ The bundled unmodified Freedoom 0.13.0 Phase 1 comes from the
 Its source archive `freedoom-0.13.0.zip` has SHA-256
 `3f9b264f3e3ce503b4fb7f6bdcb1f419d93c7b546f4df3e874dd878db9688f59`.
 The BSD license and contributor/music credits are in
-`assets/freedoom/COPYING.txt`, `CREDITS.txt`, and `CREDITS-MUSIC.txt`.
+[`assets/freedoom/COPYING.txt`](assets/freedoom/COPYING.txt),
+[`CREDITS.txt`](assets/freedoom/CREDITS.txt), and
+[`CREDITS-MUSIC.txt`](assets/freedoom/CREDITS-MUSIC.txt).
 Owning another WAD does not grant permission to redistribute it.
+
+The engine is [MIT licensed](LICENSE); the bundled Freedoom assets retain
+their own license and credits.
