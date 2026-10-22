@@ -301,6 +301,34 @@ try
             Check("intermission-empty-stats-text",
                 game.IntermissionStats[1] == "KILLS 100%  ITEMS 100%  SECRETS 100%", game.IntermissionStats);
         }
+        foreach (int type in new[] { 2022, 2023, 2024, 2025, 2026, 2045 })
+        {
+            Game game = Load($"powerup-{type}"); Tick(game);
+            bool active = type switch
+            {
+                2022 => game.InvulnerabilityTime > 0,
+                2023 => game.HasBerserk,
+                2024 => game.InvisibilityTime > 0,
+                2025 => game.RadiationSuitTime > 0,
+                2026 => game.HasComputerMap,
+                2045 => game.LightAmpTime > 0,
+                _ => false
+            };
+            Check($"powerup-{type}-pickup", active && game.Items == 1 && game.TotalItems == 1,
+                new { active, game.Items, game.TotalItems });
+            string save = game.Save();
+            bool restored = game.TryLoad(save, out string? error);
+            Check($"powerup-{type}-save-reset", restored && game.InvulnerabilityTime == 0 &&
+                game.InvisibilityTime == 0 && game.RadiationSuitTime == 0 && game.LightAmpTime == 0 &&
+                !game.HasComputerMap && !game.HasBerserk, new { restored, error });
+        }
+        foreach (string kind in new[] { "control", "invulnerability", "radsuit" })
+        {
+            Game game = Load("powerup-floor-" + kind);
+            Tick(game, count: 40);
+            Check($"powerup-floor-{kind}", kind == "control" ? game.Health < 100 : game.Health == 100,
+                game.Health);
+        }
         // (a) the animation table maps known names to their full, correctly ordered cycle.
         Check("texture-animation-flat-cycle",
             TextureAnimation.Flat("NUKAGE2", 0, _ => true) == "NUKAGE1" &&
