@@ -56,10 +56,12 @@ Build/publish output includes the Phase 1 WAD, BSD license and credits.
 | Native window presentation | Working | Bounded actual-engine desktop smoke runs pass on three OSes; interactive input coverage differs by platform below |
 | DMX decoding and sound-effects mixer | Partial | Native Linux playthrough submits effects to ALSA null; exact resampling/audio comparison, audible playback and Windows/macOS audio unverified |
 | Remaining weapons/powerups, stairs/crushers, switch textures and other boss actions | Not implemented | Required for original gameplay/campaign parity |
-| Music/MUS and Standard MIDI File playback | Partial | Clean-room MUS and SMF parsers decode bundled Freedoom `D_*` lumps into looping PCM mixed by the native audio thread and WebAudio on the browser target; verified via native ALSA-null submission and Chromium/WebKit WebAudio-after-click checks below; uses an approximate additive-harmonic/noise synth, not a General MIDI soundfont, so exact timbre/original parity is not claimed |
-| Save/load game state | Partial | F5 saves and F9 loads a JSON snapshot (map, position/angle, health/armor/ammo/weapons, keys, kills/secrets/time, found-secret sectors and per-actor removed/health) via a source-generated `System.Text.Json` context; desktop persists to a `doomsharp.sav` file next to the executable, the browser persists to `localStorage` via a Save/Load button pair; verified end-to-end natively with real X11 key input (F5 produced a real save, F9 restored player position after movement) and with an in-process harness covering successful load plus rejection of bad-version/unknown-map/malformed JSON; headless (108/108), engine (121/121) and native (22/22) checks remain green; in-flight projectiles are not preserved across a save/load cycle |
-| In-game pause/options menu | Partial | `F1` opens a keyboard-driven menu (Resume/New Game/Options/Quit, mouse-sensitivity slider and a messages toggle); freezes simulation while open; no episode/skill selection and settings do not persist across runs; no save/load entries are wired into the menu yet, though F5/F9 keyboard shortcuts work independently |
-| Multiplayer and extended maps/mods | Not implemented | No end-to-end capability claimed |
+| Music/MUS and Standard MIDI File playback | Partial | Clean-room MUS and SMF parsers decode bundled Freedoom `D_*` lumps into looping PCM mixed by the native audio thread and WebAudio on the browser target; verified via native ALSA-null submission and Chromium/WebKit WebAudio-after-click checks below; models per-channel pitch-bend as a semitone frequency offset and GM-program-aware timbre families via an approximate additive-harmonic/noise synth, not a General MIDI soundfont, so exact timbre/original parity is not claimed |
+| Save/load game state | Partial | F5 saves and F9 loads a JSON snapshot (map, position/angle, health/armor/ammo/weapons, keys, kills/secrets/time, found-secret sectors and per-actor removed/health/noise-alert/chase-memory/infighting-target state) via a source-generated `System.Text.Json` context; desktop persists to a `doomsharp.sav` file next to the executable, the browser persists to `localStorage` via a Save/Load button pair; `SaveGameState` gains trailing optional `ActorAwake`/`ActorAlertX`/`ActorAlertY` fields (format version bumped to 3) so a monster that was blindly chasing a propagated noise (see noise-propagation above) keeps doing so after a save/load cycle instead of silently reverting to dormant — version-1/2 saves still load, defaulting every actor to "not awake" (their prior, if incomplete, behavior); a later fix adds trailing optional `ActorChaseMemory`/`ActorLastKnownTargetX`/`ActorLastKnownTargetY`/`ActorTargetIndex` fields (format version bumped to 4) so a monster closing on a remembered last-seen position (see chase-memory above) or fighting another monster via infighting (see infighting above) keeps doing so after a save/load cycle instead of silently reverting to idle/re-acquiring the player — version-1/2/3 saves still load, defaulting every actor to "no chase memory"/"no infighting target" (their prior, if incomplete, behavior); `ActorTargetIndex` stores each actor's infighting target as an index into the deterministic spawn-order actor list (-1 for "no target"), which `Spawn` rebuilds identically on load so the index stays valid; this fix also corrects a pre-existing latent bug where `Game.Save()` threw `ArgumentException` for any save containing a non-alert/non-chasing actor, because the `double.NaN` "no position" sentinel used by `ActorAlertX`/`ActorAlertY` (and now the chase-memory position fields) is rejected by `System.Text.Json`'s default number writer — `ActorAlertX`/`ActorAlertY`/`ActorLastKnownTargetX`/`ActorLastKnownTargetY` instead encode "no position" as an ordinary JSON `null` per-actor element (nullable array elements) rather than relaxing number parsing for the whole save format, so every other gameplay field (position/angle/feet/time) still rejects non-finite values on load; `ActorTargetIndex` values other than the documented -1 "no target" sentinel or a valid in-range index are rejected as corrupt save data rather than silently clamped; and `TryLoad` now validates a save's entire actor layout/target indices against its target map before mutating any live game state, so a malformed save leaves an in-progress game completely unchanged instead of partially mutating it; a later fix adds a trailing optional `ActorPositionX`/`ActorPositionY` field pair (format version bumped to 5) so a monster that had walked/chased away from its map-defined spawn spot (see `Game.UpdateActor`) keeps its actual position after a save/load cycle instead of silently snapping back to spawn while incorrectly retaining its (now-restored) alert/chase-memory/infighting state for that moved-from position — version-1/2/3/4 saves still load, defaulting every actor to its map's deterministic spawn position (the prior, if incomplete, behavior, already produced by `Game.BuildSpawnState` for the rebuilt candidate actor list); `ActorPositionX`/`ActorPositionY` are only optional as a whole pair (present together or both absent together, since every actor always has a live position, unlike the nullable per-actor alert/chase-memory coordinates above); `TryLoad` rejects a save with only one of the pair present, a non-finite (NaN/Infinity) coordinate, or a coordinate outside the signed-16-bit WAD vertex/thing coordinate range before mutating any live game state, extending the same "fully succeed or leave the existing game completely unchanged" contract; verified end-to-end natively with real X11 key input (F5 produced a real save, F9 restored player position after movement) and with an in-process harness covering successful load plus rejection of bad-version/unknown-map/malformed JSON, plus new `savegame-compat-*`/`savegame-reject-*`/`savegame-position-*` checks covering the awake/alert, chase-memory, infighting-target and actor-position round trips (including continuation after load), legacy-version defaulting (including spawn-position fallback), rejection of out-of-range `ActorTargetIndex` values, rejection of non-finite/out-of-range/mismatched-pair actor positions and gameplay fields, and preservation of an in-progress game across a failed load; headless (120/120) and engine (211/211) checks remain green; native checks are unchanged by this fix (CI retains that coverage); in-flight projectiles are not preserved across a save/load cycle |
+| Animated flat/wall textures | Partial | Fixed built-in clean-room cycle table (`TextureAnimation.cs`) for water/nukage/slime/blood/lava/fire flats and walls (e.g. NUKAGE1-3, FWATER1-4, BLODGR1-4, FIREBLU1-2); advances one frame per 8 tics (vanilla's non-switch rate), driven by the existing fixed 1/35s tick clock so animation speed is independent of framerate; both floor/ceiling flats and upper/lower/middle wall textures animate via the existing WAD lookup/renderer sampling paths; a frame only substitutes when it is actually present in the loaded WAD (checked via new `Wad.HasFlat`/`Wad.HasTexture` helpers), so unrelated WADs see no new missing-texture diagnostics; new engine checks `texture-animation-*` and `renderer-animated-*` cover table mapping, deterministic frame-index-from-tics, missing-frame fallback and renderer-facing resolution; headless (108/108) and engine (133/133) checks and `--demo --validate-maps` (0 missing textures across all maps) remain green |
+| Intermission/stats screen | Partial | On every level exit, `Game.FinishLevel` now computes Kills/Items/Secrets percentages (rounded, with a 0-total treated as 100%, matching the original's "nothing required" convention) and elapsed time, rendered as a 4-line overlay (`Game.IntermissionStats`) replacing the prior single-line prompt; a new `Items`/`TotalItems` pair counts health/armor bonuses, mega/soulspheres, berserk and keycards (not ammo or weapons, matching the original engine's `itemcount` semantics) and `TotalSecrets` counts sector-special-9 secrets; `SaveGameState` gains a trailing optional `Items` field (format version bumped to 2; version-1 saves still load, with `Items` defaulting to 0 and understating the restored percentage); no per-game cumulative statistics or a dedicated "you are here" map-select intermission like the original's inter-level screen — the overlay reuses the existing single-screen HUD-text rendering path; new engine checks `intermission-full`/`intermission-partial`/`intermission-empty` cover 100%, 50%-rounding and all-zero-total cases; headless (114/114) and engine (157/157) checks remain green |
+| In-game pause/options menu | Partial | F1 opens a keyboard-driven Resume/New Game/Options/Quit menu and pauses simulation; no episode/skill selection, persistent options or Save/Load menu entries |
+| Pre-level menus, multiplayer and extended maps/mods | Not implemented | No end-to-end capability claimed |
 | Complete authentic WAD campaigns | Unverified | Map rendering alone is not campaign completion; missing behaviors can block progression |
 
 ## In-flight work and known limits
@@ -92,15 +94,21 @@ Save/load (`Save.cs`) is now partially implemented: F5/F9 (desktop keyboard,
 X11/Windows/macOS) and a Save/Load button pair (browser) capture or restore a
 single JSON snapshot of in-progress state — current map, player position/angle,
 health/armor/ammo/weapon ownership, keys, kill/secret/time counters, which
-secret sectors were found, and each actor's removed/health flags by spawn
-index — using a source-generated `JsonSerializerContext` so the AOT/trimmed
-desktop and WASM builds stay warning-free. Desktop persists to a `doomsharp.sav`
-file beside the executable; the browser persists to `localStorage`. Loading
-replays `Spawn()` for the saved map and reapplies actor state by index, so it
-depends on deterministic actor ordering for a given map; in-flight projectiles
-are discarded rather than restored. Saving is blocked while dead or after the
+secret sectors were found, and each actor's removed/health/noise-alert (Awake
+plus its remembered AlertPosition) flags by spawn index — using a
+source-generated `JsonSerializerContext` so the AOT/trimmed desktop and WASM
+builds stay warning-free. Desktop persists to a `doomsharp.sav` file beside the
+executable; the browser persists to `localStorage`. Loading replays `Spawn()`
+for the saved map and reapplies actor state by index, so it depends on
+deterministic actor ordering for a given map; in-flight projectiles are
+discarded rather than restored. Saving is blocked while dead or after the
 level has finished, mirroring the existing "no-op while finished" pattern used
-elsewhere in `Game.Tick()`.
+elsewhere in `Game.Tick()`. The Awake/AlertPosition fields are trailing
+optional (format version bumped to 3): older version-1/2 saves still load,
+with every actor simply defaulting to "not awake" (their behavior before this
+fix), while version-3 saves faithfully resume a monster's blind pursuit of a
+propagated noise across a save/load cycle instead of silently waking it back
+up to dormant.
 
 Music/MUS and Standard MIDI File playback (`Music.cs`) is now partially
 implemented: a clean-room event-stream parser for both id Software's native MUS
@@ -108,9 +116,13 @@ format and Standard MIDI Files (needed because the bundled Freedoom WAD ships
 `D_*` music lumps as SMF, not MUS) feeds a small additive-harmonic/noise-burst
 software synthesizer, producing looping PCM mixed into the existing native
 audio thread (`Audio.cs`) and the browser's WebAudio graph (`host.js`/`App.razor`)
-alongside the existing one-shot SFX voices. This is an approximation of General
-MIDI timbres, not a soundfont-accurate renderer, and does not model per-note
-pitch bend or SMPTE-divisioned MIDI files (falls back to a default PPQ). See
+alongside the existing one-shot SFX voices. Per-channel MUS/MIDI pitch-bend
+controller events are translated to a semitone offset applied to the affected
+note's frequency (`Instruments.MusPitchBendSemitones`/`MidiPitchBendSemitones`),
+and GM program numbers are grouped into broad timbre families with distinct
+harmonic content and attack/decay/sustain/release envelopes (`Instruments.cs`).
+This is still an approximation of General MIDI timbres, not a soundfont-accurate
+renderer, and SMPTE-divisioned MIDI files fall back to a default PPQ. See
 the "Built vs. runtime-tested" verification below for exact evidence.
 Sector-11 exit handling and E1M8's last-Baron/tag666 floor action are implemented;
 other original finale boss actions remain absent. Damaging-floor timing is approximate.
@@ -423,9 +435,11 @@ Playwright run reproducibly hung waiting for `AudioContext` to reach `running`
 after a click on this build **and** on an unmodified main checkout in this same
 environment, so it is a pre-existing environment/headless-audio limitation, not
 a regression from this change. The synthesizer is a small additive-harmonic/
-noise-burst approximation (no General MIDI soundfont or OPL emulation), does not
-model per-note pitch bend or SMPTE-divisioned MIDI timing, and audible/perceptual
-quality versus the original soundtrack is unverified.
+noise-burst approximation (no General MIDI soundfont or OPL emulation). It now
+models per-channel MUS/MIDI pitch-bend controller events as a semitone offset
+and shapes GM-program timbre families with distinct envelopes (`Instruments.cs`),
+but SMPTE-divisioned MIDI timing still falls back to a default PPQ, and
+audible/perceptual quality versus the original soundtrack is unverified.
 
 Save/load game state (`Save.cs`, new `Buttons.Save`/`Buttons.Load` flags and
 `Game.SaveGame`/`LoadGame` hooks mirroring the `PlaySound`/`PlayMusic` delegate

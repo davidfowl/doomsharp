@@ -9,7 +9,7 @@ static class Program
     {
         try { return Run(args); }
         catch (Exception ex) when (ex is IOException or InvalidDataException or InvalidOperationException or ArgumentException or FormatException or OverflowException or
-            PlatformNotSupportedException or DllNotFoundException or EntryPointNotFoundException)
+            PlatformNotSupportedException or DllNotFoundException or EntryPointNotFoundException or UnauthorizedAccessException)
         {
             Console.Error.WriteLine($"DoomSharp: {ex.Message}");
             return 1;

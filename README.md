@@ -217,20 +217,19 @@ walls/floors/ceilings, sky, masked walls and sprites; collision, sliding and
 24-unit steps; pistol, shotgun, chaingun and swept rocket/explosion combat;
 pickups, keys, armor, simplified enemies/barrels; common doors, tagged locks,
 lifts/floors, teleports, damaging floors, secrets, exits and map progression;
-E1M8 last-Baron/tag666 floors; DMX effects, MUS/Standard-MIDI music playback
-(approximate software synthesis, see [PROGRESS.md](PROGRESS.md)), HUD, automap
-and an in-game pause/options menu (F1), plus a single-slot JSON save/load
-(F5/F9, see [PROGRESS.md](PROGRESS.md) for scope and verification; in-flight
-projectiles are not preserved).
+E1M8 last-Baron/tag666 floors; animated flat/wall textures (water, nukage,
+slime, blood, lava and fire cycles on a fixed 8-tic interval); DMX effects,
+MUS/Standard-MIDI music playback
+(approximate software synthesis, see [PROGRESS.md](PROGRESS.md)), HUD, automap,
+an end-of-level intermission stats screen (Kills/Items/Secrets percentages and
+time; see [PROGRESS.md](PROGRESS.md) for the exact "item" definition),
+an in-game pause/options menu (F1), and a single-slot JSON save/load (F5/F9, see [PROGRESS.md](PROGRESS.md) for
+scope and verification; in-flight projectiles are not preserved).
 
 Still incomplete: other weapons/powerups, exact monster states/AI/physics/RNG,
 stairs/crushers and every moving-sector/switch special, other boss actions,
-animated textures, multiplayer and original visual/timing/audio
-parity. A basic in-game menu (Resume/New Game/Options/Quit, with mouse
-sensitivity and a messages toggle) is implemented; it does not persist
-settings, does not offer episode/skill selection, and has no save/load entries
-wired into it yet (the F5/F9 shortcuts work independently). No PWAD overlay
-stacking, Hexen/UDMF, extended nodes, Boom/MBF/DEHACKED or
+pre-level menus, multiplayer and original visual/timing/audio
+parity. No PWAD overlay stacking, Hexen/UDMF, extended nodes, Boom/MBF/DEHACKED or
 mod compatibility. Only medium-skill single-player flags are selected. Missing
 assets/types produce explicit diagnostics; missing textures use a diagnostic
 pattern. These gaps can block campaign progression. Loading/rendering all maps
