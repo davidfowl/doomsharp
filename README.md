@@ -82,10 +82,13 @@ block interaction temporarily. The NetWasm toolchain is pre-1.0; the exact SDK
 version is pinned in `NetWasm/global.json`.
 
 The website's **Published build comparison** reports raw Release browser
-runtime payload bytes (framework/module, JS, HTML and CSS), excluding the
-identical shared Freedoom WAD, licenses, `.br`/`.gz` sidecars, maps and PDBs.
-These are uncompressed file bytes, not a claim about actual HTTP transfer under
-compression. It also shows the median of five wall-clock `performance.now()`
+runtime footprint bytes (framework/module, JS, HTML and CSS) and uncompressed
+first-load browser response bytes (`PerformanceResourceTiming.decodedBodySize`
+for same-origin navigation and resources in a fresh Chromium context). The
+identical shared Freedoom WAD/credits and comparison data are excluded from
+first-load size; licenses, `.br`/`.gz` sidecars, maps and PDBs are excluded from
+published runtime footprint. These are raw bytes, **not** a claim about actual
+HTTP transfer size under compression. It also shows the median of five wall-clock `performance.now()`
 samples of 120 consecutive C# software renders of the paused initial E1M1 scene in
 headless Chromium, measured through one browser-call boundary per sample. This compares renderer
 throughput, **not** full gameplay frame rate, WAD loading, startup, audio or

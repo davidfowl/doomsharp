@@ -42,6 +42,22 @@ internal static class NetWasmChecks
                     return nonblack > 200000;
                 }
                 """);
+            var downloads = await page.EvaluateAsync<JsonElement>("""
+                baseUrl => {
+                    const entries = [...performance.getEntriesByType('navigation'), ...performance.getEntriesByType('resource')]
+                        .filter(entry => entry.name.startsWith(baseUrl) &&
+                            !entry.name.includes('/assets/freedoom/') &&
+                            !entry.name.endsWith('/comparison.json'));
+                    return {
+                        rawBytes: entries.reduce((total, entry) => total + entry.decodedBodySize, 0),
+                        resources: entries.map(entry => ({
+                            name: new URL(entry.name).pathname, bytes: entry.decodedBodySize
+                        }))
+                    };
+                }
+                """, baseUrl.TrimEnd('/') + "/");
+            if (downloads.GetProperty("rawBytes").GetInt64() <= 0)
+                throw new InvalidOperationException($"{runtime}: browser did not report first-load response sizes.");
             const string pixelHash = """
                 () => {
                     const data = document.querySelector('#game').getContext('2d').getImageData(0, 0, 640, 350).data;
@@ -94,6 +110,7 @@ internal static class NetWasmChecks
             results.Add(new { runtime = runtime.Length == 0 ? "blazor-aot" : "netwasm", url,
                 renderMilliseconds = timings[timings.Count / 2], samplesMilliseconds = timings,
                 checksum,
+                firstLoad = downloads,
                 browser = await page.EvaluateAsync<string>("navigator.userAgent") });
             if (runtime.Length > 0 && fixtures is not null)
             {

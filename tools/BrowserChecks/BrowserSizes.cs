@@ -17,7 +17,11 @@ internal static class BrowserSizes
         JsonElement render = JsonDocument.Parse(File.ReadAllText(Path.Combine(measurements, "render-comparison.json"))).RootElement;
         var result = new
         {
-            method = "Release published files, raw bytes excluding shared Freedoom WAD, licenses, source maps, debug files and precompressed sidecars; 120 consecutive software renders of paused initial E1M1 in headless Chromium, wall-clock performance.now; median of five samples per runtime.",
+            measuredAtUtc = DateTimeOffset.UtcNow,
+            host = new { os = System.Runtime.InteropServices.RuntimeInformation.OSDescription,
+                architecture = System.Runtime.InteropServices.RuntimeInformation.ProcessArchitecture.ToString(),
+                processors = Environment.ProcessorCount },
+            method = "Release published file footprint and first-load same-origin navigation/resource Performance entries (decodedBodySize) in fresh headless Chromium contexts, raw bytes excluding shared Freedoom assets and comparison data; 120 consecutive software renders of paused initial E1M1, wall-clock performance.now; median of five samples per runtime.",
             blazorBytes = Size(framework) + new[] { "index.html", "host.js", "style.css" }.Sum(file => new FileInfo(Path.Combine(site, file)).Length),
             netwasmBytes = Size(netwasm),
             render,
