@@ -63,7 +63,7 @@ sealed unsafe class MacPlatform : IPlatform
                         49 or 14 => Buttons.Use, 15 => Buttons.Restart, 18 => Buttons.Pistol, 19 => Buttons.Shotgun,
                         20 => Buttons.Chainsaw, 21 => Buttons.Chaingun, 23 => Buttons.RocketLauncher,
                         22 => Buttons.PlasmaRifle, 26 => Buttons.BFG9000, 48 => Buttons.Map,
-                        96 => Buttons.Save, 101 => Buttons.Load, _ => Buttons.None
+                        96 => Buttons.Save, 101 => Buttons.Load, 122 => Buttons.Menu, _ => Buttons.None
                     };
                     input.Set(button, type == 10);
                 }

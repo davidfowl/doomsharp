@@ -58,6 +58,16 @@ smoke is bounded to 35 frames with audio disabled. Local qualification used
 Linux x64; neither it nor hosted CI establishes physical-device input, audible
 playback, Safari/mobile support or complete campaign compatibility.
 
+[Stair/crusher milestone CI](https://github.com/davidfowl/doomsharp/actions/runs/39067803717)
+also passed all nine native/browser jobs at implementation `42a186f`.
+Downloaded Linux x64 results confirm 748 executable/engine/native assertions;
+the browser Release-AOT application passes 38 Chromium, 38 Firefox and 37 WebKit
+runtime assertions. WebKit mouse look was unavailable, and the browser checks
+do not traverse stair/crusher scenarios. See [PROGRESS.md](PROGRESS.md) for exact
+coverage, downloadable CI evidence and remaining compatibility limits.
+This milestone is still branch-only: a normal main fast-forward was rejected
+by repository rules. The qualified branch is preserved; no rule bypass was used.
+
 ## Browser WebAssembly
 
 ```sh
@@ -183,11 +193,19 @@ be **new**, so previous results are never silently overwritten.
   complete P6 frames, and requires malformed input to exit 1 with a diagnostic.
 - `engine` feeds public C# input into the shared engine to check movement
   thresholds, all six tagged-lock actions and card/skull colors, weapon
-  ownership/ammo/cadence/combat/carry/restart/death, and Baron floor actions.
+  ownership/ammo/cadence/combat/carry/restart/death, Baron floor actions, and
+  tagged stair triggers/chains/speeds/headroom/restart, and crusher
+  activation/cycles/damage/stop/resume/mover ownership, plus switch texture
+  selection, success/denial, button deadlines/retriggers and map lifecycle.
 - `native` drives the actual Linux executable using XTest keyboard events and
   reads the X11 framebuffer: demo completion/restart, Tab/movement/firing HUD,
   two lift lower/wait/raise/carry/step-off cycles, and both weapons with PCM
-  submission through an ALSA null device.
+  submission through an ALSA null device. Stair checks traverse raised routes
+  for all four supported actions and require untagged controls to stay blocked.
+  Crusher checks require death in active traps versus stable frames/health100
+  after stop actions; two fast-crusher cases also require null PCM submission.
+  Switch checks observe off/on colors, permanent latches, timed resets and
+  denied/manual controls; one repeatable-button case also requires null PCM.
 
 Results contain explicit pass/fail assertions, diagnostics, executable hashes,
 caller-supplied source revision and native frame/input records. A source revision
@@ -214,6 +232,8 @@ capture/turning where supported, automap, pause/restart, WebAudio scheduling, mu
 automatic bundled Freedoom startup before any interaction, local WAD loading,
 and visible load/download errors with retry. Browser tooling brings Playwright's own driver/browser dependencies;
 the application itself does not depend on Playwright.
+Original switch fixtures additionally exercise visible one-shot latching,
+repeatable reset, key denial and preservation of a pending button while paused.
 
 On headless Linux, Firefox needs a working audio backend even to schedule
 WebAudio. CI supplies a private PulseAudio null sink and exports its `PULSE_SERVER`;
@@ -224,6 +244,81 @@ Synthetic input, null PCM and headless browsers do not establish physical-device
 input, audible sound, original-game parity, mobile support or campaign completion.
 
 ## Engine scope and limits
+
+### Tagged stairs
+
+Classic linedef actions 7 (use once) and 8 (walk once) build 8-unit steps at
+8.75 units/second. Actions 127 (use once) and 100 (walk once) build 16-unit steps
+at 140 units/second. Use actions require the front side; walk actions accept
+either crossing direction. Each tagged seed starts from its current floor.
+Chains follow the first available front-to-back two-sided linedef in map order,
+keeping the seed's floor texture and adding one step per sector, including
+untagged neighbors. All eligible tagged seeds are processed.
+
+Active floor movers are not overwritten. A busy seed can be retried; a busy
+neighbor is skipped when choosing the next link. Successful activation consumes
+the action; missing/zero tags leave it available and display a diagnostic.
+Stairs reuse moving-floor support and non-crushing occupancy checks, resume
+after an obstruction clears, and reset on restart. Use-switch feedback is covered
+below; exact vanilla busy-neighbor quirks and complete campaign progression
+remain unqualified.
+
+### Tagged crushers
+
+Walk-once actions 6 (fast), 25 (normal) and 141 (normal, silent), plus repeatable
+action 77 (fast), start all eligible tagged ceilings. They cycle without waiting
+between their starting ceiling and 8 units above the starting floor. Normal and
+fast speeds are 35 and 70 units/second; obstructed normal crushers slow to
+4.375 units/second for the rest of the downstroke and restore normal speed
+when rising. Silent crushers suppress movement sounds but play `PSTOP` at
+their endpoints; others use `STNMOV` every eight 35-Hz ticks.
+
+Overlapping living players, enemies and barrels receive 10 damage every four
+ticks through existing armor, death/drop and barrel-blast handling. A body
+spanning two crushers takes only one crush hit per tick. Contact uses sector
+footprints, not just the center. The simplified engine uses 56-unit living
+bodies and 16-unit dropped pickups; crushed drops are removed, while placed
+pickups and corpse artwork are retained. This is not exact original actor-height,
+gibbing, camera or collision parity.
+
+Actions 57 (walk once) and 74 (repeatable) pause tagged crushers in place,
+including damage. A new start action (for example 77) resumes the existing
+direction, speed and silent variant rather than replacing it. Running crushers
+are not restarted by recrossing. Successful once-only actions are consumed;
+missing/zero tags or busy sectors retain the action and provide a diagnostic.
+Active doors/floors are preserved, and active or paused crushers reserve their
+sectors against door, floor and stair takeover. Restart recreates the original
+geometry and removes crusher state.
+
+The action mapping is cross-checked against the
+[Doom editor linedef definitions](https://github.com/UltimateDoomBuilder/UltimateDoomBuilder/blob/master/Assets/Common/Configurations/Includes/Doom_linedefs.cfg).
+Other crusher/ceiling actions, exact original obstruction quirks and authentic
+campaign completion remain unqualified.
+
+### Switch textures and buttons
+
+The classic switch-texture integration makes successful front-side
+use toggles the 40 canonical vanilla `SW1`/`SW2` pairs on existing switch actions:
+7/127, 11/51, 18/21/23/60/62/69/122/123, and
+29/63/99/103/111/112/113/133/134/135/136/137. Pair-table order is considered
+first, off before on, then upper/middle/lower; only the front sidedef changes.
+This is not arbitrary name-prefix pairing or support for Boom `SWITCHES` lumps.
+
+One-shot switches latch. Repeatable buttons (60/62/69/123/63/99/134/136)
+restore their original texture after 35 subsequent gameplay ticks. Successful
+early retriggers may toggle again but neither extend the original deadline nor
+create another reset. Failed/busy actions leave textures and deadlines untouched.
+Buttons are independent, pause with gameplay, and are discarded on restart or
+map change. Switch clicks/reset use `SWTCHN`; exit switches use `SWTCHX`.
+
+Missing partners leave the texture unchanged, log once per map and allow another
+valid slot/pair to be selected; unsupported custom switch names are diagnosed
+without installing checkerboards. Missing tags, keys, busy movers and back-side
+use do not falsely consume S1 actions or change textures. Manual doors and
+crossing actions do not toggle switch textures. This adds feedback to existing
+dispatch, not new action families or full door/mover/gameplay parity.
+
+### Compatibility
 
 Implemented: classic IWAD/PWAD directory/geometry/BSP validation; textured
 walls/floors/ceilings, sky, masked walls and sprites; collision, sliding and
@@ -238,13 +333,14 @@ MUS/Standard-MIDI music playback
 (approximate software synthesis, see [PROGRESS.md](PROGRESS.md)), HUD, automap,
 an end-of-level intermission stats screen (Kills/Items/Secrets percentages and
 time; see [PROGRESS.md](PROGRESS.md) for the exact "item" definition),
-an in-game pause/options menu (F1), and a single-slot JSON save/load (F5/F9,
+an in-game pause/options menu (F1), and a single-slot JSON save/load (F5/F9;
 see [PROGRESS.md](PROGRESS.md) for scope and verification; in-flight projectiles
 are not preserved).
+Classic switch textures and buttons supply the bounded feedback above.
 
 Still incomplete: fist/Berserk melee and exact powerup parity,
 monster states/AI/physics/RNG,
-stairs/crushers and every moving-sector/switch special, other boss actions,
+other moving-sector/switch specials, other boss actions,
 pre-level menus, multiplayer and original visual/timing/audio
 parity. No PWAD overlay stacking, Hexen/UDMF, extended nodes, Boom/MBF/DEHACKED or
 mod compatibility. Only medium-skill single-player flags are selected. Missing
