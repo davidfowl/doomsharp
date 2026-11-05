@@ -73,6 +73,7 @@ jobs:
       fail-fast: false
       matrix:
         browser: [chromium, firefox, webkit]
+      max-parallel: 1
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-dotnet@v4
