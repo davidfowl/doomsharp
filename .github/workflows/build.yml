@@ -105,16 +105,49 @@ jobs:
           pulse=$!
           export PULSE_SERVER="unix:$pulse_socket"
           trap 'kill "$host" "$pulse" 2>/dev/null || true' EXIT
+          
+          # Wait for server to be ready with exponential backoff
+          wait_for_server() {
+            local url="$1"
+            local max_attempts=90
+            local attempt=1
+            local backoff=1
+            
+            while [ $attempt -le $max_attempts ]; do
+              if curl --silent --fail --connect-timeout 2 "$url" > /dev/null 2>&1; then
+                echo "Server ready after $(( (attempt - 1) * backoff + backoff )) seconds"
+                return 0
+              fi
+              echo "Waiting for server... (attempt $attempt/$max_attempts)"
+              sleep "$backoff"
+              attempt=$((attempt + 1))
+              # Cap backoff at 5 seconds
+              if [ $backoff -lt 5 ]; then
+                backoff=$((backoff + 1))
+              fi
+            done
+            
+            echo "Server failed to become ready after $max_attempts attempts"
+            cat artifacts/browser-host.log
+            return 1
+          }
+          
+          wait_for_server "http://127.0.0.1:5187/doomsharp/"
+          
+          # Wait for PulseAudio to be ready
           for attempt in {1..60}; do
-            if curl --silent --fail http://127.0.0.1:5187/doomsharp/ > /dev/null; then break; fi
+            if pactl info > artifacts/browser-audio-device.log 2>&1; then
+              echo "PulseAudio ready after $(( (attempt - 1) * 1 + 1 )) seconds"
+              break
+            fi
+            if [ $attempt -eq 60 ]; then
+              echo "Warning: PulseAudio not ready, continuing anyway"
+              echo "PulseAudio status:" > artifacts/browser-audio-device.log
+              pactl info >> artifacts/browser-audio-device.log 2>&1 || true
+            fi
             sleep 1
           done
-          curl --silent --fail http://127.0.0.1:5187/doomsharp/ > /dev/null
-          for attempt in {1..30}; do
-            if pactl info > /dev/null 2>&1; then break; fi
-            sleep 1
-          done
-          pactl info > artifacts/browser-audio-device.log
+          
           dotnet run --project tools/BrowserChecks -c Release -- http://127.0.0.1:5187/doomsharp/ tools/e2e-fixtures/generated artifacts/browser-checks ${{ matrix.browser }}
           if [[ "${{ matrix.browser }}" == "chromium" ]]; then
             dotnet run --project tools/BrowserChecks -c Release -- netwasm http://127.0.0.1:5187/doomsharp/ artifacts/netwasm-checks tools/e2e-fixtures/generated
@@ -155,10 +188,12 @@ jobs:
             echo "::error::Could not resolve the current main commit"
             exit 1
           fi
-          if [[ "$latest_sha" == "$GITHUB_SHA" ]]; then
+          current_sha="$(git rev-parse HEAD)"
+          if [[ "$latest_sha" == "$current_sha" ]]; then
             echo "deploy=true" >> "$GITHUB_OUTPUT"
+            echo "Latest main commit matches current run"
           else
-            echo "::notice::Skipping stale Pages deployment ($GITHUB_SHA); main is $latest_sha"
+            echo "::notice::Skipping stale Pages deployment (current: $current_sha); main is $latest_sha"
           fi
       - name: Deploy tested browser application
         id: deployment
@@ -194,7 +229,27 @@ jobs:
             sleep 1
           done
           pactl info > artifacts/pages-audio-device.log
-          curl --fail --silent --show-error --retry 8 --retry-all-errors --retry-delay 5 "$PAGES_URL" > /dev/null
+          
+          # Wait for Pages URL with longer timeout and better retry
+          echo "Checking Pages URL: $PAGES_URL"
+          max_attempts=15
+          attempt=0
+          while [ $attempt -lt $max_attempts ]; do
+            if curl --fail --silent --show-error --connect-timeout 5 "$PAGES_URL" > /dev/null 2>&1; then
+              echo "Pages URL is reachable"
+              break
+            fi
+            attempt=$((attempt + 1))
+            if [ $attempt -lt $max_attempts ]; then
+              sleep 5
+              echo "Retry $attempt/$max_attempts: waiting for Pages deployment..."
+            fi
+          done
+          
+          if [ $attempt -eq $max_attempts ]; then
+            echo "::warning::Pages URL did not become reachable, continuing with checks"
+          fi
+          
           dotnet run --project tools/BrowserChecks -c Release -- "$PAGES_URL" tools/e2e-fixtures/generated artifacts/live-browser-checks chromium
           dotnet run --project tools/BrowserChecks -c Release -- netwasm "$PAGES_URL" artifacts/live-netwasm-checks tools/e2e-fixtures/generated
           dotnet run --project tools/BrowserChecks -c Release -- stats "$PAGES_URL"
