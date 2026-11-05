@@ -1,3 +1,4 @@
+using System.IO.Compression;
 using System.Text.Json;
 using Microsoft.Playwright;
 
@@ -18,10 +19,11 @@ internal static class BrowserSizes
                         table.rows[1].textContent.includes('.NET WASM') &&
                         table.rows[2].textContent.includes('NetWasm') &&
                         [...table.rows].slice(1).every(row =>
-                            row.cells.length === 4 &&
+                            row.cells.length === 5 &&
                             row.cells[1].textContent.includes('MiB') &&
                             row.cells[2].textContent.includes('MiB') &&
-                            row.cells[3].textContent.includes('ms'));
+                            row.cells[3].textContent.includes('MiB') &&
+                            row.cells[4].textContent.includes('ms'));
                 }
                 """, null, new() { Timeout = 120000 });
             await page.CloseAsync();
@@ -39,8 +41,20 @@ internal static class BrowserSizes
             !path.EndsWith(".gz", StringComparison.OrdinalIgnoreCase) &&
             !path.EndsWith(".pdb", StringComparison.OrdinalIgnoreCase) &&
             !path.EndsWith(".map", StringComparison.OrdinalIgnoreCase);
-        static long Size(string directory) => Directory.EnumerateFiles(directory, "*", SearchOption.AllDirectories)
-            .Where(Primary).Sum(path => new FileInfo(path).Length);
+        static IEnumerable<string> Files(string directory) => Directory.EnumerateFiles(directory, "*", SearchOption.AllDirectories)
+            .Where(Primary);
+        // Brotli quality 11 with a 24-bit window, as `brotli -q 11` writes, so both runtimes'
+        // compressed footprints are measured the same way regardless of the host's encoding.
+        static long Brotli(string path)
+        {
+            byte[] source = File.ReadAllBytes(path);
+            byte[] destination = new byte[BrotliEncoder.GetMaxCompressedLength(source.Length)];
+            if (!BrotliEncoder.TryCompress(source, destination, out int written, quality: 11, window: 24))
+                throw new InvalidOperationException("Brotli compression failed: " + path);
+            return written;
+        }
+        string[] blazorFiles = [.. Files(framework), .. new[] { "index.html", "host.js", "style.css" }.Select(file => Path.Combine(site, file))];
+        string[] netwasmFiles = [.. Files(netwasm)];
         JsonElement render = JsonDocument.Parse(File.ReadAllText(Path.Combine(measurements, "render-comparison.json"))).RootElement;
         var result = new
         {
@@ -48,9 +62,11 @@ internal static class BrowserSizes
             host = new { os = System.Runtime.InteropServices.RuntimeInformation.OSDescription,
                 architecture = System.Runtime.InteropServices.RuntimeInformation.ProcessArchitecture.ToString(),
                 processors = Environment.ProcessorCount },
-            method = "Release published file footprint and first-load same-origin navigation/resource Performance entries (decodedBodySize) in fresh headless Chromium contexts, raw bytes excluding shared Freedoom assets and comparison data; 120 consecutive software renders of paused initial E1M1, wall-clock performance.now; median of five samples per runtime.",
-            blazorBytes = Size(framework) + new[] { "index.html", "host.js", "style.css" }.Sum(file => new FileInfo(Path.Combine(site, file)).Length),
-            netwasmBytes = Size(netwasm),
+            method = "Release published file footprint and first-load same-origin navigation/resource Performance entries (decodedBodySize) in fresh headless Chromium contexts, raw bytes excluding shared Freedoom assets and comparison data, and the same published files compressed with Brotli quality 11 (24-bit window); 120 consecutive software renders of paused initial E1M1, wall-clock performance.now; median of five samples per runtime.",
+            blazorBytes = blazorFiles.Sum(path => new FileInfo(path).Length),
+            netwasmBytes = netwasmFiles.Sum(path => new FileInfo(path).Length),
+            blazorBrotliBytes = blazorFiles.Sum(Brotli),
+            netwasmBrotliBytes = netwasmFiles.Sum(Brotli),
             render,
         };
         File.WriteAllText(Path.Combine(site, "comparison.json"), JsonSerializer.Serialize(result, new JsonSerializerOptions { WriteIndented = true }));
